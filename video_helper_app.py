@@ -10,6 +10,8 @@ Video Helper 電腦版
 
 import os
 import sys
+import json
+import urllib.parse
 import time
 import queue
 import threading
@@ -27,7 +29,8 @@ except Exception:
     FFMPEG = None
 
 DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
-VERSION = "1.0.0"
+VERSION = "1.1.0"
+CONFIG = os.path.join(os.path.expanduser("~"), ".video_helper.json")
 
 
 # ---------- 小工具 ----------
@@ -64,6 +67,39 @@ def speed_test(url, headers, nbytes=3_000_000, timeout=10):
         return got * 8 / dt / 1e6 if dt > 0 and got > 100_000 else 0
     except Exception:
         return 0
+
+
+def first_segment_url(m3u8_url, headers, depth=0):
+    """從切片清單找出第一個小片段的網址（拿來測速）"""
+    try:
+        req = urllib.request.Request(m3u8_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as r:
+            text = r.read().decode("utf-8", "ignore")
+    except Exception:
+        return None
+    uris = [l.strip() for l in text.splitlines() if l.strip() and not l.startswith("#")]
+    if not uris:
+        return None
+    nxt = urllib.parse.urljoin(m3u8_url, uris[0])
+    if "#EXT-X-STREAM-INF" in text and depth < 2:
+        return first_segment_url(nxt, headers, depth + 1)
+    return nxt
+
+
+def load_speed():
+    try:
+        with open(CONFIG, encoding="utf-8") as f:
+            return float(json.load(f).get("mbps", 0))
+    except Exception:
+        return 0
+
+
+def save_speed(mbps):
+    try:
+        with open(CONFIG, "w", encoding="utf-8") as f:
+            json.dump({"mbps": mbps}, f)
+    except Exception:
+        pass
 
 
 def collect_formats(info):
@@ -103,7 +139,8 @@ class App:
         self.q = queue.Queue()
         self.formats = []
         self.title = ""
-        self.mbps = 0
+        self.mbps = load_speed()
+        self.speed_src = "上次實測" if self.mbps else ""
         self.busy = False
 
         root.title(f"Video Helper 電腦版 v{VERSION}")
@@ -182,11 +219,19 @@ class App:
                 info = ydl.extract_info(url, download=False)
             fmts = collect_formats(info)
             mbps = 0
-            for f in fmts:
+            for f in fmts:                       # 先用 MP4 直連測速
                 if f["direct"] and f["url"]:
                     mbps = speed_test(f["url"], f["headers"])
                     if mbps:
                         break
+            if not mbps:                         # 沒有直連 → 下載第一個切片測速
+                for f in fmts:
+                    if not f["direct"] and f["url"]:
+                        seg = first_segment_url(f["url"], f["headers"])
+                        if seg:
+                            mbps = speed_test(seg, f["headers"])
+                            if mbps:
+                                break
             self.q.put(("analyzed", (info.get("title") or "video", fmts, mbps)))
         except Exception as e:
             self.q.put(("error", f"讀取失敗：{e}"))
@@ -195,10 +240,12 @@ class App:
         self.title, self.formats, mbps = data
         if mbps:
             self.mbps = mbps
+            self.speed_src = "實測"
+            save_speed(mbps)
         self.busy = False
         self.btn_read.config(state="normal")
         self.title_lbl.config(text=self.title)
-        self.speed_lbl.config(text=f"網速：{self.mbps:.1f} Mbps" if self.mbps else "網速：無法量測（下載時會顯示實際速度）")
+        self.speed_lbl.config(text=f"網速：{self.mbps:.1f} Mbps（{self.speed_src}）" if self.mbps else "網速：無法量測（下載時會顯示實際速度）")
 
         if not self.formats:
             self.status.config(text="找不到可下載的畫質")
@@ -281,6 +328,8 @@ class App:
         self.prog["value"] = 100
         self.btn_dl.config(state="normal")
         self.btn_read.config(state="normal")
+        if self.mbps:
+            save_speed(self.mbps)
         self.status.config(text="✅ 下載完成，檔案在「下載」資料夾")
 
     def on_error(self, msg):
