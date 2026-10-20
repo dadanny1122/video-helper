@@ -1,8 +1,12 @@
 name: Build Windows exe
 
+# 每次 video_helper_app.py 的 VERSION 改了並上傳，就自動打包並發布新版
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths:
+      - 'video_helper_app.py'
+      - '.github/workflows/build.yml'
   workflow_dispatch:
 
 permissions:
@@ -13,19 +17,40 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Read version
+        id: ver
+        shell: bash
+        run: echo "v=$(python -c "import re;print(re.search(r'VERSION = .(.+?).$', open('video_helper_app.py',encoding='utf-8').read(), re.M).group(1))")" >> $GITHUB_OUTPUT
+
+      - name: Check if this version is already released
+        id: chk
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.ver.outputs.v }}" >/dev/null 2>&1; then
+            echo "exists=1" >> $GITHUB_OUTPUT
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.chk.outputs.exists != '1'
         with:
           python-version: '3.12'
+
       - name: Install packages
+        if: steps.chk.outputs.exists != '1'
         run: pip install yt-dlp imageio-ffmpeg pyinstaller
+
       - name: Build exe
+        if: steps.chk.outputs.exists != '1'
         run: pyinstaller --onefile --windowed --name VideoHelper --collect-all imageio_ffmpeg --collect-all yt_dlp video_helper_app.py
-      - name: Upload to Release
-        if: startsWith(github.ref, 'refs/tags/')
+
+      - name: Publish release
+        if: steps.chk.outputs.exists != '1'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.v }}
+          name: Video Helper v${{ steps.ver.outputs.v }}
+          body: 下載 VideoHelper.exe 雙擊即可使用。
           files: dist/VideoHelper.exe
-      - uses: actions/upload-artifact@v4
-        with:
-          name: VideoHelper
-          path: dist/VideoHelper.exe
