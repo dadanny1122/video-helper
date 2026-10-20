@@ -17,6 +17,7 @@ import queue
 import threading
 import subprocess
 import urllib.request
+import webbrowser
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -29,7 +30,8 @@ except Exception:
     FFMPEG = None
 
 DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
-VERSION = "1.1.0"
+VERSION = "1.2.0"
+REPO = "dadanny1122/video-helper"
 CONFIG = os.path.join(os.path.expanduser("~"), ".video_helper.json")
 
 
@@ -98,6 +100,21 @@ def save_speed(mbps):
     try:
         with open(CONFIG, "w", encoding="utf-8") as f:
             json.dump({"mbps": mbps}, f)
+    except Exception:
+        pass
+
+
+def check_update(q):
+    """問 GitHub 有沒有比現在更新的版本"""
+    try:
+        req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/releases/latest",
+                                     headers={"User-Agent": "VideoHelper"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.load(r)
+        tag = (data.get("tag_name") or "").lstrip("v")
+        ver = lambda v: tuple(int(x) for x in v.split("."))
+        if tag and ver(tag) > ver(VERSION):
+            q.put(("update", (tag, data.get("html_url"))))
     except Exception:
         pass
 
@@ -188,6 +205,12 @@ class App:
         self.status.pack(fill="x", **pad)
 
         self.poll()
+        threading.Thread(target=check_update, args=(self.q,), daemon=True).start()
+
+    def on_update(self, data):
+        tag, url = data
+        if messagebox.askyesno("有新版本", f"有新版本 v{tag}（目前 v{VERSION}），要前往下載嗎？"):
+            webbrowser.open(url)
 
     # 讓背景工作把結果丟回主畫面
     def poll(self):

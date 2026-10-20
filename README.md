@@ -16,6 +16,9 @@
 ## 電腦版（下載工具）
 適合下載高畫質、大檔案，下載結果直接是 MP4。
 
+**一般使用者**：到 [Releases](https://github.com/dadanny1122/video-helper/releases/latest) 下載 `VideoHelper.exe`，雙擊執行即可。
+
+**用 Python 執行**：
 1. 安裝 Python 3
 2. 安裝套件：`pip install yt-dlp imageio-ffmpeg`
 3. 執行：`python video_helper_app.py`
