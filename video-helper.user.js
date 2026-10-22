@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      2.4.1
+// @version      2.5.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -47,9 +47,17 @@
   const HOME = baseOf(HOST);
 
   // ---- 設定（存在暴力猴裡，所有網站共用）----
+  // 主要存在暴力猴裡（所有網站共用），同時在網站的 localStorage 留一份備份
   const store = {
-    get: (k, d) => { try { const v = GM_getValue(k); return v === undefined ? d : v; } catch (e) { return d; } },
-    set: (k, v) => { try { GM_setValue(k, v); } catch (e) {} },
+    get(k, d) {
+      try { const v = GM_getValue(k); if (v !== undefined) return v; } catch (e) {}
+      try { const b = localStorage.getItem('vh_' + k); if (b !== null) return JSON.parse(b); } catch (e) {}
+      return d;
+    },
+    set(k, v) {
+      try { GM_setValue(k, v); } catch (e) {}
+      try { localStorage.setItem('vh_' + k, JSON.stringify(v)); } catch (e) {}
+    },
   };
   const settings = store.get('settings', {});
   const isOn = name => settings[name] !== false;   // 預設全部開啟
@@ -82,10 +90,14 @@
   // 使用者自己封鎖的網域（個人黑名單）
   const userBlock = new Set(store.get('userBlock', []));
 
+  // 有些網站的廣告是從「自己的網址」拿的（例如 Pornhub 的 /_xa/ads），由網站轉接器設定
+  let siteAdPath = null;
+
   function isAd(url) {
     try {
-      const h = new URL(url, location.href).hostname;
-      return AD_RE.test(h) || userBlock.has(baseOf(h));
+      const u = new URL(url, location.href);
+      if (siteAdPath && baseOf(u.hostname) === HOME && siteAdPath.test(u.pathname)) return true;
+      return AD_RE.test(u.hostname) || userBlock.has(baseOf(u.hostname));
     } catch (e) { return false; }
   }
 
@@ -341,6 +353,25 @@
       name: 'Pornhub',
       match: /(^|\.)pornhub\.com$/,
       features: ALL,
+      // 影片前廣告清單、側邊廣告都是跟 Pornhub 自己的 /_xa/ads… 要的
+      adPath: /^\/_xa\/ads/,
+      // 以下參考 uBlock Origin 的規則庫（uBlockOrigin/uAssets），用自己的程式碼重新實作
+      rules: {
+        // uBlock：pornhub.*##.watchpageAd 等 → 藏起廣告區塊
+        hide: ['.watchpageAd', '.middleAdContainer', '.mgp_overlayContainer', '#pb_block', '.js-adsRemoveButton',
+          '.ad-tabSplit', '#js-abContainterMain', '.emptyBlockSpace', '#relatedVideosCenter > .wrapVideoBlock',
+          'a[href^="http://ads.trafficjunky.net/"]', '.livesex', '.realsex', '.joinNowCPPBtn', '.js_joinNowCPPBtn',
+          'div[id^="customSkin"]'],
+        // uBlock：+js(set, abp1, 1) → 設定一個值，讓網站改走比較少廣告的版本
+        setGlobals: { abp1: 1 },
+        // uBlock：+js(acs, Object.defineProperty, trafficjunky)、+js(rmnt, script, /interstitial/)
+        //   → 網頁裡的程式，同一組的字「全部都有」才不讓它執行（條件嚴格，避免誤傷正常程式）
+        blockInlineScript: [[/trafficjunky/, /Object\.defineProperty/], [/\/interstitial\?/]],
+        // uBlock：+js(nostif, adsbytrafficjunkycontext) → 取消「幾秒後載入廣告」的計時器
+        blockTimeout: [/adsbytrafficjunkycontext/],
+        // 影片前廣告的設定改名，播放器就找不到（概念同 uBlock 的 json-prune）
+        renameKeys: ['adRollGlobalConfig'],
+      },
       isVideoPage: () => location.pathname.includes('view_video'),
       findSources: findPhSources,
     },
@@ -348,6 +379,14 @@
       name: 'XVideos',
       match: /(^|\.)xvideos\.com$/,
       features: ALL,
+      // uBlock：||xvideos.com/lvcsm/abck-banners/
+      adPath: /^\/lvcsm\/abck-banners\//,
+      rules: {
+        // uBlock：xvideos.com##a[href*="/go.php?"][href*="&ad="]
+        hide: ['a[href*="/go.php?"][href*="&ad="]'],
+        // uBlock：+js(aeld, click, ShouldShow) → 不讓「點哪裡都開廣告」的監聽器裝上去
+        blockListeners: [{ type: 'click', match: /ShouldShow/ }],
+      },
       isVideoPage: () => /setVideo(UrlHigh|UrlLow|HLS)/.test(document.documentElement.innerHTML),
       findSources: findXvSources,
     },
@@ -358,6 +397,8 @@
 
   const site = SITES.find(s => s.match.test(HOST));
   if (!site) return;
+  siteAdPath = site.adPath || null;
+  if (site.rules) site.features = ['siteRules', ...site.features];
 
   // ---- XVideos：影片網址藏在網頁原始碼 ----
   async function findXvSources() {
@@ -474,6 +515,107 @@
         } catch (e) {}
 
         document.addEventListener('DOMContentLoaded', () => ui.flush());
+      },
+    },
+
+    /* ---------- 網站專屬規則（參考 uBlock 規則庫）---------- */
+    siteRules: {
+      label: '網站專屬擋廣告規則（擋影片前廣告等）',
+      early: true,
+      run() {
+        const R = site.rules;
+
+        // 1. 藏起廣告區塊：網頁一開始就加上 CSS
+        if (R.hide && R.hide.length) {
+          const style = document.createElement('style');
+          style.textContent = R.hide.join(',\n') + ' { display: none !important; }';
+          // 網頁剛開始時可能連 <html> 都還沒有，等它出現再加
+          const addStyle = () => {
+            const root = document.head || document.documentElement;
+            if (root) { root.appendChild(style); return true; }
+            return false;
+          };
+          if (!addStyle()) {
+            const mo = new MutationObserver(() => { if (addStyle()) mo.disconnect(); });
+            mo.observe(document, { childList: true, subtree: true });
+          }
+        }
+
+        // 2. 設定固定值（網站之後改不掉）
+        for (const [k, v] of Object.entries(R.setGlobals || {})) {
+          try { Object.defineProperty(PW, k, { get: () => v, set: () => {}, configurable: true }); } catch (e) {}
+        }
+
+        // 3. 取消特定的計時器
+        if (R.blockTimeout && R.blockTimeout.length) {
+          try {
+            const realST = PW.setTimeout;
+            PW.setTimeout = function (fn, ...rest) {
+              let code = '';
+              try { code = typeof fn === 'function' ? Function.prototype.toString.call(fn) : String(fn); } catch (e) {}
+              if (R.blockTimeout.some(re => re.test(code))) return 0;
+              return realST.call(this, fn, ...rest);
+            };
+          } catch (e) {}
+        }
+
+        // 4. 不讓特定的點擊監聽器裝上去
+        if (R.blockListeners && R.blockListeners.length) {
+          try {
+            const realAEL = PW.EventTarget.prototype.addEventListener;
+            PW.EventTarget.prototype.addEventListener = function (type, fn, ...rest) {
+              if (fn && R.blockListeners.some(b => b.type === type)) {
+                let code = '';
+                try { code = Function.prototype.toString.call(typeof fn === 'function' ? fn : fn.handleEvent); } catch (e) {}
+                if (R.blockListeners.some(b => b.type === type && b.match.test(code))) return;
+              }
+              return realAEL.call(this, type, fn, ...rest);
+            };
+          } catch (e) {}
+        }
+
+        // 5. 網頁裡直接寫的程式：執行前先檢查
+        //    - 含影片設定（flashvars）的：絕對不擋，只把廣告設定改名
+        //    - 含廣告關鍵字的：不讓它執行
+        // 例："adRollGlobalConfig": → "vhOff_adRollGlobalConfig":
+        const keyRes = (R.renameKeys || []).map(k => ({ key: k, re: new RegExp('(["\']?)' + k + '\\1(\\s*:)', 'g') }));
+        const handleScript = sc => {
+          if (sc.src || sc.dataset.vhChecked) return;
+          sc.dataset.vhChecked = '1';
+          const text = sc.textContent;
+          if (!text) return;
+          if (/flashvars_/.test(text)) {
+            let t = text;
+            for (const { key, re } of keyRes) t = t.replace(re, '$1vhOff_' + key + '$1$2');
+            if (t !== text) { sc.textContent = t; ui.saved++; ui.blockedHosts['影片前廣告設定'] = 1; }
+            return;
+          }
+          if ((R.blockInlineScript || []).some(group => group.every(re => re.test(text)))) {
+            sc.type = 'javascript/blocked';
+            ui.saved++;
+            ui.blockedHosts['網頁內的廣告程式'] = (ui.blockedHosts['網頁內的廣告程式'] || 0) + 1;
+          }
+        };
+        new MutationObserver(muts => {
+          for (const m of muts) for (const n of m.addedNodes) {
+            if (n.tagName === 'SCRIPT') handleScript(n);
+            else if (n.querySelectorAll) n.querySelectorAll('script:not([src])').forEach(handleScript);
+          }
+        }).observe(document.documentElement || document, { childList: true, subtree: true });
+
+        // 6. 保險：影片設定如果是用別的方式出現的，也在前幾秒內把廣告設定拿掉
+        if (keyRes.length) {
+          const started = Date.now();
+          const timer = setInterval(() => {
+            for (const k of Object.keys(PW)) {
+              if (!k.startsWith('flashvars_') || !PW[k] || typeof PW[k] !== 'object') continue;
+              for (const key of R.renameKeys) {
+                if (key in PW[k]) { try { delete PW[k][key]; ui.blockedHosts['影片前廣告設定'] = 1; } catch (e) {} }
+              }
+            }
+            if (Date.now() - started > 5000) clearInterval(timer);
+          }, 20);
+        }
       },
     },
 
@@ -1105,6 +1247,8 @@
           flashvarsAdKeys: fv ? Object.keys(fv).filter(k => /ad/i.test(k)) : null,
           adRollConfig: fv && fv.adRollGlobalConfig ? JSON.stringify(fv.adRollGlobalConfig).slice(0, 1500) : null,
           blocked: ui.blockedHosts,
+          userBlockStored: store.get('userBlock', null),
+          storageTest: (() => { try { const t = Date.now(); GM_setValue('vh_test', t); return GM_getValue('vh_test') === t ? 'ok' : 'mismatch'; } catch (e) { return 'error: ' + e.message; } })(),
           otherHosts: [...new Set(performance.getEntriesByType('resource').map(e => {
             try { return baseOf(new URL(e.name).hostname); } catch (er) { return ''; }
           }))].filter(h => h && h !== HOME),

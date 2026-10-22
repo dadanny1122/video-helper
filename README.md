@@ -4,6 +4,7 @@
 
 ## 功能
 - 安全防護：擋彈出視窗、自動跳轉、危險檔案下載（.exe / .apk 等）、通知權限請求，左下角顯示攔截次數
+- 網站專屬規則：Pornhub 影片前廣告、XVideos「點哪裡都開廣告」等（參考 uBlock Origin 規則庫重新實作）
 - 省流模式：已知的廣告網路在下載前就擋掉，網速留給影片（Pornhub、XVideos、Jable、MissAV）
 - 自動略過影片前廣告
 - 顯示目前網速、開始播放與整部載入的預估時間
@@ -35,3 +36,8 @@
 
 ## 注意
 下載的內容僅供個人使用，請勿轉傳或散布。
+
+## 致謝
+- 部分網站規則參考 [uBlock Origin 規則庫（uBlockOrigin/uAssets）](https://github.com/uBlockOrigin/uAssets)，以本專案自己的程式碼重新實作
+- 切片轉 MP4 使用 [mux.js](https://github.com/videojs/mux.js)
+- 電腦版下載使用 [yt-dlp](https://github.com/yt-dlp/yt-dlp)
