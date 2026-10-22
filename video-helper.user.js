@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      2.2.0
+// @version      2.3.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -14,6 +14,7 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_info
 // @grant        unsafeWindow
 // @connect      *
 // @run-at       document-start
@@ -980,6 +981,51 @@
 
   if (IS_TOP) {
     try { GM_registerMenuCommand('📋 查看這頁連到的其他網站（封鎖廣告）', () => { ui.flush(); ui.openPanel(); }); } catch (e) {}
+  }
+
+  // ---- 診斷：背景自動記錄，使用者點一下就複製 ----
+  const diag = { videos: {}, adSeen: [], startedAt: Date.now() };
+  if (IS_TOP) {
+    const t = () => ((Date.now() - diag.startedAt) / 1000).toFixed(1) + 's';
+    const sample = () => {
+      document.querySelectorAll('video').forEach((v, i) => {
+        const src = v.currentSrc || v.src || '(沒有網址)';
+        const key = i + '|' + src.slice(0, 200);
+        if (!diag.videos[key]) diag.videos[key] = { i, src: src.slice(0, 300), firstSeen: t(), durations: [] };
+        const d = isFinite(v.duration) ? Math.round(v.duration) : String(v.duration);
+        const rec = diag.videos[key];
+        if (rec.durations[rec.durations.length - 1] !== d) rec.durations.push(d);
+      });
+      if (shared.adShowing && diag.adSeen.length < 5) diag.adSeen.push(t());
+    };
+    setInterval(sample, 1000);
+
+    try {
+      GM_registerMenuCommand('🔧 診斷（複製給開發者）', () => {
+        sample();
+        const fvKey = Object.keys(PW).find(k => k.startsWith('flashvars_'));
+        const fv = fvKey ? PW[fvKey] : null;
+        const report = {
+          version: GM_info && GM_info.script && GM_info.script.version,
+          manager: GM_info && GM_info.scriptHandler,
+          site: site.name, page: location.href.split('?')[0],
+          features: active,
+          videos: Object.values(diag.videos),
+          adLabelSeenAt: diag.adSeen,
+          iframes: [...document.querySelectorAll('iframe')].map(f => (f.getAttribute('src') || '(空)').slice(0, 150)),
+          flashvarsAdKeys: fv ? Object.keys(fv).filter(k => /ad/i.test(k)) : null,
+          adRollConfig: fv && fv.adRollGlobalConfig ? JSON.stringify(fv.adRollGlobalConfig).slice(0, 1500) : null,
+          blocked: ui.blockedHosts,
+          otherHosts: [...new Set(performance.getEntriesByType('resource').map(e => {
+            try { return baseOf(new URL(e.name).hostname); } catch (er) { return ''; }
+          }))].filter(h => h && h !== HOME),
+        };
+        const text = JSON.stringify(report, null, 1);
+        navigator.clipboard.writeText(text).then(
+          () => alert('✅ 診斷資料已複製，直接貼給開發者就好'),
+          () => prompt('請複製下面的內容：', text));
+      });
+    } catch (e) {}
   }
 
   // 要早啟動的（安全防護）
