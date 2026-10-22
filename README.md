@@ -4,6 +4,7 @@
 
 ## 功能
 - 安全防護：擋彈出視窗、自動跳轉、危險檔案下載（.exe / .apk 等）、通知權限請求，左下角顯示攔截次數
+- 省流模式：已知的廣告網路在下載前就擋掉，網速留給影片（Pornhub、XVideos、Jable、MissAV）
 - 自動略過影片前廣告
 - 顯示目前網速、開始播放與整部載入的預估時間
 - 列表頁顯示預估載入時間
@@ -13,7 +14,7 @@
 
 ## 支援網站
 - Pornhub、XVideos：全部功能
-- Jable、MissAV：安全防護、隱藏廣告
+- Jable、MissAV：安全防護、省流模式、隱藏廣告
 
 ## 安裝
 1. 安裝瀏覽器擴充功能 [Violentmonkey](https://violentmonkey.github.io/)（或 Tampermonkey）

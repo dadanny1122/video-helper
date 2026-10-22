@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      2.0.0
-// @description  安全防護（擋彈窗、跳轉、危險下載）、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
+// @version      2.1.0
+// @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
 // @match        *://*.xvideos.com/*
@@ -64,6 +64,21 @@
 
   function isDangerous(url) {
     try { return DANGER_EXT.test(new URL(url, location.href).pathname); }
+    catch (e) { return false; }
+  }
+
+  // ---- 已知的廣告網路（成人網站常用的 + 一般大型廣告商）----
+  const AD_DOMAINS = [
+    'trafficjunky.net', 'trafficjunky.com', 'exoclick.com', 'exosrv.com', 'exdynsrv.com',
+    'juicyads.com', 'tsyndicate.com', 'trafficstars.com', 'realsrv.com', 'magsrv.com',
+    'popads.net', 'popcash.net', 'propellerads.com', 'adsterra.com', 'clickadu.com',
+    'hilltopads.net', 'ero-advertising.com', 'a-ads.com', 'doubleclick.net',
+    'googlesyndication.com', 'adnxs.com',
+  ];
+  const AD_RE = new RegExp('(^|\\.)(' + AD_DOMAINS.map(d => d.replace(/\./g, '\\.')).join('|') + ')$');
+
+  function isAd(url) {
+    try { return AD_RE.test(new URL(url, location.href).hostname); }
     catch (e) { return false; }
   }
 
@@ -162,7 +177,7 @@
 
   // ---- 左下角盾牌 + 提示 ----
   const ui = {
-    count: 0, shield: null, toasts: null, pending: [], realOpen: null,
+    count: 0, saved: 0, shield: null, toasts: null, pending: [], realOpen: null,
 
     report(msg, url) {
       this.count++;
@@ -183,7 +198,7 @@
           'flex-direction:column-reverse;gap:6px;max-width:360px;';
         document.body.append(this.shield, this.toasts);
       }
-      this.shield.textContent = `🛡 已攔截 ${this.count} 次`;
+      this.shield.textContent = `🛡 已攔截 ${this.count} 次` + (this.saved ? `｜省下 ${this.saved} 個廣告請求` : '');
       while (this.pending.length) this.toast(...this.pending.shift());
     },
 
@@ -213,7 +228,7 @@
    * 第二層：網站轉接器
    * ================================================================== */
 
-  const ALL = ['security', 'autoSkip', 'estimator', 'listLabels', 'download'];
+  const ALL = ['security', 'saveData', 'autoSkip', 'estimator', 'listLabels', 'download'];
 
   const SITES = [
     {
@@ -231,8 +246,8 @@
       findSources: findXvSources,
     },
     // 盜版轉貼站：只開防護和隱藏廣告
-    { name: 'Jable', match: /(^|\.)jable\.tv$/, features: ['security', 'hideAds'] },
-    { name: 'MissAV', match: /(^|\.)missav[^.]*\.[a-z]+$/, features: ['security', 'hideAds'] },
+    { name: 'Jable', match: /(^|\.)jable\.tv$/, features: ['security', 'saveData', 'hideAds'] },
+    { name: 'MissAV', match: /(^|\.)missav[^.]*\.[a-z]+$/, features: ['security', 'saveData', 'hideAds'] },
   ];
 
   const site = SITES.find(s => s.match.test(HOST));
@@ -350,6 +365,96 @@
               return Promise.resolve('denied');
             };
           }
+        } catch (e) {}
+
+        document.addEventListener('DOMContentLoaded', () => ui.flush());
+      },
+    },
+
+    /* ---------- 省流模式 ---------- */
+    saveData: {
+      label: '省流模式（廣告不下載，網速留給影片）',
+      early: true,
+      run() {
+        // 盜版轉貼站：別的網站放進來的框框幾乎都是廣告，一律不載入
+        const strictFrames = site.features.includes('hideAds');
+        const KEEP = /(google\.com\/recaptcha|recaptcha\.net|hcaptcha\.com|challenges\.cloudflare\.com)/;
+        let pendingUpdate = false;
+        const saved = () => {
+          ui.saved++;
+          if (!pendingUpdate) { pendingUpdate = true; setTimeout(() => { pendingUpdate = false; ui.flush(); }, 500); }
+        };
+
+        const shouldBlock = (tag, url) =>
+          isAd(url) || (tag === 'IFRAME' && strictFrames && isExternal(url) && !KEEP.test(url));
+
+        // 1. 網頁程式設定廣告網址的那一刻就攔下（這時候還沒開始下載）
+        const TAGS = ['IFRAME', 'SCRIPT', 'IMG'];
+        try {
+          for (const [Ctor, tag] of [[PW.HTMLIFrameElement, 'IFRAME'], [PW.HTMLScriptElement, 'SCRIPT'], [PW.HTMLImageElement, 'IMG']]) {
+            const d = Object.getOwnPropertyDescriptor(Ctor.prototype, 'src');
+            Object.defineProperty(Ctor.prototype, 'src', {
+              get: d.get, configurable: true, enumerable: d.enumerable,
+              set(v) { if (shouldBlock(tag, String(v))) { saved(); return; } d.set.call(this, v); },
+            });
+          }
+          const realSetAttr = PW.Element.prototype.setAttribute;
+          PW.Element.prototype.setAttribute = function (name, value) {
+            if (String(name).toLowerCase() === 'src' && TAGS.includes(this.tagName) && shouldBlock(this.tagName, String(value))) {
+              saved(); return;
+            }
+            return realSetAttr.call(this, name, value);
+          };
+        } catch (e) {}
+
+        // 2. 網頁原始碼裡直接寫的廣告元素：一出現就拔掉
+        const checkOne = el => {
+          if (!el || el.nodeType !== 1 || el.closest && el.closest('.vh-ui')) return;
+          const tag = el.tagName;
+          if (tag !== 'SCRIPT' && tag !== 'IFRAME' && tag !== 'IMG') return;
+          const url = el.getAttribute('src') || '';
+          if (!url || !shouldBlock(tag, url)) return;
+          if (tag === 'SCRIPT') el.type = 'javascript/blocked';   // 不讓它執行
+          el.removeAttribute('src');
+          el.remove();
+          saved();
+        };
+        const observer = new MutationObserver(muts => {
+          for (const m of muts) {
+            if (m.type === 'attributes') { checkOne(m.target); continue; }
+            for (const n of m.addedNodes) {
+              checkOne(n);
+              if (n.querySelectorAll) n.querySelectorAll('script[src], iframe[src], img[src]').forEach(checkOne);
+            }
+          }
+        });
+        observer.observe(document.documentElement || document, {
+          childList: true, subtree: true, attributes: true, attributeFilter: ['src'],
+        });
+
+        // 3. 網頁程式偷偷跟廣告伺服器要資料：直接回空的
+        try {
+          const realFetch = PW.fetch;
+          PW.fetch = function (input, ...rest) {
+            const url = typeof input === 'string' ? input : (input && input.url) || '';
+            if (isAd(url)) { saved(); return Promise.reject(new TypeError('blocked by Video Helper')); }
+            return realFetch.call(this, input, ...rest);
+          };
+        } catch (e) {}
+        try {
+          const proto = PW.XMLHttpRequest.prototype;
+          const realOpen = proto.open;
+          proto.open = function (method, url, ...rest) {
+            if (isAd(String(url))) { saved(); return realOpen.call(this, 'GET', 'data:,', ...rest); }
+            return realOpen.call(this, method, url, ...rest);
+          };
+        } catch (e) {}
+        try {
+          const realBeacon = PW.navigator.sendBeacon;
+          PW.navigator.sendBeacon = function (url, ...rest) {
+            if (isAd(String(url))) { saved(); return true; }
+            return realBeacon.call(this, url, ...rest);
+          };
         } catch (e) {}
 
         document.addEventListener('DOMContentLoaded', () => ui.flush());
@@ -487,7 +592,8 @@
             `畫質：${main.height ? main.height + 'p' : '以 720p 預估'}<br>` +
             `開始播放：約 ${fmt(need * 5 / speed.mbps + 0.5)}<br>` +
             `整部載完：約 ${fmt(need * main.sec / speed.mbps)}<br>` +
-            `${ratingOf(ratio)} ${ratingText}｜建議最高 ${recommend(speed.mbps)}`;
+            `${ratingOf(ratio)} ${ratingText}｜建議最高 ${recommend(speed.mbps)}` +
+            (ui.saved ? `<br>🚫 已擋 ${ui.saved} 個廣告請求，網速留給影片` : '');
         }, 1000);
       },
     },
