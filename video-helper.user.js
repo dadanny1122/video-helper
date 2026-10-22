@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      2.6.0
+// @version      2.7.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -407,7 +407,9 @@
     // 盜版轉貼站：只開防護和隱藏廣告
     { name: 'Jable', match: /(^|\.)jable\.tv$/, features: ['security', 'saveData', 'hideAds'] },
     // MissAV：按播放時會開 /pop?url=廣告商 的新分頁
-    { name: 'MissAV', match: /(^|\.)missav[^.]*\.[a-z]+$/, features: ['security', 'saveData', 'hideAds'], adPath: /^\/pop/ },
+    // 不開下載：內容多為片商作品的轉載
+    { name: 'MissAV', match: /(^|\.)missav[^.]*\.[a-z]+$/, adPath: /^\/pop/,
+      features: ['security', 'saveData', 'hideAds', 'autoSkip', 'estimator', 'listLabels'] },
   ];
 
   const site = SITES.find(s => s.match.test(HOST));
@@ -898,7 +900,7 @@
           const need = bitrateFor(main.height);
           const ratio = speed.mbps / need;
           const ratingText = ratio >= 2 ? '順暢' : ratio >= 1.2 ? '可能偶爾卡' : '會卡，建議降畫質';
-          const header = (shared.adShowing || main.fromPage) ? '📺 廣告中，以下為預估<br>' : '';
+          const header = shared.adShowing ? '📺 廣告中，以下為預估<br>' : main.fromPage ? '📄 影片還沒開始，以下為預估<br>' : '';
 
           box.innerHTML = header +
             `網速：${speed.mbps.toFixed(1)} Mbps（${speed.source}）<br>` +

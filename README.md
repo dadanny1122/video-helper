@@ -16,7 +16,8 @@
 
 ## 支援網站
 - Pornhub、XVideos：全部功能
-- Jable、MissAV：安全防護、省流模式、隱藏廣告
+- MissAV：全部功能（不含下載）
+- Jable：安全防護、省流模式、隱藏廣告
 
 ## 安裝
 1. 安裝瀏覽器擴充功能 [Violentmonkey](https://violentmonkey.github.io/)（或 Tampermonkey）
