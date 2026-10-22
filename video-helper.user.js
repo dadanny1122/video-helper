@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      2.5.0
+// @version      2.6.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -70,6 +70,20 @@
       const u = new URL(url, location.href);
       return /^https?:$/.test(u.protocol) && baseOf(u.hostname) !== HOME;
     } catch (e) { return false; }
+  }
+
+  // 偽裝網址：自己網站的 /pop?url=https://廣告商... → 取出裡面真正的目的地
+  function unwrap(url) {
+    try {
+      const u = new URL(url, location.href);
+      for (const v of u.searchParams.values()) if (/^https?:\/\//i.test(v)) return v;
+    } catch (e) {}
+    return url;
+  }
+
+  // 這個網址開出去，是不是廣告（直接開到別的網站、包著別的網站、或是網站自己的廣告路徑）
+  function isAdTarget(url) {
+    return isExternal(url) || isExternal(unwrap(url)) || isAd(url);
   }
 
   function isDangerous(url) {
@@ -392,7 +406,8 @@
     },
     // 盜版轉貼站：只開防護和隱藏廣告
     { name: 'Jable', match: /(^|\.)jable\.tv$/, features: ['security', 'saveData', 'hideAds'] },
-    { name: 'MissAV', match: /(^|\.)missav[^.]*\.[a-z]+$/, features: ['security', 'saveData', 'hideAds'] },
+    // MissAV：按播放時會開 /pop?url=廣告商 的新分頁
+    { name: 'MissAV', match: /(^|\.)missav[^.]*\.[a-z]+$/, features: ['security', 'saveData', 'hideAds'], adPath: /^\/pop/ },
   ];
 
   const site = SITES.find(s => s.match.test(HOST));
@@ -473,7 +488,7 @@
           ui.realOpen = PW.open;
           PW.open = function (url, ...rest) {
             const u = url ? String(url) : '';
-            if (!u || u === 'about:blank' || isExternal(u)) { ui.report('擋下彈出視窗', isExternal(u) ? u : null); return null; }
+            if (!u || u === 'about:blank' || isAdTarget(u)) { ui.report('擋下彈出視窗', u ? unwrap(u) : null); return null; }
             if (isDangerous(u)) { ui.report('擋下危險檔案下載', null); return null; }
             return ui.realOpen.call(PW, url, ...rest);
           };
@@ -487,11 +502,25 @@
           if (isDangerous(href)) {
             e.preventDefault(); e.stopImmediatePropagation();
             ui.report('擋下危險檔案下載：' + href.split('/').pop().split('?')[0], null);
-          } else if (isExternal(href) && a.target === '_blank') {
+          } else if ((a.target === '_blank' && isAdTarget(href)) || isAd(href)) {
             e.preventDefault(); e.stopImmediatePropagation();
-            ui.report('擋下廣告連結（會開新分頁到別的網站）', href);
+            ui.report('擋下廣告連結（會開新分頁到別的網站）', unwrap(href));
           }
         }, true);
+
+        // 2b. 「看不見的連結，用程式自己點一下」開彈窗的招數
+        try {
+          const realClick = PW.HTMLAnchorElement.prototype.click;
+          PW.HTMLAnchorElement.prototype.click = function () {
+            const href = this.href || '';
+            if (!this.closest('.vh-ui') && !href.startsWith('blob:') &&
+                ((this.target === '_blank' && isAdTarget(href)) || isAd(href))) {
+              ui.report('擋下隱藏的彈窗連結', unwrap(href));
+              return;
+            }
+            return realClick.call(this);
+          };
+        } catch (e) {}
 
         // 3. 擋自動跳轉
         try {
@@ -500,7 +529,7 @@
             const url = e.destination && e.destination.url;
             if (!url || !e.cancelable) return;
             if (isDangerous(url)) { e.preventDefault(); ui.report('擋下危險檔案下載', null); }
-            else if (!e.userInitiated && isExternal(url)) { e.preventDefault(); ui.report('擋下自動跳轉', url); }
+            else if (isAd(url) || (!e.userInitiated && isAdTarget(url))) { e.preventDefault(); ui.report('擋下自動跳轉', unwrap(url)); }
           });
         } catch (e) {}
 
