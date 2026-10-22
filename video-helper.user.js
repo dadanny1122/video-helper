@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      2.3.1
+// @version      2.4.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -221,11 +221,14 @@
         let h; try { h = new URL(e.name).hostname; } catch (err) { continue; }
         const b = baseOf(h);
         if (b === HOME) continue;
-        stat[b] = stat[b] || { n: 0, blocked: 0 };
+        stat[b] = stat[b] || { n: 0, blocked: 0, how: {} };
         stat[b].n++;
+        const how = { img: '圖片', script: '程式', xmlhttprequest: '資料', fetch: '資料', beacon: '追蹤',
+          iframe: '框框', video: '影片', audio: '聲音', css: 'CSS', link: '預先載入', other: '其他' }[e.initiatorType] || e.initiatorType;
+        stat[b].how[how] = 1;
       }
       for (const [b, n] of Object.entries(this.blockedHosts)) {
-        stat[b] = stat[b] || { n: 0, blocked: 0 };
+        stat[b] = stat[b] || { n: 0, blocked: 0, how: {} };
         stat[b].blocked += n;
       }
       const rows = Object.entries(stat).sort((a, b) => (b[1].n + b[1].blocked) - (a[1].n + a[1].blocked));
@@ -250,7 +253,9 @@
         name.textContent = b;
         const info = document.createElement('div');
         info.style.cssText = 'font-size:11px;opacity:.75;white-space:nowrap;';
-        info.textContent = (st.blocked ? `擋 ${st.blocked}` : '') + (st.blocked && st.n ? '｜' : '') + (st.n ? `載入 ${st.n}` : '');
+        const hows = Object.keys(st.how).join('、');
+        info.textContent = (st.blocked ? `擋 ${st.blocked}` : '') + (st.blocked && st.n ? '｜' : '') +
+          (st.n ? `載入 ${st.n}${hows ? '（' + hows + '）' : ''}` : '');
         const btn = document.createElement('span');
         btn.style.cssText = 'cursor:pointer;padding:2px 8px;border-radius:4px;font-size:12px;white-space:nowrap;';
         if (builtIn) {
@@ -477,47 +482,83 @@
           isAd(url) || (tag === 'IFRAME' && strictFrames && isExternal(url) && !KEEP.test(url));
 
         // 1. 網頁程式設定廣告網址的那一刻就攔下（這時候還沒開始下載）
-        const TAGS = ['IFRAME', 'SCRIPT', 'IMG'];
-        try {
-          for (const [Ctor, tag] of [[PW.HTMLIFrameElement, 'IFRAME'], [PW.HTMLScriptElement, 'SCRIPT'], [PW.HTMLImageElement, 'IMG']]) {
-            const d = Object.getOwnPropertyDescriptor(Ctor.prototype, 'src');
-            Object.defineProperty(Ctor.prototype, 'src', {
+        const TAGS = ['IFRAME', 'SCRIPT', 'IMG', 'VIDEO', 'AUDIO', 'SOURCE', 'EMBED'];
+        const srcsetIsAd = v => String(v).split(',').some(part => isAd(part.trim().split(/\s+/)[0]));
+        const hookProp = (Ctor, prop, test) => {
+          try {
+            const d = Object.getOwnPropertyDescriptor(Ctor.prototype, prop);
+            if (!d || !d.set) return;
+            Object.defineProperty(Ctor.prototype, prop, {
               get: d.get, configurable: true, enumerable: d.enumerable,
-              set(v) { if (shouldBlock(tag, String(v))) { saved(String(v)); return; } d.set.call(this, v); },
+              set(v) { if (test(this, String(v))) { saved(String(v)); return; } d.set.call(this, v); },
             });
-          }
+          } catch (e) {}
+        };
+        hookProp(PW.HTMLIFrameElement, 'src', (el, v) => shouldBlock('IFRAME', v));
+        hookProp(PW.HTMLScriptElement, 'src', (el, v) => shouldBlock('SCRIPT', v));
+        hookProp(PW.HTMLImageElement, 'src', (el, v) => isAd(v));
+        hookProp(PW.HTMLImageElement, 'srcset', (el, v) => srcsetIsAd(v));
+        hookProp(PW.HTMLMediaElement, 'src', (el, v) => isAd(v));     // 影片前廣告常從這裡來
+        hookProp(PW.HTMLSourceElement, 'src', (el, v) => isAd(v));
+        hookProp(PW.HTMLSourceElement, 'srcset', (el, v) => srcsetIsAd(v));
+        try {
           const realSetAttr = PW.Element.prototype.setAttribute;
           PW.Element.prototype.setAttribute = function (name, value) {
-            if (String(name).toLowerCase() === 'src' && TAGS.includes(this.tagName) && shouldBlock(this.tagName, String(value))) {
+            const n = String(name).toLowerCase();
+            if (TAGS.includes(this.tagName) &&
+                ((n === 'src' && shouldBlock(this.tagName, String(value))) || (n === 'srcset' && srcsetIsAd(value)))) {
               saved(String(value)); return;
             }
             return realSetAttr.call(this, name, value);
           };
         } catch (e) {}
 
+        // 1b. 網頁程式一次塞一整段 HTML 進來：先把裡面的廣告網址拿掉
+        const AD_ATTR = /\s(src|srcset|data-src)\s*=\s*(["'])([^"']*)\2/gi;
+        const cleanHtml = html => {
+          if (typeof html !== 'string' || html.length > 500000) return html;
+          return html.replace(AD_ATTR, (all, attr, q, url) => {
+            if (url.split(',').some(part => isAd(part.trim().split(/\s+/)[0]))) { saved(url); return ''; }
+            return all;
+          });
+        };
+        try {
+          const d = Object.getOwnPropertyDescriptor(PW.Element.prototype, 'innerHTML');
+          Object.defineProperty(PW.Element.prototype, 'innerHTML', {
+            get: d.get, configurable: true, enumerable: d.enumerable,
+            set(v) { d.set.call(this, cleanHtml(v)); },
+          });
+          const realIAH = PW.Element.prototype.insertAdjacentHTML;
+          PW.Element.prototype.insertAdjacentHTML = function (pos, html) { return realIAH.call(this, pos, cleanHtml(html)); };
+          const realWrite = PW.document.write;
+          PW.document.write = function (...a) { return realWrite.apply(this, a.map(cleanHtml)); };
+        } catch (e) {}
+
         // 2. 網頁原始碼裡直接寫的廣告元素：一出現就拔掉
         const checkOne = el => {
           if (!el || el.nodeType !== 1 || el.closest && el.closest('.vh-ui')) return;
           const tag = el.tagName;
-          if (tag !== 'SCRIPT' && tag !== 'IFRAME' && tag !== 'IMG') return;
+          if (!TAGS.includes(tag)) return;
           const url = el.getAttribute('src') || '';
-          if (!url || !shouldBlock(tag, url)) return;
+          const set = el.getAttribute('srcset') || '';
+          if (!(url && shouldBlock(tag, url)) && !(set && srcsetIsAd(set))) return;
           if (tag === 'SCRIPT') el.type = 'javascript/blocked';   // 不讓它執行
           el.removeAttribute('src');
+          el.removeAttribute('srcset');
           el.remove();
-          saved(url);
+          saved(url || set);
         };
         const observer = new MutationObserver(muts => {
           for (const m of muts) {
             if (m.type === 'attributes') { checkOne(m.target); continue; }
             for (const n of m.addedNodes) {
               checkOne(n);
-              if (n.querySelectorAll) n.querySelectorAll('script[src], iframe[src], img[src]').forEach(checkOne);
+              if (n.querySelectorAll) n.querySelectorAll('script[src], iframe[src], img[src], img[srcset], video[src], audio[src], source, embed[src]').forEach(checkOne);
             }
           }
         });
         observer.observe(document.documentElement || document, {
-          childList: true, subtree: true, attributes: true, attributeFilter: ['src'],
+          childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset'],
         });
 
         // 3. 網頁程式偷偷跟廣告伺服器要資料：直接回空的
