@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      2.1.0
+// @version      2.2.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -77,9 +77,14 @@
   ];
   const AD_RE = new RegExp('(^|\\.)(' + AD_DOMAINS.map(d => d.replace(/\./g, '\\.')).join('|') + ')$');
 
+  // 使用者自己封鎖的網域（個人黑名單）
+  const userBlock = new Set(store.get('userBlock', []));
+
   function isAd(url) {
-    try { return AD_RE.test(new URL(url, location.href).hostname); }
-    catch (e) { return false; }
+    try {
+      const h = new URL(url, location.href).hostname;
+      return AD_RE.test(h) || userBlock.has(baseOf(h));
+    } catch (e) { return false; }
   }
 
   // ---- 格式化 ----
@@ -177,7 +182,7 @@
 
   // ---- 左下角盾牌 + 提示 ----
   const ui = {
-    count: 0, saved: 0, shield: null, toasts: null, pending: [], realOpen: null,
+    count: 0, saved: 0, blockedHosts: {}, shield: null, toasts: null, pending: [], realOpen: null,
 
     report(msg, url) {
       this.count++;
@@ -191,7 +196,9 @@
         this.shield = document.createElement('div');
         this.shield.className = 'vh-ui';
         this.shield.style.cssText = 'position:fixed;bottom:20px;left:20px;z-index:2147483647;background:rgba(0,120,60,.9);' +
-          'color:#fff;padding:6px 12px;border-radius:16px;font:bold 13px sans-serif;';
+          'color:#fff;padding:6px 12px;border-radius:16px;font:bold 13px sans-serif;cursor:pointer;';
+        this.shield.title = '點一下：查看這頁連到的其他網站';
+        this.shield.addEventListener('click', () => this.openPanel());
         this.toasts = document.createElement('div');
         this.toasts.className = 'vh-ui';
         this.toasts.style.cssText = 'position:fixed;bottom:60px;left:20px;z-index:2147483647;display:flex;' +
@@ -200,6 +207,84 @@
       }
       this.shield.textContent = `🛡 已攔截 ${this.count} 次` + (this.saved ? `｜省下 ${this.saved} 個廣告請求` : '');
       while (this.pending.length) this.toast(...this.pending.shift());
+    },
+
+    // ---- 收集器：列出這頁連到的其他網站 ----
+    openPanel() {
+      if (this.panel) { this.panel.remove(); this.panel = null; return; }
+
+      // 統計每個網域連了幾次（實際載入的 + 被擋的）
+      const stat = {};
+      for (const e of performance.getEntriesByType('resource')) {
+        let h; try { h = new URL(e.name).hostname; } catch (err) { continue; }
+        const b = baseOf(h);
+        if (b === HOME) continue;
+        stat[b] = stat[b] || { n: 0, blocked: 0 };
+        stat[b].n++;
+      }
+      for (const [b, n] of Object.entries(this.blockedHosts)) {
+        stat[b] = stat[b] || { n: 0, blocked: 0 };
+        stat[b].blocked += n;
+      }
+      const rows = Object.entries(stat).sort((a, b) => (b[1].n + b[1].blocked) - (a[1].n + a[1].blocked));
+
+      const p = this.panel = document.createElement('div');
+      p.className = 'vh-ui';
+      p.style.cssText = 'position:fixed;bottom:60px;left:20px;z-index:2147483647;background:rgba(20,20,20,.97);color:#fff;' +
+        'padding:12px 14px;border-radius:10px;font:13px/1.6 sans-serif;width:380px;max-height:70vh;overflow-y:auto;' +
+        'box-shadow:0 2px 12px rgba(0,0,0,.5);';
+      p.innerHTML = '<b>這頁連到的其他網站</b><div style="opacity:.7;font-size:12px">' +
+        '影片和圖片常放在網站自己的另一個網域（例如 phncdn.com），封鎖前先確認不是它</div>';
+
+      if (!rows.length) p.insertAdjacentHTML('beforeend', '<div style="margin-top:8px">目前沒有</div>');
+
+      for (const [b, st] of rows) {
+        const builtIn = AD_RE.test(b);
+        const mine = userBlock.has(b);
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:6px;padding:4px 8px;background:#333;border-radius:6px;';
+        const name = document.createElement('div');
+        name.style.cssText = 'flex:1;word-break:break-all;';
+        name.textContent = b;
+        const info = document.createElement('div');
+        info.style.cssText = 'font-size:11px;opacity:.75;white-space:nowrap;';
+        info.textContent = (st.blocked ? `擋 ${st.blocked}` : '') + (st.blocked && st.n ? '｜' : '') + (st.n ? `載入 ${st.n}` : '');
+        const btn = document.createElement('span');
+        btn.style.cssText = 'cursor:pointer;padding:2px 8px;border-radius:4px;font-size:12px;white-space:nowrap;';
+        if (builtIn) {
+          btn.textContent = '內建已擋';
+          btn.style.background = '#2e7d32';
+          btn.style.cursor = 'default';
+        } else {
+          btn.textContent = mine ? '解除封鎖' : '封鎖';
+          btn.style.background = mine ? '#555' : '#c62828';
+          btn.addEventListener('click', () => {
+            if (userBlock.has(b)) userBlock.delete(b); else userBlock.add(b);
+            store.set('userBlock', [...userBlock]);
+            btn.textContent = userBlock.has(b) ? '解除封鎖' : '封鎖';
+            btn.style.background = userBlock.has(b) ? '#555' : '#c62828';
+          });
+        }
+        row.append(name, info, btn);
+        p.appendChild(row);
+      }
+
+      const foot = document.createElement('div');
+      foot.style.cssText = 'margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
+      const copy = document.createElement('span');
+      copy.textContent = '📋 複製我的黑名單';
+      copy.style.cssText = 'cursor:pointer;background:#1565c0;padding:3px 10px;border-radius:4px;';
+      copy.addEventListener('click', () => {
+        const text = [...userBlock].join('\n') || '（黑名單是空的）';
+        navigator.clipboard.writeText(text).then(() => { copy.textContent = '✅ 已複製'; }, () => { prompt('複製下面的內容：', text); });
+      });
+      const note = document.createElement('div');
+      note.style.cssText = 'font-size:12px;opacity:.7;width:100%;';
+      note.textContent = `我的黑名單：${userBlock.size} 個網域｜封鎖後重新整理網頁生效`;
+      foot.append(copy, note);
+      p.appendChild(foot);
+
+      document.body.appendChild(p);
     },
 
     toast(msg, url) {
@@ -380,7 +465,8 @@
         const strictFrames = site.features.includes('hideAds');
         const KEEP = /(google\.com\/recaptcha|recaptcha\.net|hcaptcha\.com|challenges\.cloudflare\.com)/;
         let pendingUpdate = false;
-        const saved = () => {
+        const saved = url => {
+          try { const b = baseOf(new URL(url, location.href).hostname); ui.blockedHosts[b] = (ui.blockedHosts[b] || 0) + 1; } catch (e) {}
           ui.saved++;
           if (!pendingUpdate) { pendingUpdate = true; setTimeout(() => { pendingUpdate = false; ui.flush(); }, 500); }
         };
@@ -395,13 +481,13 @@
             const d = Object.getOwnPropertyDescriptor(Ctor.prototype, 'src');
             Object.defineProperty(Ctor.prototype, 'src', {
               get: d.get, configurable: true, enumerable: d.enumerable,
-              set(v) { if (shouldBlock(tag, String(v))) { saved(); return; } d.set.call(this, v); },
+              set(v) { if (shouldBlock(tag, String(v))) { saved(String(v)); return; } d.set.call(this, v); },
             });
           }
           const realSetAttr = PW.Element.prototype.setAttribute;
           PW.Element.prototype.setAttribute = function (name, value) {
             if (String(name).toLowerCase() === 'src' && TAGS.includes(this.tagName) && shouldBlock(this.tagName, String(value))) {
-              saved(); return;
+              saved(String(value)); return;
             }
             return realSetAttr.call(this, name, value);
           };
@@ -417,7 +503,7 @@
           if (tag === 'SCRIPT') el.type = 'javascript/blocked';   // 不讓它執行
           el.removeAttribute('src');
           el.remove();
-          saved();
+          saved(url);
         };
         const observer = new MutationObserver(muts => {
           for (const m of muts) {
@@ -437,7 +523,7 @@
           const realFetch = PW.fetch;
           PW.fetch = function (input, ...rest) {
             const url = typeof input === 'string' ? input : (input && input.url) || '';
-            if (isAd(url)) { saved(); return Promise.reject(new TypeError('blocked by Video Helper')); }
+            if (isAd(url)) { saved(url); return Promise.reject(new TypeError('blocked by Video Helper')); }
             return realFetch.call(this, input, ...rest);
           };
         } catch (e) {}
@@ -445,14 +531,14 @@
           const proto = PW.XMLHttpRequest.prototype;
           const realOpen = proto.open;
           proto.open = function (method, url, ...rest) {
-            if (isAd(String(url))) { saved(); return realOpen.call(this, 'GET', 'data:,', ...rest); }
+            if (isAd(String(url))) { saved(String(url)); return realOpen.call(this, 'GET', 'data:,', ...rest); }
             return realOpen.call(this, method, url, ...rest);
           };
         } catch (e) {}
         try {
           const realBeacon = PW.navigator.sendBeacon;
           PW.navigator.sendBeacon = function (url, ...rest) {
-            if (isAd(String(url))) { saved(); return true; }
+            if (isAd(String(url))) { saved(String(url)); return true; }
             return realBeacon.call(this, url, ...rest);
           };
         } catch (e) {}
@@ -890,6 +976,10 @@
         });
       }
     } catch (e) {}
+  }
+
+  if (IS_TOP) {
+    try { GM_registerMenuCommand('📋 查看這頁連到的其他網站（封鎖廣告）', () => { ui.flush(); ui.openPanel(); }); } catch (e) {}
   }
 
   // 要早啟動的（安全防護）
