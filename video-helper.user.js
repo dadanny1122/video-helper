@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      2.3.0
+// @version      2.3.1
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -18,6 +18,7 @@
 // @grant        unsafeWindow
 // @connect      *
 // @run-at       document-start
+// @inject-into  page
 // @updateURL    https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js
 // @downloadURL  https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js
 // ==/UserScript==
@@ -1008,6 +1009,8 @@
         const report = {
           version: GM_info && GM_info.script && GM_info.script.version,
           manager: GM_info && GM_info.scriptHandler,
+          injectInto: GM_info && GM_info.injectInto,
+          pageHooked: PW.fetch !== undefined && !/native code/.test(String(PW.fetch)),
           site: site.name, page: location.href.split('?')[0],
           features: active,
           videos: Object.values(diag.videos),
