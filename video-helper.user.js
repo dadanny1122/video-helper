@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      1.0.0
-// @description  自動略過廣告、載入時間評估、一鍵下載
+// @version      1.1.0
+// @description  安全防護（擋彈窗、跳轉、危險下載）、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
 // @match        *://*.xvideos.com/*
@@ -10,11 +10,140 @@
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
 // @connect      *
+// @run-at       document-start
 // @updateURL    https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js
 // @downloadURL  https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js
 // ==/UserScript==
 
 (function () {
+  /* ========== 第零部分：安全防護 ========== */
+  // 網頁一開始就啟動，比廣告程式早一步
+
+  const PW = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+  const baseOf = h => h.split('.').slice(-2).join('.');
+  const HOME = baseOf(location.hostname);
+  const DANGER_EXT = /\.(exe|msi|apk|bat|cmd|scr|vbs|ps1|jar|dmg|pkg|com)$/i;
+
+  // 是不是別的網站
+  function isExternal(url) {
+    try {
+      const u = new URL(url, location.href);
+      return /^https?:$/.test(u.protocol) && baseOf(u.hostname) !== HOME;
+    } catch (e) { return false; }
+  }
+
+  // 是不是危險的安裝檔
+  function isDangerous(url) {
+    try { return DANGER_EXT.test(new URL(url, location.href).pathname); }
+    catch (e) { return false; }
+  }
+
+  // 假的跳過按鈕：按下去會帶你去別的網站或下載檔案
+  function isFakeButton(el) {
+    const a = el.closest('a[href]');
+    return !!(a && (isExternal(a.href) || isDangerous(a.href)));
+  }
+
+  // ---- 左下角的盾牌和提示 ----
+  let blockedCount = 0, shield = null, toastBox = null, realOpen = null;
+  const pending = [];
+
+  function report(msg, url) {
+    blockedCount++;
+    pending.push([msg, url]);
+    flushUI();
+  }
+
+  function flushUI() {
+    if (!document.body) return;
+    if (!shield) {
+      shield = document.createElement('div');
+      shield.className = 'lte-ui';
+      shield.style.cssText = 'position:fixed;bottom:20px;left:20px;z-index:999999;background:rgba(0,120,60,.9);' +
+        'color:#fff;padding:6px 12px;border-radius:16px;font:bold 13px sans-serif;';
+      toastBox = document.createElement('div');
+      toastBox.className = 'lte-ui';
+      toastBox.style.cssText = 'position:fixed;bottom:60px;left:20px;z-index:999999;display:flex;' +
+        'flex-direction:column-reverse;gap:6px;max-width:360px;';
+      document.body.append(shield, toastBox);
+    }
+    shield.textContent = `🛡 已攔截 ${blockedCount} 次`;
+    while (pending.length) showToast(...pending.shift());
+  }
+
+  function showToast(msg, url) {
+    const t = document.createElement('div');
+    t.style.cssText = 'background:rgba(20,20,20,.95);color:#fff;padding:8px 12px;border-radius:8px;' +
+      'font:13px/1.5 sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.4);word-break:break-all;';
+    const line = document.createElement('div');
+    line.textContent = '🛡 ' + msg;
+    t.appendChild(line);
+    if (url) {
+      const host = document.createElement('div');
+      host.style.cssText = 'opacity:.7;font-size:12px;';
+      try { host.textContent = new URL(url, location.href).hostname; } catch (e) {}
+      t.appendChild(host);
+      const go = document.createElement('span');
+      go.textContent = '我確定要開啟';
+      go.style.cssText = 'color:#8cf;text-decoration:underline;cursor:pointer;font-size:12px;';
+      go.addEventListener('click', () => { t.remove(); if (realOpen) realOpen.call(PW, url, '_blank', 'noopener'); });
+      t.appendChild(go);
+    }
+    toastBox.appendChild(t);
+    setTimeout(() => t.remove(), 7000);
+  }
+
+  document.addEventListener('DOMContentLoaded', flushUI);
+
+  // 1. 擋彈出視窗、偷開新分頁
+  try {
+    realOpen = PW.open;
+    PW.open = function (url, ...rest) {
+      const u = url ? String(url) : '';
+      if (!u || u === 'about:blank' || isExternal(u)) { report('擋下彈出視窗', isExternal(u) ? u : null); return null; }
+      if (isDangerous(u)) { report('擋下危險檔案下載', null); return null; }
+      return realOpen.call(PW, url, ...rest);
+    };
+  } catch (e) {}
+
+  // 2. 擋廣告連結和危險檔案（在網站的程式之前先檢查每次點擊）
+  document.addEventListener('click', e => {
+    const a = e.target && e.target.closest && e.target.closest('a[href]');
+    if (!a || a.closest('.lte-ui')) return;
+    const href = a.href;
+    if (isDangerous(href)) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      report('擋下危險檔案下載：' + href.split('/').pop().split('?')[0], null);
+    } else if (isExternal(href) && a.target === '_blank') {
+      e.preventDefault(); e.stopImmediatePropagation();
+      report('擋下廣告連結（會開新分頁到別的網站）', href);
+    }
+  }, true);
+
+  // 3. 擋自動跳轉：不是你點的、卻要把你帶去別的網站
+  try {
+    const nav = PW.navigation;
+    if (nav) nav.addEventListener('navigate', e => {
+      const url = e.destination && e.destination.url;
+      if (!url || !e.cancelable) return;
+      if (isDangerous(url)) { e.preventDefault(); report('擋下危險檔案下載', null); }
+      else if (!e.userInitiated && isExternal(url)) { e.preventDefault(); report('擋下自動跳轉', url); }
+    });
+  } catch (e) {}
+
+  // 4. 擋「允許通知」請求
+  try {
+    if (PW.Notification) {
+      PW.Notification.requestPermission = function () {
+        report('擋下通知權限請求', null);
+        return Promise.resolve('denied');
+      };
+    }
+  } catch (e) {}
+
+  /* ========== 網頁載入完成後才啟動的功能 ========== */
+
+  function main() {
   let adShowing = false;
 
   /* ========== 第一部分：自動略過廣告 ========== */
@@ -35,7 +164,7 @@
       if (el.closest('.lte-ui')) continue;
       const text = (el.innerText || '').trim().toLowerCase();
       if (!text || text.length > 15) continue;
-      if (skipWords.some(w => text.includes(w)) && !/\d/.test(text)) realClick(el);
+      if (skipWords.some(w => text.includes(w)) && !/\d/.test(text) && !isFakeButton(el)) realClick(el);
       if (el.children.length === 0 && adTexts.includes(text)) found = true;
     }
     adShowing = found;
@@ -516,4 +645,8 @@
     }
     if (src && src.list.length) buildDownloadUI(src);
   })();
+  }
+
+  if (document.body) main();
+  else document.addEventListener('DOMContentLoaded', main);
 })();
