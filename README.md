@@ -9,6 +9,10 @@
 - 列表頁顯示預估載入時間
 - 一鍵下載：選擇畫質、顯示檔案大小與預估時間後再下載（不支援加密影片）
 
+## 支援網站
+- Pornhub、XVideos：全部功能
+- Jable、MissAV：只開安全防護
+
 ## 安裝
 1. 安裝瀏覽器擴充功能 [Violentmonkey](https://violentmonkey.github.io/)（或 Tampermonkey）
 2. 點這裡安裝腳本：[video-helper.user.js](https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js)

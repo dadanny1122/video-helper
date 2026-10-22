@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      1.1.0
+// @version      1.2.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
 // @match        *://*.xvideos.com/*
+// @match        *://*.jable.tv/*
+// @include      /^https?:\/\/([^\/]*\.)?missav[^\/]*\//
 // @grant        GM_download
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
@@ -22,6 +24,9 @@
   const PW = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
   const baseOf = h => h.split('.').slice(-2).join('.');
   const HOME = baseOf(location.hostname);
+  const IS_TOP = window.top === window.self;
+  // 這些網站只開安全防護（不下載、不自動按跳過）
+  const SECURITY_ONLY = /(^|\.)jable\.tv$/.test(location.hostname) || /(^|\.)missav/.test(location.hostname);
   const DANGER_EXT = /\.(exe|msi|apk|bat|cmd|scr|vbs|ps1|jar|dmg|pkg|com)$/i;
 
   // 是不是別的網站
@@ -55,7 +60,7 @@
   }
 
   function flushUI() {
-    if (!document.body) return;
+    if (!document.body || !IS_TOP) return;   // 廣告框框裡只擋、不顯示
     if (!shield) {
       shield = document.createElement('div');
       shield.className = 'lte-ui';
@@ -144,6 +149,7 @@
   /* ========== 網頁載入完成後才啟動的功能 ========== */
 
   function main() {
+  if (!IS_TOP || SECURITY_ONLY) return;
   let adShowing = false;
 
   /* ========== 第一部分：自動略過廣告 ========== */
