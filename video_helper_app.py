@@ -1,6 +1,7 @@
 """
 Video Helper 電腦版
-貼上影片網址 → 選畫質 → 看大小與預估時間 → 確認 → 下載到「下載」資料夾
+分頁 1「安裝擋廣告」：一步一步帶使用者在 Chrome 裝好暴力猴和 Video Helper 腳本
+分頁 2「下載影片」：貼上影片網址 → 選畫質 → 看大小與預估時間 → 確認 → 下載到「下載」資料夾
 
 執行前先安裝：
     pip install yt-dlp imageio-ffmpeg
@@ -30,9 +31,27 @@ except Exception:
     FFMPEG = None
 
 DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 REPO = "dadanny1122/video-helper"
 CONFIG = os.path.join(os.path.expanduser("~"), ".video_helper.json")
+
+# 安裝精靈用到的網址
+VM_ID = "jinjaccalgkegednnccohejagnlnfdag"   # 暴力猴在 Chrome 商店的編號
+URL_VM_STORE = f"https://chromewebstore.google.com/detail/{VM_ID}"
+URL_VM_SETTINGS = f"chrome://extensions/?id={VM_ID}"
+URL_SCRIPT = f"https://raw.githubusercontent.com/{REPO}/main/video-helper.user.js"
+
+
+def find_chrome():
+    """找出電腦上 Chrome 的位置，找不到回傳 None"""
+    cands = []
+    for env in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+        base = os.environ.get(env)
+        if base:
+            cands.append(os.path.join(base, "Google", "Chrome", "Application", "chrome.exe"))
+    cands += ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+              "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable"]
+    return next((c for c in cands if os.path.exists(c)), None)
 
 
 # ---------- 小工具 ----------
@@ -160,14 +179,22 @@ class App:
         self.speed_src = "上次實測" if self.mbps else ""
         self.busy = False
 
-        root.title(f"Video Helper 電腦版 v{VERSION}")
-        root.geometry("640x460")
-        root.minsize(560, 400)
+        root.title(f"Video Helper v{VERSION}")
+        root.geometry("660x500")
+        root.minsize(580, 440)
 
         pad = {"padx": 10, "pady": 6}
 
+        nb = ttk.Notebook(root)
+        nb.pack(fill="both", expand=True)
+        setup = ttk.Frame(nb)
+        dl = ttk.Frame(nb)
+        nb.add(setup, text="  ① 安裝擋廣告（第一次用）  ")
+        nb.add(dl, text="  ② 下載影片  ")
+        self.build_setup(setup)
+
         # 網址列
-        top = ttk.Frame(root)
+        top = ttk.Frame(dl)
         top.pack(fill="x", **pad)
         ttk.Label(top, text="影片網址：").pack(side="left")
         self.url_var = tk.StringVar()
@@ -177,12 +204,12 @@ class App:
         self.btn_read = ttk.Button(top, text="讀取", command=self.analyze)
         self.btn_read.pack(side="left")
 
-        self.title_lbl = ttk.Label(root, text="貼上網址後按「讀取」", wraplength=600)
+        self.title_lbl = ttk.Label(dl, text="貼上網址後按「讀取」", wraplength=600)
         self.title_lbl.pack(fill="x", **pad)
 
         # 畫質清單
         cols = ("quality", "size", "time", "type")
-        self.tree = ttk.Treeview(root, columns=cols, show="headings", height=8, selectmode="browse")
+        self.tree = ttk.Treeview(dl, columns=cols, show="headings", height=8, selectmode="browse")
         for c, name, w in zip(cols, ("畫質", "檔案大小", "預估下載時間", "類型"), (100, 140, 160, 120)):
             self.tree.heading(c, text=name)
             self.tree.column(c, width=w, anchor="center")
@@ -190,7 +217,7 @@ class App:
         self.tree.bind("<Double-1>", lambda e: self.download())
 
         # 網速 + 按鈕
-        mid = ttk.Frame(root)
+        mid = ttk.Frame(dl)
         mid.pack(fill="x", **pad)
         self.speed_lbl = ttk.Label(mid, text="網速：尚未量測")
         self.speed_lbl.pack(side="left")
@@ -199,13 +226,70 @@ class App:
         self.btn_dl.pack(side="right", padx=6)
 
         # 進度
-        self.prog = ttk.Progressbar(root, maximum=100)
+        self.prog = ttk.Progressbar(dl, maximum=100)
         self.prog.pack(fill="x", **pad)
-        self.status = ttk.Label(root, text="" if FFMPEG else "⚠ 找不到 ffmpeg，部分影片可能無法轉成 MP4")
+        self.status = ttk.Label(dl, text="" if FFMPEG else "⚠ 找不到 ffmpeg，部分影片可能無法轉成 MP4")
         self.status.pack(fill="x", **pad)
 
         self.poll()
         threading.Thread(target=check_update, args=(self.q,), daemon=True).start()
+
+    # ----- 安裝精靈 -----
+
+    def build_setup(self, parent):
+        self.chrome = find_chrome()
+        f = ttk.Frame(parent, padding=16)
+        f.pack(fill="both", expand=True)
+
+        ttk.Label(f, text="在 Chrome 裝好擋廣告（約 2 分鐘，只要做一次）",
+                  font=("", 13, "bold")).pack(anchor="w")
+        ttk.Label(f, text="照順序按下面 3 個按鈕，每個都會在 Chrome 打開正確的頁面。",
+                  foreground="#555").pack(anchor="w", pady=(2, 12))
+
+        steps = [
+            ("1", "安裝暴力猴（Violentmonkey）",
+             "打開後按「加到 Chrome」→「新增擴充功能」", URL_VM_STORE),
+            ("2", "打開暴力猴的必要設定",
+             "把「允許使用者指令碼」打開；\n有用無痕視窗的話，「在無痕模式下允許」也打開", URL_VM_SETTINGS),
+            ("3", "安裝 Video Helper 腳本",
+             "打開後按「安裝」，之後有新版本會自動更新", URL_SCRIPT),
+        ]
+        self.step_marks = []
+        for num, title, hint, url in steps:
+            box = ttk.Frame(f, padding=(0, 6))
+            box.pack(fill="x")
+            ttk.Label(box, text=num, font=("", 18, "bold"), width=2).pack(side="left", anchor="n")
+            txt = ttk.Frame(box)
+            txt.pack(side="left", fill="x", expand=True)
+            ttk.Label(txt, text=title, font=("", 11, "bold")).pack(anchor="w")
+            ttk.Label(txt, text=hint, foreground="#555", justify="left").pack(anchor="w")
+            mark = ttk.Label(box, text="", foreground="#2e7d32", width=4)
+            mark.pack(side="right")
+            ttk.Button(box, text="打開", command=lambda u=url, m=mark: self.open_in_chrome(u, m)).pack(side="right", padx=6)
+            self.step_marks.append(mark)
+
+        ttk.Separator(f).pack(fill="x", pady=12)
+        ttk.Label(f, text="✅ 完成後：打開影片網站，左下角出現綠色盾牌「🛡 已攔截 N 次」就成功了。",
+                  wraplength=600, justify="left").pack(anchor="w")
+        if not self.chrome:
+            ttk.Label(f, text="⚠ 找不到 Chrome，會改用預設瀏覽器打開。這個工具是為 Chrome 設計的。",
+                      foreground="#c62828", wraplength=600).pack(anchor="w", pady=(8, 0))
+
+    def open_in_chrome(self, url, mark):
+        # chrome:// 開頭的設定頁，只有 Chrome 自己打得開；同時複製網址當備案
+        if url.startswith("chrome://"):
+            self.root.clipboard_clear()
+            self.root.clipboard_append(url)
+        try:
+            if self.chrome:
+                subprocess.Popen([self.chrome, url])
+            else:
+                webbrowser.open(url)
+        except Exception:
+            webbrowser.open(url)
+        mark.config(text="✓")
+        if url.startswith("chrome://"):
+            messagebox.showinfo("提示", "如果 Chrome 沒有自動打開設定頁：\n在 Chrome 網址列按 Ctrl+V 貼上，再按 Enter。\n（網址已經幫你複製好了）")
 
     def on_update(self, data):
         tag, url = data

@@ -42,6 +42,10 @@ jobs:
         if: steps.chk.outputs.exists != '1'
         run: pip install yt-dlp imageio-ffmpeg pyinstaller
 
+      - name: Smoke test (open the window once on Windows)
+        if: steps.chk.outputs.exists != '1'
+        run: python -c "import tkinter as tk, video_helper_app as a; r=tk.Tk(); app=a.App(r); r.update(); assert len(app.step_marks)==3; r.destroy(); print('GUI_OK')"
+
       - name: Build exe
         if: steps.chk.outputs.exists != '1'
         run: pyinstaller --onefile --windowed --name VideoHelper --collect-all imageio_ffmpeg --collect-all yt_dlp video_helper_app.py

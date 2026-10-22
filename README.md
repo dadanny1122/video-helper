@@ -26,7 +26,9 @@
 ## 電腦版（下載工具）
 適合下載高畫質、大檔案，下載結果直接是 MP4。
 
-**一般使用者**：到 [Releases](https://github.com/dadanny1122/video-helper/releases/latest) 下載 `VideoHelper.exe`，雙擊執行即可。
+**一般使用者**：到 [Releases](https://github.com/dadanny1122/video-helper/releases/latest) 下載 `VideoHelper.exe`，雙擊執行。
+- 分頁 ①「安裝擋廣告」：照著按 3 個按鈕，就能在 Chrome 裝好暴力猴和腳本
+- 分頁 ②「下載影片」：貼網址、選畫質、下載成 MP4
 
 **用 Python 執行**：
 1. 安裝 Python 3
