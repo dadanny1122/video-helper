@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      2.7.0
+// @version      2.8.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -405,7 +405,9 @@
       findSources: findXvSources,
     },
     // 盜版轉貼站：只開防護和隱藏廣告
-    { name: 'Jable', match: /(^|\.)jable\.tv$/, features: ['security', 'saveData', 'hideAds'] },
+    // 不開下載：內容多為片商作品的轉載
+    { name: 'Jable', match: /(^|\.)jable\.tv$/,
+      features: ['security', 'saveData', 'hideAds', 'autoSkip', 'estimator', 'listLabels'] },
     // MissAV：按播放時會開 /pop?url=廣告商 的新分頁
     // 不開下載：內容多為片商作品的轉載
     { name: 'MissAV', match: /(^|\.)missav[^.]*\.[a-z]+$/, adPath: /^\/pop/,
