@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      2.4.0
+// @version      2.4.1
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -184,7 +184,7 @@
 
   // ---- 左下角盾牌 + 提示 ----
   const ui = {
-    count: 0, saved: 0, blockedHosts: {}, shield: null, toasts: null, pending: [], realOpen: null,
+    count: 0, saved: 0, blockedHosts: {}, actions: {}, shield: null, toasts: null, pending: [], realOpen: null,
 
     report(msg, url) {
       this.count++;
@@ -213,7 +213,11 @@
 
     // ---- 收集器：列出這頁連到的其他網站 ----
     openPanel() {
-      if (this.panel) { this.panel.remove(); this.panel = null; return; }
+      if (this.panel) {
+        const wasList = this.panel.dataset.kind === 'list';
+        this.panel.remove(); this.panel = null;
+        if (wasList) return;   // 再點一次盾牌 = 關閉清單
+      }
 
       // 統計每個網域連了幾次（實際載入的 + 被擋的）
       const stat = {};
@@ -235,6 +239,7 @@
 
       const p = this.panel = document.createElement('div');
       p.className = 'vh-ui';
+      p.dataset.kind = 'list';
       p.style.cssText = 'position:fixed;bottom:60px;left:20px;z-index:2147483647;background:rgba(20,20,20,.97);color:#fff;' +
         'padding:12px 14px;border-radius:10px;font:13px/1.6 sans-serif;width:380px;max-height:70vh;overflow-y:auto;' +
         'box-shadow:0 2px 12px rgba(0,0,0,.5);';
@@ -288,7 +293,16 @@
       const note = document.createElement('div');
       note.style.cssText = 'font-size:12px;opacity:.7;width:100%;';
       note.textContent = `我的黑名單：${userBlock.size} 個網域｜封鎖後重新整理網頁生效`;
-      foot.append(copy, note);
+      const mkBtn = (text, color, fn) => {
+        const b = document.createElement('span');
+        b.textContent = text;
+        b.style.cssText = `cursor:pointer;background:${color};padding:3px 10px;border-radius:4px;`;
+        b.addEventListener('click', fn);
+        return b;
+      };
+      const settingsBtn = mkBtn('⚙ 功能開關', '#555', () => this.actions.settings && this.actions.settings());
+      const diagBtn = mkBtn('🔧 診斷', '#6a1b9a', () => this.actions.diagnose && this.actions.diagnose());
+      foot.append(copy, settingsBtn, diagBtn, note);
       p.appendChild(foot);
 
       document.body.appendChild(p);
@@ -1021,6 +1035,38 @@
     } catch (e) {}
   }
 
+  // 網頁上的「功能開關」面板（不依賴暴力猴選單，手機也能用）
+  ui.actions.settings = () => {
+    if (ui.panel) { ui.panel.remove(); ui.panel = null; }
+    const p = ui.panel = document.createElement('div');
+    p.className = 'vh-ui';
+    p.style.cssText = 'position:fixed;bottom:60px;left:20px;z-index:2147483647;background:rgba(20,20,20,.97);color:#fff;' +
+      'padding:12px 14px;border-radius:10px;font:14px/1.8 sans-serif;width:360px;box-shadow:0 2px 12px rgba(0,0,0,.5);';
+    p.innerHTML = `<b>功能開關（${site.name}）</b><div style="opacity:.7;font-size:12px">改完會自動重新整理網頁</div>`;
+    for (const name of site.features) {
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;gap:8px;align-items:center;cursor:pointer;margin-top:4px;';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = isOn(name);
+      cb.addEventListener('change', () => {
+        settings[name] = cb.checked;
+        store.set('settings', settings);
+        location.reload();
+      });
+      const txt = document.createElement('span');
+      txt.textContent = MODULES[name].label;
+      row.append(cb, txt);
+      p.appendChild(row);
+    }
+    const close = document.createElement('div');
+    close.textContent = '關閉';
+    close.style.cssText = 'margin-top:8px;cursor:pointer;color:#8cf;text-decoration:underline;font-size:13px;';
+    close.addEventListener('click', () => { p.remove(); ui.panel = null; });
+    p.appendChild(close);
+    document.body.appendChild(p);
+  };
+
   if (IS_TOP) {
     try { GM_registerMenuCommand('📋 查看這頁連到的其他網站（封鎖廣告）', () => { ui.flush(); ui.openPanel(); }); } catch (e) {}
   }
@@ -1042,8 +1088,7 @@
     };
     setInterval(sample, 1000);
 
-    try {
-      GM_registerMenuCommand('🔧 診斷（複製給開發者）', () => {
+    ui.actions.diagnose = () => {
         sample();
         const fvKey = Object.keys(PW).find(k => k.startsWith('flashvars_'));
         const fv = fvKey ? PW[fvKey] : null;
@@ -1068,8 +1113,8 @@
         navigator.clipboard.writeText(text).then(
           () => alert('✅ 診斷資料已複製，直接貼給開發者就好'),
           () => prompt('請複製下面的內容：', text));
-      });
-    } catch (e) {}
+    };
+    try { GM_registerMenuCommand('🔧 診斷（複製給開發者）', ui.actions.diagnose); } catch (e) {}
   }
 
   // 要早啟動的（安全防護）
