@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Helper 練習場</title>
+<style>
+  :root { --bg:#14161a; --card:#1f232a; --text:#e8e8e8; --muted:#9aa0a6; --accent:#ff9800; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.7 system-ui, "Noto Sans TC", sans-serif; }
+  header { padding:16px 24px; border-bottom:1px solid #2c313a; }
+  header b { color:var(--accent); }
+  main { max-width:960px; margin:24px auto; padding:0 16px; }
+  .player { background:#000; border-radius:10px; overflow:hidden; }
+  video { width:100%; display:block; aspect-ratio:16/9; background:#000; }
+  h1 { font-size:22px; margin:16px 0 4px; }
+  .meta { color:var(--muted); font-size:14px; }
+  .card { background:var(--card); border-radius:10px; padding:12px 16px; margin-top:16px; font-size:14px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header><b>Video Helper</b> 練習場</header>
+<main>
+  <div class="player"><video id="player" controls playsinline></video></div>
+  <h1 id="title"></h1>
+  <div class="meta" id="meta"></div>
+  <div class="card">
+    這是給 Video Helper 開發練習用的頁面。影片是 Blender 基金會的開放授權動畫《Big Buck Bunny》（CC BY 3.0），
+    切片串流由 Mux 公開提供給開發者測試。
+  </div>
+</main>
+
+<!-- 跟一般影片網站一樣：影片設定寫在網頁裡的一個變數 -->
+<script>
+  var playerConfig = {
+    videoTitle: "Big Buck Bunny",
+    duration: 596,
+    sources: {
+      hls: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+    }
+  };
+</script>
+
+<!-- 播放器：用 hls.js 播放切片影片 -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
+<script>
+  document.getElementById('title').textContent = playerConfig.videoTitle;
+  document.getElementById('meta').textContent = '長度 ' + Math.floor(playerConfig.duration / 60) + ' 分 ' + (playerConfig.duration % 60) + ' 秒';
+  var video = document.getElementById('player');
+  if (window.Hls && Hls.isSupported()) {
+    var hls = new Hls();
+    hls.loadSource(playerConfig.sources.hls);
+    hls.attachMedia(video);
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = playerConfig.sources.hls;   // Safari 本身就能播
+  }
+</script>
+</body>
+</html>
