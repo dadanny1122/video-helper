@@ -42,9 +42,9 @@ jobs:
         if: steps.chk.outputs.exists != '1'
         run: pip install yt-dlp imageio-ffmpeg pyinstaller
 
-      - name: Smoke test (open the window once on Windows)
+      - name: Smoke test (window, tabs, history, bundled ffmpeg on Windows)
         if: steps.chk.outputs.exists != '1'
-        run: python -c "import tkinter as tk, video_helper_app as a; r=tk.Tk(); app=a.App(r); r.update(); assert len(app.step_marks)==3; r.destroy(); print('GUI_OK')"
+        run: python .github/ci_smoke.py
 
       - name: Build exe
         if: steps.chk.outputs.exists != '1'
