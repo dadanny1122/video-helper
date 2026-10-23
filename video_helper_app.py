@@ -10,6 +10,7 @@ Video Helper 電腦版
 
 執行前先安裝：
     pip install yt-dlp imageio-ffmpeg pystray pillow
+    （打包成 EXE 時不用 imageio-ffmpeg，改附 .github/ffmpeg/build.sh 編出來的迷你 ffmpeg）
 執行：
     python video_helper_app.py
 
@@ -45,15 +46,39 @@ try:                                        # 系統匣（沒裝的話就沒有�
 except Exception:
     pystray = None
 
-FFMPEG = os.environ.get("VIDEO_HELPER_FFMPEG")      # 測試時可以指定別的 ffmpeg
-if not FFMPEG:
+def find_ffmpeg():
+    """
+    找 ffmpeg（用來合併影像聲音、換成 MP4 包裝），依序：
+      1. 環境變數 VIDEO_HELPER_FFMPEG（測試用）
+      2. EXE 裡附的迷你版（只會接檔、換包裝，約 2 MB）
+      3. 原始碼資料夾旁邊的 ffmpeg_bin/
+      4. 有裝 imageio-ffmpeg 的話用它的（用 Python 直接執行時）
+      5. 電腦裡本來就有的 ffmpeg
+    """
+    env = os.environ.get("VIDEO_HELPER_FFMPEG")
+    if env:
+        return env
+    exe = "ffmpeg.exe" if sys.platform.startswith("win") else "ffmpeg"
+    here = os.path.dirname(os.path.abspath(__file__))
+    for base in (getattr(sys, "_MEIPASS", None), os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else None, here):
+        if not base:
+            continue
+        for sub in ("ffmpeg", "ffmpeg_bin"):
+            cand = os.path.join(base, sub, exe)
+            if os.path.isfile(cand):
+                return cand
     try:
         import imageio_ffmpeg
-        FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()       # 內建 ffmpeg，用來合併與轉成 MP4
+        return imageio_ffmpeg.get_ffmpeg_exe()
     except Exception:
-        FFMPEG = None
+        pass
+    import shutil
+    return shutil.which("ffmpeg")
 
-VERSION = "1.8.0"
+
+FFMPEG = find_ffmpeg()
+
+VERSION = "1.9.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -2134,7 +2159,40 @@ class App:
         self.speed_lbl.config(text="網速：尚未量測")
 
 
+def selftest(out_path):
+    """
+    VideoHelper.exe --selftest 結果.json
+    不開視窗，檢查打包進去的東西都能用（GitHub 打包後會實際執行一次）
+    """
+    r = {"version": VERSION, "frozen": bool(getattr(sys, "frozen", False)), "ffmpeg": FFMPEG}
+    ok = True
+    try:
+        run = lambda *a: subprocess.run([FFMPEG, "-hide_banner", *a], capture_output=True, text=True, timeout=30,
+                                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+        r["ffmpeg_version"] = run("-version").splitlines()[0]
+        bsfs, muxers = run("-bsfs"), run("-muxers")
+        r["has_aac_adtstoasc"] = "aac_adtstoasc" in bsfs
+        r["has_setts"] = "setts" in bsfs
+        r["has_mp4_muxer"] = " mp4 " in muxers
+        probe = os.path.join(os.path.dirname(FFMPEG), "ffprobe" + (".exe" if FFMPEG.endswith(".exe") else ""))
+        r["has_ffprobe"] = os.path.isfile(probe)
+        ok &= all(r[k] for k in ("has_aac_adtstoasc", "has_setts", "has_mp4_muxer", "has_ffprobe"))
+    except Exception as e:
+        r["ffmpeg_error"] = repr(e)
+        ok = False
+    r["yt_dlp"] = yt_dlp.version.__version__
+    r["tray"] = pystray is not None
+    ok &= r["tray"]
+    r["ok"] = bool(ok)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(r, f, ensure_ascii=False, indent=1)
+    return 0 if ok else 1
+
+
 if __name__ == "__main__":
+    if "--selftest" in sys.argv:
+        i = sys.argv.index("--selftest")
+        sys.exit(selftest(sys.argv[i + 1] if len(sys.argv) > i + 1 else "selftest.json"))
     root = tk.Tk()
     App(root)
     root.mainloop()

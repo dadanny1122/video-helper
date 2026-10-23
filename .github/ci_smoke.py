@@ -17,14 +17,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import tkinter as tk
 import video_helper_app as a
 
-# 1. 內建 ffmpeg：產生 2 秒測試影片，再換包裝一次
-assert a.FFMPEG and os.path.exists(a.FFMPEG), "找不到內建 ffmpeg"
+# 1. 迷你 ffmpeg：把 TS 切片換成 MP4（跟 yt-dlp 的修正步驟用一樣的參數），再用 ffprobe 確認內容
+assert a.FFMPEG and os.path.exists(a.FFMPEG), "找不到 ffmpeg"
+assert "ffmpeg_bin" in a.FFMPEG, f"用到的不是迷你 ffmpeg：{a.FFMPEG}"
 d = tempfile.mkdtemp()
-src, dst = os.path.join(d, "src.mp4"), os.path.join(d, "dst.mp4")
-subprocess.run([a.FFMPEG, "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240",
-                "-pix_fmt", "yuv420p", src], check=True)
-subprocess.run([a.FFMPEG, "-y", "-loglevel", "error", "-i", src, "-c", "copy", "-movflags", "+faststart", dst], check=True)
-assert os.path.getsize(dst) > 1000, "ffmpeg 轉檔失敗"
+src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "sample.ts")
+dst = os.path.join(d, "dst.mp4")
+subprocess.run([a.FFMPEG, "-y", "-loglevel", "error", "-i", src, "-map", "0", "-dn", "-ignore_unknown", "-c", "copy",
+                "-f", "mp4", "-bsf:a", "aac_adtstoasc", "-movflags", "+faststart", dst], check=True)
+assert os.path.getsize(dst) > 10000, "ffmpeg 轉檔失敗"
+probe = os.path.join(os.path.dirname(a.FFMPEG), "ffprobe.exe")
+info = subprocess.run([probe, "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", dst],
+                      capture_output=True, text=True, check=True).stdout.split()
+assert sorted(info) == ["audio", "video"], f"轉出來的 MP4 內容不對：{info}"
 print("FFMPEG_OK", a.FFMPEG)
 
 # 2. 視窗：4 個分頁、安裝精靈 3 步

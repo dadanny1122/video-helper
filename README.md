@@ -49,7 +49,12 @@
 ## 注意
 下載的內容僅供個人使用，請勿轉傳或散布。
 
+## 關於內附的 ffmpeg
+電腦版 EXE 內附的 ffmpeg 是用 `.github/ffmpeg/build.sh` 從 [FFmpeg](https://ffmpeg.org/)（n7.1）原始碼編出來的迷你版，
+只保留「接檔、換成 MP4 包裝」需要的部分，不會重新壓縮影片。沒有啟用 GPL 元件，以 LGPL v2.1 授權，原始碼見 FFmpeg 官方網站。
+
 ## 致謝
 - 部分網站規則參考 [uBlock Origin 規則庫（uBlockOrigin/uAssets）](https://github.com/uBlockOrigin/uAssets)，以本專案自己的程式碼重新實作
 - 切片轉 MP4 使用 [mux.js](https://github.com/videojs/mux.js)
 - 電腦版下載使用 [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- 合併與轉 MP4 使用 [FFmpeg](https://ffmpeg.org/)（LGPL）

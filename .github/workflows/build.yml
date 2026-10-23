@@ -8,14 +8,54 @@ on:
       - 'video_helper_app.py'
       - '.github/workflows/build.yml'
       - '.github/ci_smoke.py'
+      - '.github/ffmpeg/**'
       - 'CHANGELOG.md'
   workflow_dispatch:
 
 permissions:
   contents: write
 
+env:
+  FFMPEG_TAG: n7.1
+
 jobs:
+  # 1. 在 Linux 上編 Windows 版的迷你 ffmpeg（只會接檔、換包裝，約 2 MB）
+  #    編過一次就存起來；build.sh 或 FFmpeg 版本沒變就直接拿存好的
+  ffmpeg:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reuse a previous build
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ffmpeg-win
+          key: ffmpeg-win-${{ env.FFMPEG_TAG }}-${{ hashFiles('.github/ffmpeg/build.sh') }}
+
+      - name: Build minimal ffmpeg for Windows
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q mingw-w64 nasm
+          git clone -q --depth 1 -b "$FFMPEG_TAG" https://github.com/FFmpeg/FFmpeg.git src
+          bash .github/ffmpeg/build.sh src "$PWD/ffmpeg-win" windows
+
+      - name: Check it only needs DLLs every Windows has
+        run: |
+          sudo apt-get install -y -q binutils-mingw-w64-x86-64 >/dev/null
+          x86_64-w64-mingw32-objdump -p ffmpeg-win/ffmpeg.exe | grep "DLL Name" | sort -u | tee dlls.txt
+          ! grep -viE "KERNEL32|SHELL32|bcrypt|msvcrt|ADVAPI32|USER32|ole32" dlls.txt
+          ls -la ffmpeg-win
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-win
+          path: ffmpeg-win
+
+  # 2. 在 Windows 上測試、打包 EXE、發布
   build:
+    needs: ffmpeg
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,16 +75,23 @@ jobs:
             echo "exists=1" >> $GITHUB_OUTPUT
           fi
 
+      - uses: actions/download-artifact@v4
+        if: steps.chk.outputs.exists != '1'
+        with:
+          name: ffmpeg-win
+          path: ffmpeg_bin
+
       - uses: actions/setup-python@v5
         if: steps.chk.outputs.exists != '1'
         with:
           python-version: '3.12'
 
+      # 不裝 imageio-ffmpeg（那是 88 MB 的完整版），改用上面編的迷你版
       - name: Install packages
         if: steps.chk.outputs.exists != '1'
-        run: pip install yt-dlp imageio-ffmpeg pystray pillow pyinstaller
+        run: pip install yt-dlp pystray pillow pyinstaller
 
-      - name: Smoke test (window, tabs, history, bundled ffmpeg on Windows)
+      - name: Smoke test (window, tabs, history, bridge, mini ffmpeg on Windows)
         if: steps.chk.outputs.exists != '1'
         timeout-minutes: 5
         env:
@@ -52,9 +99,30 @@ jobs:
           PYTHONUTF8: "1"
         run: python .github/ci_smoke.py
 
+      # Pillow 只用來畫系統匣圖示，用不到的圖片格式（AVIF、WebP…）不包進去
       - name: Build exe
         if: steps.chk.outputs.exists != '1'
-        run: pyinstaller --onefile --windowed --name VideoHelper --collect-all imageio_ffmpeg --collect-all yt_dlp --collect-submodules pystray video_helper_app.py
+        run: >
+          pyinstaller --onefile --windowed --name VideoHelper
+          --collect-all yt_dlp --collect-submodules pystray
+          --add-binary "ffmpeg_bin/ffmpeg.exe;ffmpeg" --add-binary "ffmpeg_bin/ffprobe.exe;ffmpeg"
+          --exclude-module PIL._avif --exclude-module PIL.AvifImagePlugin
+          --exclude-module PIL._webp --exclude-module PIL.WebPImagePlugin
+          --exclude-module PIL.ImageQt --exclude-module PIL.ImageTk
+          --exclude-module imageio_ffmpeg --exclude-module numpy
+          video_helper_app.py
+
+      - name: Run the finished exe once (self-test, no window)
+        if: steps.chk.outputs.exists != '1'
+        shell: bash
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          ./dist/VideoHelper.exe --selftest selftest.json || true
+          cat selftest.json
+          python -c "import json,sys; r=json.load(open('selftest.json',encoding='utf-8')); print('::notice title=EXE self-test::ffmpeg=%s tray=%s ok=%s' % (r.get('ffmpeg_version'), r.get('tray'), r.get('ok'))); sys.exit(0 if r.get('ok') and r.get('frozen') else 1)"
+          ls -la dist/VideoHelper.exe
+          echo "::notice title=EXE size::$(stat -c %s dist/VideoHelper.exe) bytes"
 
       - name: Release notes from CHANGELOG.md
         if: steps.chk.outputs.exists != '1'
