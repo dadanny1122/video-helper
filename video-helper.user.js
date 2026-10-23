@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.1.2
+// @version      3.1.3
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -1587,9 +1587,18 @@
   // 每 2 秒問一次進度，顯示在 el 裡，直到結束
   function watchDesktop(el, port, ticket) {
     const icon = { '讀取中': '🔎 讀取中', '等待中': '⏳ 排隊中', '下載中': '⬇ 下載中', '完成': '✅ 完成', '失敗': '❌ 失敗', '取消': '■ 已取消' };
+    let misses = 0;
     const tick = async () => {
       const r = await bridgeReq('GET', port, `/status?ticket=${ticket}`, null, store.get('bridgeToken', ''));
-      if (r.status !== 200) { el.textContent = '🖥 電腦版：連不上了（可能已關閉）'; return; }
+      if (r.status !== 200) {
+        // 剛送出時電腦版可能還沒記好，或電腦版正忙；多等幾次再下結論
+        if (++misses <= 5) { el.textContent = '🖥 電腦版：已送出，等電腦版回應…'; setTimeout(tick, 2000); return; }
+        el.textContent = r.status === 0 ? '🖥 電腦版：連不上了（可能已關閉）'
+          : r.status === 401 ? '🖥 電腦版：需要重新配對'
+          : '🖥 電腦版：已送出，請到電腦版「② 下載影片」看進度';
+        return;
+      }
+      misses = 0;
       const d = r.data;
       const prog = d.status === '下載中' ? ` ${d.progress || 0}%` : '';
       el.textContent = `🖥 電腦版：${icon[d.status] || d.status}${prog}` + (d.error ? `（${d.error}）` : '');

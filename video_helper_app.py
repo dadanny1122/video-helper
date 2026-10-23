@@ -78,7 +78,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.9.0"
+VERSION = "1.9.1"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -1071,7 +1071,7 @@ class App:
         self.remote = {}               # 配對的瀏覽器送來的任務：ticket → 狀態
         self.last_clip = ""
         self.bridge = Bridge(self.settings,
-                             on_enqueue=lambda ticket, url, h: self.q.put(("remote_enqueue", (ticket, url, h))),
+                             on_enqueue=self.remote_register,
                              get_status=self.remote_status)
 
         root.title(f"Video Helper v{VERSION}")
@@ -1620,12 +1620,18 @@ class App:
             return {"status": t["status"], "progress": round(t["progress"]), "title": t["title"]}
         return {k: rec.get(k) for k in ("status", "progress", "title", "error")}
 
+    def remote_register(self, ticket, url, h):
+        """連線服務的執行緒呼叫：先記下任務再回覆瀏覽器，瀏覽器馬上來問進度才查得到"""
+        self.remote[ticket] = {"status": "讀取中", "progress": 0, "title": url, "error": ""}
+        self.q.put(("remote_enqueue", (ticket, url, h)))
+
     def on_remote_enqueue(self, data):
         ticket, url, h = data
-        self.remote[ticket] = {"status": "讀取中", "progress": 0, "title": url, "error": ""}
+        self.remote.setdefault(ticket, {"status": "讀取中", "progress": 0, "title": url, "error": ""})
         if len(self.remote) > 200:                  # 舊的忘掉
             for k in list(self.remote)[:50]:
-                self.remote.pop(k, None)
+                if k != ticket:
+                    self.remote.pop(k, None)
         def work():
             try:
                 title, dur, fmts, mbps = self.analyze_fn(url)

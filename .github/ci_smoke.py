@@ -134,6 +134,9 @@ tok = dd["token"]
 st, dd = call("POST", "/enqueue", {"url": "https://www.pornhub.com/view_video.php?viewkey=ci", "height": 480}, tok)
 assert st == 200, "送影片失敗"
 ticket = dd["ticket"]
+# 不讓主畫面處理任何事，馬上問進度：一定要查得到（v1.9.0 這裡會回 404）
+st, dd = call("GET", f"/status?ticket={ticket}", token=tok)
+assert st == 200, f"剛送出就問進度應該查得到，卻回 {st}"
 wait(lambda: call("GET", f"/status?ticket={ticket}", token=tok)[1].get("status") == a.DONE)
 assert app.queue.tasks[-1]["fmt"]["height"] == 480, "沒有用瀏覽器指定的畫質"
 app.refresh_bridge_label(); r.update()
