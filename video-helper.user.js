@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.1.0
+// @version      3.1.1
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -1251,7 +1251,58 @@
   }
 
   // 用 mux.js 把 .ts 片段轉成 .mp4（失敗就回傳 null，改存 .ts）
-  function tsToMp4(parts) {
+  // 在 MP4 檔頭寫進影片總長度。
+  // mux.js 轉出來的是「分段式 MP4」，檔頭的長度寫著「不知道」，Windows 媒體播放器就會顯示 00:00:00、不能拖進度條。
+  // 這裡把 mvhd／tkhd／mdhd 的長度改成真正的秒數，再在 mvex 裡補一個 mehd（分段式 MP4 用來標示總長度的地方）。
+  function setMp4Duration(init, seconds) {
+    if (!(seconds > 0) || !init || init.length < 16) return init;
+    const dv = new DataView(init.buffer, init.byteOffset, init.byteLength);
+    const typeAt = i => String.fromCharCode(init[i + 4], init[i + 5], init[i + 6], init[i + 7]);
+    let movieTs = 0, moov = -1, mvex = -1, hasMehd = false;
+    const walk = (start, end) => {
+      for (let i = start; i + 8 <= end;) {
+        const size = dv.getUint32(i), type = typeAt(i);
+        if (size < 8 || i + size > end) break;
+        const v1 = init[i + 8] === 1;              // version 1 用 64 位元
+        if (type === 'moov') moov = i;
+        if (type === 'mvhd') {
+          movieTs = dv.getUint32(i + (v1 ? 28 : 20));
+          const d = Math.round(seconds * movieTs);
+          if (v1) dv.setBigUint64(i + 32, BigInt(d)); else dv.setUint32(i + 24, d);
+        } else if (type === 'tkhd' && movieTs) {
+          const d = Math.round(seconds * movieTs);
+          if (v1) dv.setBigUint64(i + 36, BigInt(d)); else dv.setUint32(i + 28, d);
+        } else if (type === 'mdhd') {
+          const ts = dv.getUint32(i + (v1 ? 28 : 20));
+          const d = Math.round(seconds * ts);
+          if (v1) dv.setBigUint64(i + 32, BigInt(d)); else dv.setUint32(i + 24, d);
+        } else if (type === 'mvex') {
+          mvex = i;
+        } else if (type === 'mehd') {
+          hasMehd = true;
+          if (movieTs) { const d = Math.round(seconds * movieTs); if (v1) dv.setBigUint64(i + 12, BigInt(d)); else dv.setUint32(i + 12, d); }
+        }
+        if (['moov', 'trak', 'mdia', 'mvex'].includes(type)) walk(i + 8, i + size);
+        i += size;
+      }
+    };
+    walk(0, init.length);
+    if (moov < 0 || mvex < 0 || hasMehd || !movieTs) return init;
+    // 補 mehd：16 位元組，放在 mvex 最前面；mvex 和 moov 的大小各加 16（moov 在影片資料前面，後面的位置不受影響）
+    const mehd = new Uint8Array(16);
+    const mv = new DataView(mehd.buffer);
+    mv.setUint32(0, 16); mehd.set([0x6d, 0x65, 0x68, 0x64], 4); mv.setUint32(12, Math.round(seconds * movieTs));
+    const out = new Uint8Array(init.length + 16);
+    out.set(init.subarray(0, mvex + 8), 0);
+    out.set(mehd, mvex + 8);
+    out.set(init.subarray(mvex + 8), mvex + 24);
+    const od = new DataView(out.buffer);
+    od.setUint32(mvex, dv.getUint32(mvex) + 16);
+    od.setUint32(moov, dv.getUint32(moov) + 16);
+    return out;
+  }
+
+  function tsToMp4(parts, seconds) {
     const mux = typeof muxjs !== 'undefined' ? muxjs : (window.muxjs || PW.muxjs);
     if (!mux) return null;
     try {
@@ -1259,7 +1310,7 @@
       let gotInit = false;
       const tm = new mux.mp4.Transmuxer();
       tm.on('data', seg => {
-        if (!gotInit) { out.push(new Uint8Array(seg.initSegment)); gotInit = true; }
+        if (!gotInit) { out.push(setMp4Duration(new Uint8Array(seg.initSegment), seconds)); gotInit = true; }
         out.push(new Uint8Array(seg.data));
       });
       for (const p of parts) { tm.push(p); tm.flush(); }
@@ -1309,7 +1360,7 @@
 
     // 片段本身就是 MP4 格式 → 直接接起來
     if (media.init) {
-      parts.unshift(new Uint8Array(await getData(media.init, 'arraybuffer')));
+      parts.unshift(setMp4Duration(new Uint8Array(await getData(media.init, 'arraybuffer')), media.dur));
       saveBlob(parts, 'video/mp4', baseName + '.mp4');
       return baseName + '.mp4';
     }
@@ -1317,7 +1368,7 @@
     // .ts 片段 → 轉成 MP4
     onStage('轉換成 MP4 中…');
     await new Promise(r => setTimeout(r, 50));
-    const mp4 = tsToMp4(parts);
+    const mp4 = tsToMp4(parts, media.dur);
     if (mp4) {
       saveBlob(mp4, 'video/mp4', baseName + '.mp4');
       return baseName + '.mp4';
