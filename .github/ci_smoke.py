@@ -128,7 +128,11 @@ assert "執行中" in app.bridge_lbl.cget("text"), "設定頁沒有顯示連動�
 # 7. 剪貼簿裡有影片網址 → 出現提示列
 r.clipboard_clear(); r.clipboard_append("https://www.xvideos.com/video123/test"); r.update()
 app.check_clipboard(); r.update()
-assert app.clip_bar.winfo_ismapped(), "剪貼簿提示列沒有出現"
+assert app.clip_bar.winfo_manager() == "pack" and "xvideos.com" in app.clip_lbl.cget("text"), "剪貼簿提示列沒有放上去"
+app.nb.select(app.tab_dl); r.update()
+assert app.clip_bar.winfo_ismapped(), "切到「② 下載影片」時看不到剪貼簿提示列"
+app.check_clipboard(); r.update()
+assert app.clip_bar.winfo_ismapped(), "同一個網址不該讓提示列消失"
 
 # 8. 系統匣：關視窗 → 縮到系統匣 → 從系統匣打開 → 結束
 assert a.pystray is not None, "pystray 沒有裝進去"
