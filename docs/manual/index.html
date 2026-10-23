@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Helper 說明書</title>
+<style>
+  :root { --bg:#fafaf7; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#e4e3dc; --accent:#c62828; --blue:#1565c0; --tip:#eef5ee; --warn:#fff6e5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#151514; --fg:#ecebe6; --muted:#a3a29b; --card:#1f1f1d; --line:#33332f; --accent:#ef5350; --blue:#64b5f6; --tip:#1d2a1f; --warn:#2e2715; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.75 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:32px 16px 80px; }
+  h1 { font-size:30px; margin:0 0 4px; }
+  h2 { font-size:21px; margin:44px 0 10px; padding-top:12px; border-top:1px solid var(--line); }
+  h3 { font-size:17px; margin:24px 0 6px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  nav { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 16px; }
+  nav a { display:inline-block; margin:2px 12px 2px 0; }
+  a { color:var(--blue); }
+  .parts { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:14px 0; }
+  @media (max-width:560px) { .parts { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .card .t { display:block; font-size:17px; font-weight:700; margin-bottom:4px; }
+  ol, ul { padding-left:22px; } li { margin:4px 0; }
+  .tip, .warn { border-radius:8px; padding:10px 14px; margin:12px 0; }
+  .tip { background:var(--tip); } .warn { background:var(--warn); }
+  .k { display:inline-block; padding:0 7px; border-radius:5px; font-size:14px; color:#fff; background:var(--accent); white-space:nowrap; }
+  .k.b { background:#1565c0; } .k.g { background:#555; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  td, th { border-bottom:1px solid var(--line); padding:8px 6px; text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  details { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:8px 14px; margin:8px 0; }
+  summary { cursor:pointer; font-weight:600; }
+  footer { margin-top:48px; color:var(--muted); font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Video Helper 說明書</h1>
+<p class="sub">擋廣告、擋病毒網址、一鍵下載影片的小工具。照順序看完大約 5 分鐘。</p>
+
+<nav>
+  <a href="#what">1. 這是什麼</a><a href="#install">2. 安裝</a><a href="#browser">3. 網頁上的功能</a>
+  <a href="#download">4. 下載影片</a><a href="#app">5. 電腦版各分頁</a><a href="#update">6. 更新</a>
+  <a href="#faq">7. 常見問題</a><a href="#safe">8. 安全與隱私</a>
+</nav>
+
+<h2 id="what">1. 這是什麼</h2>
+<p>Video Helper 由兩個部分組成，可以只裝第一個，也可以兩個一起用：</p>
+<div class="parts">
+  <div class="card"><span class="t">① 腳本（裝在瀏覽器裡）</span>看影片的時候在背後工作：擋彈出廣告、擋偷跳轉、擋可疑檔案下載、自動略過影片前廣告、顯示預估載入時間。也能直接在瀏覽器下載小影片。</div>
+  <div class="card"><span class="t">② 電腦版（VideoHelper.exe）</span>專門負責<b>下載</b>的程式：下載高畫質、大檔案，可以排很多部、關掉網頁照樣在背景下載，下載完直接是 MP4。它不是後台管理介面，是給你自己用的下載工具。</div>
+</div>
+<p>兩個配對好之後，在網頁上按一個按鈕，影片就會送到電腦版去下載。</p>
+<p><b>支援的網站：</b>Pornhub、XVideos 有全部功能。MissAV、Jable 只有擋廣告和預估時間，沒有下載。</p>
+
+<h2 id="install">2. 安裝</h2>
+<h3>方法 A：用電腦版幫你裝（最簡單）</h3>
+<ol>
+  <li>到 <a href="https://github.com/dadanny1122/video-helper/releases/latest">下載頁</a> 下載 <b>VideoHelper.exe</b>，雙擊執行</li>
+  <li>Windows 如果跳出「Windows 已保護您的電腦」，按「其他資訊」→「仍要執行」（因為這個程式沒有花錢買數位簽章，不是病毒）</li>
+  <li>在「① 安裝擋廣告」分頁，照順序按 3 個按鈕：裝暴力猴 → 裝腳本 → 測試</li>
+</ol>
+<h3>方法 B：只裝瀏覽器的部分</h3>
+<ol>
+  <li>在 Chrome 安裝擴充功能 <a href="https://violentmonkey.github.io/">Violentmonkey（暴力猴）</a></li>
+  <li>點這裡安裝腳本：<a href="https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js">video-helper.user.js</a> → 按「確認安裝」</li>
+</ol>
+<div class="tip">裝好後打開支援的網站，左下角會出現一個 🛡 盾牌和攔截次數，就代表在運作了。</div>
+
+<h2 id="browser">3. 網頁上的功能</h2>
+<table>
+  <tr><th>你會看到</th><th>用途</th></tr>
+  <tr><td>左下角 🛡 盾牌</td><td>顯示擋了幾個廣告。點開可以看「最近攔截」、擋了什麼、為什麼擋</td></tr>
+  <tr><td>影片旁的預估框</td><td>目前網速、多久開始播、整部載完要多久，以及播放狀態（載入中／播放中／卡頓）</td></tr>
+  <tr><td>影片列表上的小標籤</td><td>每部影片的預估載入時間</td></tr>
+  <tr><td>右下角 <span class="k">⬇ 下載</span></td><td>選畫質下載（只有 Pornhub、XVideos）</td></tr>
+</table>
+<h3>擋錯了怎麼辦</h3>
+<ul>
+  <li>點盾牌 →「<b>⏸ 這個分頁先暫停擋廣告</b>」：只對這個分頁有效，關掉分頁就恢復</li>
+  <li>點盾牌 →「<b>這是誤擋？</b>」：回報給作者修正</li>
+  <li>點盾牌 →「<b>🩺 狀態檢查</b>」：看每個功能有沒有正常</li>
+  <li>點瀏覽器右上角的暴力猴圖示，可以個別開關每個功能</li>
+</ul>
+
+<h2 id="download">4. 下載影片</h2>
+<p>按 <span class="k">⬇ 下載</span> 後，會列出每個畫質的大小和預估時間。每一行有兩種下載方式：</p>
+<table>
+  <tr><th>做法</th><th>適合</th><th>說明</th></tr>
+  <tr><td>點那一行的文字</td><td>小檔案、臨時用</td><td>在瀏覽器裡下載。下載完成前不能關分頁，大檔會吃很多記憶體</td></tr>
+  <tr><td>按 <span class="k b">🖥 送到電腦版</span></td><td><b>推薦</b>，大檔、高畫質</td><td>交給電腦版在背景下載，可以關掉網頁，也比較穩</td></tr>
+</table>
+
+<h3>第一次用「送到電腦版」：配對（每台電腦只做一次）</h3>
+<ol>
+  <li>打開電腦版，到「④ 設定」→「🔗 配對瀏覽器…」，畫面會顯示 6 位數配對碼（5 分鐘內有效）</li>
+  <li>回到影片網頁，按 <span class="k b">🖥 送到電腦版</span>，網頁會跳出視窗要你輸入配對碼</li>
+  <li>輸入那 6 位數 → 完成。之後再按就會直接送過去，更新程式也不用重配</li>
+</ol>
+<div class="tip">配對的意思是：只有你配對過的瀏覽器能把影片送進你的電腦版。別人的電腦、一般網頁都送不進來。</div>
+
+<h3>之後每次下載</h3>
+<ol>
+  <li>電腦版保持開著（縮到右下角系統匣也可以）</li>
+  <li>影片頁按 <span class="k">⬇ 下載</span> → 想要的畫質按 <span class="k b">🖥 送到電腦版</span></li>
+  <li>網頁面板會顯示：讀取中 → 排隊中 → 下載中 xx% → ✅ 完成</li>
+  <li>電腦版「③ 下載紀錄」→ 點那一筆 →「📂 打開檔案位置」，用 Windows 內建播放器就能播</li>
+</ol>
+
+<h2 id="app">5. 電腦版各分頁</h2>
+<table>
+  <tr><th>分頁</th><th>做什麼</th></tr>
+  <tr><td>① 安裝擋廣告</td><td>幫你在 Chrome 裝好暴力猴和腳本</td></tr>
+  <tr><td>② 下載影片</td><td>也可以不經過網頁，直接貼網址 → 讀取 → 選畫質 → 加入佇列。一次可貼很多個網址；複製影片網址時會自動跳出提示。可以取消，失敗可以重試</td></tr>
+  <tr><td>③ 下載紀錄</td><td>完成、失敗、取消的紀錄；重新下載、打開檔案位置</td></tr>
+  <tr><td>④ 設定</td><td>下載資料夾、預設畫質、檔名格式、關閉視窗時要不要縮到系統匣、配對瀏覽器、備份／還原設定、檢查更新、錯誤日誌</td></tr>
+  <tr><td>⑤ 統計</td><td>下載量、平均速度；用越多，預估時間越準</td></tr>
+</table>
+
+<h2 id="update">6. 更新</h2>
+<ul>
+  <li><b>腳本</b>：暴力猴每天自動檢查。想馬上更新：暴力猴管理頁 → Video Helper 那一行按 🔄</li>
+  <li><b>電腦版</b>：「④ 設定」→「檢查更新」，或到 <a href="https://github.com/dadanny1122/video-helper/releases/latest">下載頁</a> 下載新的 EXE，關掉舊的、打開新的。設定、紀錄、配對都會保留</li>
+  <li>兩邊最好都保持最新版，有些功能要兩邊一起更新才能用</li>
+</ul>
+
+<h2 id="faq">7. 常見問題</h2>
+<details><summary>網頁顯示「找不到電腦版」</summary>電腦版沒打開，或被防火牆擋住。打開電腦版，看「④ 設定」的瀏覽器連動是不是「✅ 執行中」。</details>
+<details><summary>網頁又要我輸入配對碼</summary>換了瀏覽器、清除了暴力猴資料，或在電腦版按過「取消所有配對」。照上面的配對步驟重做一次就好。</details>
+<details><summary>下載的影片 Windows 播放器打不開</summary>
+  <ul>
+    <li>先確認檔名最後是 <b>.mp4</b>（檔案總管 →「檢視」→ 勾選「副檔名」）。沒有就自己改名加上 .mp4</li>
+    <li>用「送到電腦版」下載的檔案最穩，建議優先用這個</li>
+    <li>真的不行可以裝 VLC 播放器，什麼格式都能播</li>
+  </ul></details>
+<details><summary>下載速度很慢</summary>MP4 畫質只能用一條連線下載，網站常會限制每條連線的速度；切片畫質會同時用 6 條。另外，下載時一直在看別的影片也會分掉網速。</details>
+<details><summary>出現 HTTP Error 410 或 403</summary>網站擋了程式。先把腳本和電腦版都更新到最新，再從網頁按「送到電腦版」，不要直接在電腦版貼網址。</details>
+<details><summary>MissAV、Jable 為什麼不能下載</summary>這兩個網站的影片多半是未經授權轉載的商業影片，所以本工具只提供擋廣告，不提供下載。</details>
+<details><summary>還是有廣告跑出來</summary>點盾牌 → 在「這頁連到的其他網站」找到廣告網站，按「封鎖」（影片常放在網站自己的另一個網域，例如 phncdn.com，那個不要封鎖）。也可以按「🩺 狀態檢查」把結果傳給作者。</details>
+
+<h2 id="safe">8. 安全與隱私</h2>
+<ul>
+  <li>腳本只在支援的網站上執行，不會讀其他網站</li>
+  <li>電腦版的連動只聽<b>自己這台電腦</b>（127.0.0.1），網路上的其他人連不進來；還要配對過才收</li>
+  <li>電腦版只接受 Pornhub、XVideos 的影片網址和它們自己的影片伺服器</li>
+  <li>不會上傳你的觀看紀錄。統計只記網站名稱和數字，不記標題和網址，而且可以關掉</li>
+  <li>程式碼全部公開在 <a href="https://github.com/dadanny1122/video-helper">GitHub</a>，誰都可以檢查</li>
+</ul>
+<div class="warn">下載的影片僅供個人觀看，請勿轉傳或散布。</div>
+
+<footer>Video Helper · <a href="https://github.com/dadanny1122/video-helper">GitHub</a> · <a href="https://github.com/dadanny1122/video-helper/blob/main/CHANGELOG.md">更新紀錄</a></footer>
+</main>
+</body>
+</html>

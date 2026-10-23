@@ -2,6 +2,8 @@
 
 影片網站輔助腳本（使用者腳本 / userscript）。
 
+📖 **[說明書（第一次用請看這裡）](https://dadanny1122.github.io/video-helper/manual/)**
+
 ## 功能
 - 安全防護：擋彈出視窗、自動跳轉、危險檔案下載（.exe / .apk 等）、通知權限請求，左下角顯示攔截次數
 - 網站專屬規則：Pornhub 影片前廣告、XVideos「點哪裡都開廣告」等（參考 uBlock Origin 規則庫重新實作）
