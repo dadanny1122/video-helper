@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.2.0
+// @version      3.2.1
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -95,7 +95,7 @@
 
   // ---- 已知的廣告網路（成人網站常用的 + 一般大型廣告商）----
   const AD_DOMAINS = [
-    'trafficjunky.net', 'trafficjunky.com', 'exoclick.com', 'exosrv.com', 'exdynsrv.com',
+    'trafficjunky.net', 'trafficjunky.com', 'exoclick.com', 'exosrv.com', 'exdynsrv.com', 'pemsrv.com',
     'juicyads.com', 'tsyndicate.com', 'trafficstars.com', 'realsrv.com', 'magsrv.com',
     'popads.net', 'popcash.net', 'propellerads.com', 'adsterra.com', 'clickadu.com',
     'hilltopads.net', 'ero-advertising.com', 'a-ads.com', 'doubleclick.net',
@@ -113,6 +113,8 @@
     try {
       const u = new URL(url, location.href);
       if (siteAdPath && baseOf(u.hostname) === HOME && siteAdPath.test(u.pathname)) return true;
+      // ExoClick 的廣告程式不管放在哪個網域，檔名都叫 ad-provider.js（XVideos 影片前廣告就是它）
+      if (/\/ad-provider\.js$/.test(u.pathname)) return true;
       return AD_RE.test(u.hostname) || userBlock.has(baseOf(u.hostname));
     } catch (e) { return false; }
   }
