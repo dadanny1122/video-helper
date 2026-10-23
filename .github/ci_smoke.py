@@ -83,7 +83,42 @@ sset, hist, warns = a.import_backup(bk)
 app.settings.data.update(sset); app.apply_settings_to_ui(); r.update()
 assert app.q_var.get() == "480", "匯入後畫面沒有更新"
 
-# 6. 系統匣：關視窗 → 縮到系統匣 → 從系統匣打開 → 結束
+# 6. 瀏覽器連動：配對 → 送影片 → 查進度（真的 HTTP 請求）
+import json, urllib.request, urllib.error
+port = app.bridge.start()
+assert port, "連動服務沒有啟動"
+def call(method, path, body=None, token=None, origin="chrome-extension://test"):
+    h = {"Origin": origin}
+    if body is not None:
+        h["Content-Type"] = "application/json"
+    if token:
+        h["X-VH-Token"] = token
+    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", method=method, headers=h,
+                                 data=json.dumps(body).encode() if body is not None else None)
+    try:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=5) as resp:
+            return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b"{}")
+assert call("GET", "/ping", origin="https://evil.example")[0] == 403, "一般網頁應該被拒絕"
+code = app.bridge.new_pair_code()
+st, dd = call("POST", "/pair", {"code": code})
+assert st == 200 and dd.get("token"), "配對失敗"
+tok = dd["token"]
+st, dd = call("POST", "/enqueue", {"url": "https://www.pornhub.com/view_video.php?viewkey=ci", "height": 480}, tok)
+assert st == 200, "送影片失敗"
+ticket = dd["ticket"]
+wait(lambda: call("GET", f"/status?ticket={ticket}", token=tok)[1].get("status") == a.DONE)
+assert app.queue.tasks[-1]["fmt"]["height"] == 480, "沒有用瀏覽器指定的畫質"
+app.refresh_bridge_label(); r.update()
+assert "執行中" in app.bridge_lbl.cget("text"), "設定頁沒有顯示連動狀態"
+
+# 7. 剪貼簿裡有影片網址 → 出現提示列
+r.clipboard_clear(); r.clipboard_append("https://www.xvideos.com/video123/test"); r.update()
+app.check_clipboard(); r.update()
+assert app.clip_bar.winfo_ismapped(), "剪貼簿提示列沒有出現"
+
+# 8. 系統匣：關視窗 → 縮到系統匣 → 從系統匣打開 → 結束
 assert a.pystray is not None, "pystray 沒有裝進去"
 app.settings["close_action"] = "一律縮到系統匣"
 app.on_close(); r.update()

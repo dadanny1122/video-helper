@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      2.8.0
+// @version      2.9.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -15,8 +15,10 @@
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
 // @grant        GM_info
+// @grant        GM_setClipboard
 // @grant        unsafeWindow
 // @connect      *
+// @connect      127.0.0.1
 // @run-at       document-start
 // @inject-into  page
 // @updateURL    https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js
@@ -1097,6 +1099,72 @@
     return baseName + '.ts（轉 MP4 失敗，請用 VLC 播放）';
   }
 
+  /* ---------- 電腦版連動：把影片送進電腦版的下載佇列 ----------
+   * 電腦版只聽 127.0.0.1；第一次要輸入電腦版顯示的 6 位數配對碼，之後用配對拿到的密碼。
+   * 用暴力猴的 GM_xmlhttpRequest 送（一般網頁的 fetch 送不過去，電腦版也會拒絕一般網頁）。
+   */
+  const BRIDGE_PORTS = [47321, 47322, 47323, 47324, 47325];
+
+  function bridgeReq(method, port, path, body, token) {
+    return new Promise(resolve => {
+      const headers = {};
+      if (body) headers['Content-Type'] = 'application/json';
+      if (token) headers['X-VH-Token'] = token;
+      GM_xmlhttpRequest({
+        method, url: `http://127.0.0.1:${port}${path}`, headers, timeout: 3000,
+        data: body ? JSON.stringify(body) : undefined,
+        onload: r => { let d = {}; try { d = JSON.parse(r.responseText || '{}'); } catch (e) {} resolve({ status: r.status, data: d }); },
+        onerror: () => resolve({ status: 0, data: {} }),
+        ontimeout: () => resolve({ status: 0, data: {} }),
+      });
+    });
+  }
+
+  async function findBridge() {
+    const last = store.get('bridgePort', 0);
+    for (const port of [last, ...BRIDGE_PORTS.filter(p => p !== last)].filter(Boolean)) {
+      const r = await bridgeReq('GET', port, '/ping');
+      if (r.status === 200 && r.data.app === 'VideoHelper') { store.set('bridgePort', port); return port; }
+    }
+    return 0;
+  }
+
+  // 回傳一個 ticket（之後拿來查進度），失敗就丟出錯誤訊息
+  async function sendToDesktop(height) {
+    const url = location.href.split('#')[0];
+    const port = await findBridge();
+    if (!port) {
+      try { GM_setClipboard(url); } catch (e) {}
+      throw new Error('找不到電腦版。請先打開 Video Helper 電腦版，並在「④ 設定」按「🔗 配對瀏覽器…」。\n（網址已經幫你複製，切到電腦版也會自動偵測）');
+    }
+    const enqueue = () => bridgeReq('POST', port, '/enqueue', { url, height }, store.get('bridgeToken', ''));
+    let r = await enqueue();
+    if (r.status === 401) {
+      const code = prompt('第一次使用，請輸入電腦版顯示的 6 位數配對碼：\n（電腦版 →「④ 設定」→「🔗 配對瀏覽器…」）');
+      if (!code) throw new Error('已取消配對');
+      const p = await bridgeReq('POST', port, '/pair', { code: code.replace(/\s/g, '') });
+      if (p.status !== 200 || !p.data.token) throw new Error(p.data.error || '配對失敗');
+      store.set('bridgeToken', p.data.token);
+      r = await enqueue();
+    }
+    if (r.status !== 200) throw new Error(r.data.error || `電腦版回應錯誤（${r.status}）`);
+    return { port, ticket: r.data.ticket };
+  }
+
+  // 每 2 秒問一次進度，顯示在 el 裡，直到結束
+  function watchDesktop(el, port, ticket) {
+    const icon = { '讀取中': '🔎 讀取中', '等待中': '⏳ 排隊中', '下載中': '⬇ 下載中', '完成': '✅ 完成', '失敗': '❌ 失敗', '取消': '■ 已取消' };
+    const tick = async () => {
+      const r = await bridgeReq('GET', port, `/status?ticket=${ticket}`, null, store.get('bridgeToken', ''));
+      if (r.status !== 200) { el.textContent = '🖥 電腦版：連不上了（可能已關閉）'; return; }
+      const d = r.data;
+      const prog = d.status === '下載中' ? ` ${d.progress || 0}%` : '';
+      el.textContent = `🖥 電腦版：${icon[d.status] || d.status}${prog}` + (d.error ? `（${d.error}）` : '');
+      if (!['完成', '失敗', '取消'].includes(d.status)) setTimeout(tick, 2000);
+    };
+    tick();
+  }
+
   function buildDownloadUI(src) {
     const wrap = document.createElement('div');
     wrap.className = 'vh-ui';
@@ -1113,6 +1181,7 @@
     wrap.append(btn, panel);
 
     let busy = false;
+    const desk = document.createElement('div');     // 顯示電腦版那邊的進度
 
     btn.addEventListener('click', async () => {
       if (busy || panel.style.display === 'block') {
@@ -1136,6 +1205,22 @@
         const row = document.createElement('div');
         row.style.cssText = 'margin-top:6px;padding:6px 8px;background:#333;border-radius:6px;cursor:pointer;';
         row.innerHTML = `<b>${s.label}</b> <small>（${typeText}）</small><br><small>${sizeText}｜${timeText}</small>`;
+        // 「🖥」：送到電腦版下載（不在瀏覽器裡下載）
+        const toPc = document.createElement('span');
+        toPc.textContent = '🖥 送到電腦版';
+        toPc.title = '用電腦版下載：大檔不吃瀏覽器記憶體，可以關掉網頁、在背景下載';
+        toPc.style.cssText = 'float:right;margin-left:8px;padding:1px 8px;border-radius:4px;background:#1565c0;font-size:12px;';
+        toPc.addEventListener('click', async e => {
+          e.stopPropagation();
+          desk.textContent = '🖥 送到電腦版中…';
+          try {
+            const { port, ticket } = await sendToDesktop(s.height);
+            watchDesktop(desk, port, ticket);
+          } catch (err) {
+            desk.textContent = '🖥 ' + err.message;
+          }
+        });
+        row.prepend(toPc);
         row.addEventListener('click', () => {
           const big = bytes > 2e9 ? '\n\n⚠ 檔案很大，下載完成前請不要關閉這個分頁' : '';
           if (!confirm(`確定要下載嗎？\n\n${s.label}（${typeText}）\n${sizeText}｜${timeText}${big}`)) return;
@@ -1148,6 +1233,8 @@
       note.style.cssText = 'margin-top:8px;font-size:12px;opacity:.7;';
       note.textContent = mbps ? `以 ${mbps.toFixed(1)} Mbps（${speed.source}）估算` : '尚未量到網速，先播一下影片會比較準';
       panel.appendChild(note);
+      desk.style.cssText = 'margin-top:6px;font-size:12px;white-space:pre-line;color:#9cf;';
+      panel.appendChild(desk);
     });
 
     async function startDownload(s, bytes) {

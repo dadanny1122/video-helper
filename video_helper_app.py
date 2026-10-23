@@ -5,6 +5,7 @@ Video Helper 電腦版
 分頁 ③「下載紀錄」：完成／失敗／取消的任務，可重新下載、打開檔案位置
 分頁 ④「設定」：下載資料夾、預設畫質、檔名格式、關閉視窗的行為、備份匯出／匯入、檢查更新、錯誤日誌
 系統匣：關掉視窗時可以縮到右下角繼續下載，下載完成會跳通知
+瀏覽器連動：配對後，瀏覽器腳本可以把 Pornhub／XVideos 影片直接送進下載佇列（只聽本機 127.0.0.1）
 
 執行前先安裝：
     pip install yt-dlp imageio-ffmpeg pystray pillow
@@ -20,6 +21,9 @@ import os
 import sys
 import json
 import glob
+import hmac
+import secrets
+import hashlib
 import time
 import queue
 import logging
@@ -30,6 +34,7 @@ import urllib.request
 import webbrowser
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import yt_dlp
 
@@ -47,7 +52,7 @@ if not FFMPEG:
     except Exception:
         FFMPEG = None
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -117,6 +122,8 @@ DEFAULT_SETTINGS = {
     "filename_template": DEFAULT_TEMPLATE,
     "close_action": "下載中才詢問",   # 關閉視窗時：下載中才詢問 / 一律縮到系統匣 / 直接結束
     "last_version": "",               # 上次執行的版本（版本變了就自動備份）
+    "bridge_enabled": False,          # 瀏覽器連動（配對後才會打開）
+    "bridge_tokens": [],              # 已配對的瀏覽器（只存雜湊值，不存原本的密碼）
     "mbps": 0,                   # 上次量到的網速
 }
 
@@ -217,6 +224,8 @@ class History:
 # ======================================================================
 
 BACKUP_KIND = "VideoHelper-backup"
+# 不放進備份檔的：自動產生的值，以及配對密碼（不能跟著備份檔到處跑）
+NOT_EXPORTED = ("mbps", "last_version", "bridge_enabled", "bridge_tokens")
 CLOSE_CHOICES = ["下載中才詢問", "一律縮到系統匣", "直接結束"]
 
 
@@ -234,8 +243,7 @@ def export_backup(path, settings, history=None):
         "kind": BACKUP_KIND,
         "version": VERSION,
         "exported": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "settings": {k: v for k, v in settings.data.items()
-                     if k in DEFAULT_SETTINGS and k not in ("mbps", "last_version")},
+        "settings": {k: v for k, v in settings.data.items() if k in DEFAULT_SETTINGS and k not in NOT_EXPORTED},
     }
     if history is not None:
         data["history"] = history.items
@@ -252,7 +260,7 @@ def import_backup(path):
     raw = data.get("settings") or {}
     s = {}
     for k, v in raw.items():
-        if k not in DEFAULT_SETTINGS or k in ("mbps", "last_version"):
+        if k not in DEFAULT_SETTINGS or k in NOT_EXPORTED:
             continue
         if k == "default_quality" and v not in QUALITY_CHOICES:
             warns.append(f"預設畫質「{v}」不認得，略過")
@@ -385,6 +393,218 @@ def setup_log():
 
 
 log = setup_log()
+
+
+# ======================================================================
+# 瀏覽器連動：只聽本機（127.0.0.1）的小型連線服務
+#
+# 安全設計：
+#   1. 只綁 127.0.0.1，別台電腦連不進來
+#   2. 檢查 Host 標頭（防 DNS rebinding：壞網站把自己的網域指到 127.0.0.1）
+#   3. 拒絕一般網頁送來的請求（Origin 是 http/https 開頭的一律拒絕），只收擴充功能（暴力猴）的
+#   4. 一定要先配對：電腦版顯示 6 位數配對碼（5 分鐘內有效、猜錯 5 次就作廢），
+#      配對成功給一組長密碼；之後每次請求都要帶密碼。電腦裡只存密碼的雜湊值
+#   5. 只接受 Pornhub、XVideos 的網址；只做「加入下載佇列」；每分鐘最多 30 次
+# ======================================================================
+
+BRIDGE_PORTS = list(range(47321, 47326))
+BRIDGE_HOSTS = ("pornhub.com", "xvideos.com")
+PAIR_SECONDS = 300
+PAIR_MAX_FAILS = 5
+RATE_PER_MIN = 30
+
+
+def bridge_url_allowed(url):
+    try:
+        u = urllib.parse.urlparse(str(url))
+    except Exception:
+        return False
+    if u.scheme not in ("http", "https"):
+        return False
+    h = (u.hostname or "").lower()
+    return any(h == d or h.endswith("." + d) for d in BRIDGE_HOSTS)
+
+
+def hash_token(t):
+    return hashlib.sha256(t.encode("utf-8")).hexdigest()
+
+
+class Bridge:
+    def __init__(self, settings, on_enqueue, get_status):
+        """
+        on_enqueue(ticket, url, height)：收到「加入下載」時呼叫（在連線服務的執行緒裡，要自己轉回主畫面）
+        get_status(ticket)：回傳 {"status":…, "progress":…, "title":…} 或 None
+        """
+        self.settings = settings
+        self.on_enqueue = on_enqueue
+        self.get_status = get_status
+        self.server = None
+        self.port = None
+        self.pair_code = None
+        self.pair_expires = 0
+        self.pair_fails = 0
+        self.pair_burned = False                    # 被猜錯太多次而作廢
+        self.recent = []
+        self.lock = threading.Lock()
+
+    # ---- 開關 ----
+
+    def start(self):
+        if self.server:
+            return self.port
+        handler = self._make_handler()
+        for port in BRIDGE_PORTS:
+            try:
+                srv = ThreadingHTTPServer(("127.0.0.1", port), handler)
+            except OSError:
+                continue                                 # 這個埠被占用 → 試下一個
+            srv.daemon_threads = True
+            self.server, self.port = srv, port
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            log.info("瀏覽器連動服務啟動：127.0.0.1:%d", port)
+            return port
+        log.warning("瀏覽器連動服務無法啟動：%s 都被占用", BRIDGE_PORTS)
+        return None
+
+    def stop(self):
+        if self.server:
+            try:
+                self.server.shutdown()
+                self.server.server_close()
+            except Exception:
+                pass
+            log.info("瀏覽器連動服務關閉")
+        self.server, self.port = None, None
+
+    # ---- 配對 ----
+
+    def new_pair_code(self):
+        with self.lock:
+            self.pair_code = f"{secrets.randbelow(10 ** 6):06d}"
+            self.pair_expires = time.time() + PAIR_SECONDS
+            self.pair_fails = 0
+            self.pair_burned = False
+            return self.pair_code
+
+    def try_pair(self, code):
+        with self.lock:
+            if self.pair_burned:
+                return None, "猜錯太多次，配對碼已作廢，請在電腦版重新按「配對」"
+            if not self.pair_code or time.time() > self.pair_expires:
+                return None, "配對碼已過期，請在電腦版重新按「配對」"
+            if not hmac.compare_digest(str(code).strip(), self.pair_code):
+                self.pair_fails += 1
+                if self.pair_fails >= PAIR_MAX_FAILS:
+                    self.pair_code = None
+                    self.pair_burned = True
+                    return None, "猜錯太多次，配對碼已作廢，請在電腦版重新按「配對」"
+                return None, "配對碼不對"
+            self.pair_code = None                       # 一個配對碼只能用一次
+            token = secrets.token_urlsafe(32)
+            tokens = list(self.settings["bridge_tokens"] or [])
+            tokens.append(hash_token(token))
+            self.settings["bridge_tokens"] = tokens[-10:]   # 最多記 10 個瀏覽器
+            self.settings.save()
+            log.info("瀏覽器配對成功（目前 %d 個）", len(self.settings["bridge_tokens"]))
+            return token, None
+
+    def token_ok(self, token):
+        if not token:
+            return False
+        h = hash_token(token)
+        return any(hmac.compare_digest(h, x) for x in (self.settings["bridge_tokens"] or []))
+
+    def unpair_all(self):
+        self.settings["bridge_tokens"] = []
+        self.settings.save()
+
+    def rate_ok(self):
+        now = time.time()
+        with self.lock:
+            self.recent = [t for t in self.recent if now - t < 60]
+            if len(self.recent) >= RATE_PER_MIN:
+                return False
+            self.recent.append(now)
+            return True
+
+    # ---- 處理請求 ----
+
+    def _make_handler(self):
+        bridge = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def send(self, code, obj):
+                body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def allowed(self):
+                host = (self.headers.get("Host") or "").split(":")[0].lower()
+                if host not in ("127.0.0.1", "localhost"):
+                    return False                         # 防 DNS rebinding
+                origin = self.headers.get("Origin")
+                if origin and not origin.startswith(("chrome-extension://", "moz-extension://", "safari-web-extension://")):
+                    return False                         # 一般網頁送來的 → 拒絕
+                return True
+
+            def body(self):
+                if "application/json" not in (self.headers.get("Content-Type") or ""):
+                    return None
+                n = int(self.headers.get("Content-Length") or 0)
+                if n <= 0 or n > 10_000:
+                    return None
+                try:
+                    return json.loads(self.rfile.read(n).decode("utf-8"))
+                except Exception:
+                    return None
+
+            def do_GET(self):
+                if not self.allowed():
+                    return self.send(403, {"error": "forbidden"})
+                path, _, qs = self.path.partition("?")
+                if path == "/ping":
+                    return self.send(200, {"app": "VideoHelper", "version": VERSION})
+                if path == "/status":
+                    if not bridge.token_ok(self.headers.get("X-VH-Token")):
+                        return self.send(401, {"error": "需要重新配對"})
+                    ticket = urllib.parse.parse_qs(qs).get("ticket", [""])[0]
+                    st = bridge.get_status(ticket)
+                    return self.send(200, st) if st else self.send(404, {"error": "找不到這個任務"})
+                self.send(404, {"error": "not found"})
+
+            def do_POST(self):
+                if not self.allowed():
+                    return self.send(403, {"error": "forbidden"})
+                data = self.body()
+                if not isinstance(data, dict):
+                    return self.send(400, {"error": "格式不對"})
+                if self.path == "/pair":
+                    token, err = bridge.try_pair(data.get("code", ""))
+                    return self.send(200, {"token": token}) if token else self.send(403, {"error": err})
+                if self.path == "/enqueue":
+                    if not bridge.token_ok(self.headers.get("X-VH-Token")):
+                        return self.send(401, {"error": "需要重新配對"})
+                    url = data.get("url", "")
+                    if not bridge_url_allowed(url):
+                        return self.send(400, {"error": "只接受 Pornhub、XVideos 的影片網址"})
+                    if not bridge.rate_ok():
+                        return self.send(429, {"error": "太頻繁了，等一分鐘再試"})
+                    h = data.get("height")
+                    h = int(h) if isinstance(h, (int, float)) or (isinstance(h, str) and h.isdigit()) else None
+                    ticket = secrets.token_hex(8)
+                    bridge.on_enqueue(ticket, url, h)
+                    log.info("瀏覽器送來：%s（%s）", url, quality_label(h) if h else "預設畫質")
+                    return self.send(200, {"ok": True, "ticket": ticket})
+                self.send(404, {"error": "not found"})
+
+        return Handler
 
 
 # ======================================================================
@@ -714,10 +934,16 @@ class App:
         # 真正做事的函式（測試時可以換成假的）
         self.analyze_fn = analyze_url
         self.download_fn = run_download
+        # 瀏覽器連動
+        self.remote = {}               # 配對的瀏覽器送來的任務：ticket → 狀態
+        self.last_clip = ""
+        self.bridge = Bridge(self.settings,
+                             on_enqueue=lambda ticket, url, h: self.q.put(("remote_enqueue", (ticket, url, h))),
+                             get_status=self.remote_status)
 
         root.title(f"Video Helper v{VERSION}")
-        root.geometry("780x640")
-        root.minsize(680, 560)
+        root.geometry("800x700")
+        root.minsize(700, 620)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.nb = ttk.Notebook(root)
@@ -732,6 +958,11 @@ class App:
         self.build_download(tabs["dl"])
         self.build_history(tabs["hist"])
         self.build_settings(tabs["set"])
+
+        if self.settings["bridge_enabled"]:
+            self.bridge.start()
+            self.refresh_bridge_label()
+        root.bind("<FocusIn>", lambda e: self.check_clipboard() if e.widget is root else None)
 
         self.poll()
         threading.Thread(target=check_update, args=(self.q,), daemon=True).start()
@@ -837,6 +1068,15 @@ class App:
         self.btn_read.pack(side="left")
         self.btn_batch = ttk.Button(top, text="📋 多個網址…", command=self.open_batch)
         self.btn_batch.pack(side="left", padx=(6, 0))
+
+        # 剪貼簿裡有影片網址時，出現這一列（不會自動做任何事，要你按）
+        self.clip_bar = ttk.Frame(dl)
+        self.clip_lbl = ttk.Label(self.clip_bar, text="", foreground="#1565c0")
+        self.clip_lbl.pack(side="left")
+        ttk.Button(self.clip_bar, text="讀取這個網址", command=self.use_clipboard).pack(side="left", padx=6)
+        ttk.Button(self.clip_bar, text="✕", width=3, command=lambda: self.clip_bar.pack_forget()).pack(side="left")
+        self.clip_anchor = ttk.Frame(dl)                # 提示列要插在這裡
+        self.clip_anchor.pack(fill="x")
 
         self.title_lbl = ttk.Label(dl, text="貼上網址後按「讀取」；要一次下載很多部，按「📋 多個網址…」", wraplength=740)
         self.title_lbl.pack(fill="x", **pad)
@@ -1166,6 +1406,9 @@ class App:
 
     def finish_task(self, tid, status, file=None, error=None):
         t = self.queue.get(tid)
+        for rec in self.remote.values():           # 瀏覽器那邊查得到最後的結果
+            if rec.get("task_id") == tid:
+                rec.update(status=status, progress=100 if status == DONE else rec.get("progress", 0), error=error or "")
         if t:
             t["status"] = status
             if status == DONE:
@@ -1208,6 +1451,132 @@ class App:
         tid, msg = data
         self.status.config(text="❌ 下載失敗：" + msg[:160] + "　→ 可以按「↻ 重試失敗的」")
         self.finish_task(tid, FAILED, error=msg[:500])
+
+    # ----- 瀏覽器連動 -----
+
+    def remote_status(self, ticket):
+        """連線服務的執行緒會呼叫這裡；只讀資料，不改畫面"""
+        rec = self.remote.get(ticket)
+        if not rec:
+            return None
+        t = self.queue.get(rec.get("task_id")) if rec.get("task_id") else None
+        if t:
+            return {"status": t["status"], "progress": round(t["progress"]), "title": t["title"]}
+        return {k: rec.get(k) for k in ("status", "progress", "title", "error")}
+
+    def on_remote_enqueue(self, data):
+        ticket, url, h = data
+        self.remote[ticket] = {"status": "讀取中", "progress": 0, "title": url, "error": ""}
+        if len(self.remote) > 200:                  # 舊的忘掉
+            for k in list(self.remote)[:50]:
+                self.remote.pop(k, None)
+        def work():
+            try:
+                title, dur, fmts, mbps = self.analyze_fn(url)
+                self.q.put(("remote_analyzed", (ticket, url, h, title, fmts, mbps)))
+            except Exception as e:
+                log.exception("瀏覽器送來的網址讀取失敗：%s", url)
+                self.q.put(("remote_failed", (ticket, f"讀取失敗：{e}")))
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_remote_analyzed(self, data):
+        ticket, url, h, title, fmts, mbps = data
+        rec = self.remote.get(ticket, {})
+        if not fmts:
+            rec.update(status=FAILED, error="找不到可下載的畫質", title=title)
+            return
+        self.remember_speed(mbps)
+        f = fmts[pick_default(fmts, str(h) if h else self.settings["default_quality"])]
+        if self.queue.is_duplicate(url, f["height"]):
+            rec.update(status=FAILED, error="已經在佇列裡了", title=title)
+            return
+        t = self.enqueue({"url": url, "title": title, "fmt": f, "size": f["size"], "out": self.settings.download_dir})
+        rec.update(task_id=t["id"], title=title, status=WAITING)
+        self.status.config(text=f"🔗 從瀏覽器加入：{title}（{quality_label(f['height'])}）")
+        if self.is_hidden():
+            self.notify(f"從瀏覽器加入：{title[:60]}")
+
+    def on_remote_failed(self, data):
+        ticket, msg = data
+        self.remote.setdefault(ticket, {}).update(status=FAILED, error=msg[:200])
+
+    def check_clipboard(self):
+        """視窗被切回來時看一下剪貼簿；有支援的影片網址就出現提示列"""
+        try:
+            clip = self.root.clipboard_get().strip()
+        except Exception:
+            return
+        if (clip == self.last_clip or "\n" in clip or len(clip) > 500 or not bridge_url_allowed(clip)
+                or clip == self.url_var.get().strip()):
+            return
+        self.last_clip = clip
+        self.clip_lbl.config(text=f"📋 剪貼簿裡有影片網址：{clip[:60]}{'…' if len(clip) > 60 else ''}")
+        self.clip_bar.pack(fill="x", padx=10, pady=(0, 2), in_=self.clip_anchor)
+
+    def use_clipboard(self):
+        self.clip_bar.pack_forget()
+        self.url_var.set(self.last_clip)
+        self.nb.select(self.tab_dl)
+        self.analyze()
+
+    def refresh_bridge_label(self):
+        if not hasattr(self, "bridge_lbl"):
+            return
+        n = len(self.settings["bridge_tokens"] or [])
+        if self.bridge.server:
+            self.bridge_lbl.config(text=f"✅ 執行中（127.0.0.1:{self.bridge.port}）｜已配對 {n} 個瀏覽器", foreground="#2e7d32")
+        elif self.settings["bridge_enabled"]:
+            self.bridge_lbl.config(text="⚠ 無法啟動（連接埠都被占用）", foreground="#c62828")
+        else:
+            self.bridge_lbl.config(text="關閉中（按「配對」會打開）", foreground="#555")
+
+    def pair_browser(self):
+        if not self.bridge.start():
+            messagebox.showerror("無法啟動", f"連接埠 {BRIDGE_PORTS[0]}～{BRIDGE_PORTS[-1]} 都被占用，暫時無法使用瀏覽器連動。")
+            self.refresh_bridge_label()
+            return
+        self.settings["bridge_enabled"] = True
+        self.settings.save()
+        self.refresh_bridge_label()
+        code = self.bridge.new_pair_code()
+        win = tk.Toplevel(self.root)
+        win.title("配對瀏覽器腳本")
+        win.geometry("440x300")
+        win.transient(self.root)
+        ttk.Label(win, text="在影片網頁按右下角「⬇ 下載」→「🖥 送到電腦版」，\n跳出配對視窗時輸入：",
+                  justify="center").pack(pady=(18, 8))
+        ttk.Label(win, text=f"{code[:3]} {code[3:]}", font=("Consolas", 32, "bold")).pack()
+        left = ttk.Label(win, text="", foreground="#555")
+        left.pack(pady=8)
+        ttk.Label(win, text="配對碼 5 分鐘內有效、只能用一次。\n配對過的瀏覽器之後就不用再輸入。",
+                  foreground="#555", justify="center").pack()
+        ttk.Button(win, text="關閉", command=win.destroy).pack(pady=10)
+
+        def tick():
+            if not win.winfo_exists():
+                return
+            remain = int(self.bridge.pair_expires - time.time())
+            if self.bridge.pair_code != code:
+                left.config(text="✅ 配對完成！" if len(self.settings["bridge_tokens"] or []) else "配對碼已作廢")
+                self.refresh_bridge_label()
+                return
+            if remain <= 0:
+                left.config(text="配對碼已過期，請重新按「配對」")
+                return
+            left.config(text=f"剩下 {remain // 60}:{remain % 60:02d}")
+            win.after(1000, tick)
+        tick()
+
+    def unpair_browsers(self):
+        if messagebox.askyesno("取消所有配對", "確定要取消所有已配對的瀏覽器嗎？之後要用的話需要重新配對。"):
+            self.bridge.unpair_all()
+            self.refresh_bridge_label()
+
+    def stop_bridge(self):
+        self.bridge.stop()
+        self.settings["bridge_enabled"] = False
+        self.settings.save()
+        self.refresh_bridge_label()
 
     # ----- 關閉視窗、系統匣 -----
 
@@ -1264,6 +1633,7 @@ class App:
                 self.tray.stop()
             except Exception:
                 pass
+        self.bridge.stop()
         log.info("關閉")
         self.root.destroy()
 
@@ -1454,6 +1824,16 @@ class App:
                   foreground="#555").grid(row=1, column=2, sticky="w", padx=6)
 
         ttk.Button(outer, text="💾 儲存設定", command=self.save_settings).pack(anchor="w", pady=(4, 6))
+
+        # --- 瀏覽器連動 ---
+        c = box("瀏覽器連動（在影片網頁按一下，就送進電腦版下載）")
+        c.pack(fill="x", pady=4)
+        self.bridge_lbl = ttk.Label(c, text="")
+        self.bridge_lbl.pack(side="left", pady=3)
+        ttk.Button(c, text="關閉服務", command=self.stop_bridge).pack(side="right")
+        ttk.Button(c, text="取消所有配對", command=self.unpair_browsers).pack(side="right", padx=6)
+        ttk.Button(c, text="🔗 配對瀏覽器…", command=self.pair_browser).pack(side="right")
+        self.refresh_bridge_label()
 
         # --- 備份 ---
         b = box("備份")
