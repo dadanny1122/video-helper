@@ -186,7 +186,7 @@ class _RangeH(_hs.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body))); self.end_headers()
         try:
             for i in range(0, len(body), 65536):
-                self.wfile.write(body[i:i + 65536]); time.sleep(0.002)
+                self.wfile.write(body[i:i + 65536]); time.sleep(0.03)
         except OSError:
             pass
 _srv = _hs.ThreadingHTTPServer(("127.0.0.1", 0), _RangeH)
@@ -196,7 +196,7 @@ _dest = os.path.join(_dir, "分段 測試 [720p].mp4")
 _res = a.parallel_download(f"http://127.0.0.1:{_srv.server_port}/v.mp4", {}, _dest)
 assert _res and _hl.md5(open(_dest, "rb").read()).digest() == _hl.md5(_blob).digest(), "分段下載的檔案跟原檔不一樣"
 assert sorted(os.listdir(_dir)) == ["分段 測試 [720p].mp4"], f"分段下載留下暫存檔：{os.listdir(_dir)}"
-_ev = _th.Event(); _th.Timer(0.3, _ev.set).start()
+_ev = _th.Event(); _th.Timer(0.2, _ev.set).start()
 _d2 = os.path.join(_dir, "取消.mp4"); _tch = set()
 try:
     a.parallel_download(f"http://127.0.0.1:{_srv.server_port}/v.mp4", {}, _d2, cancel_event=_ev, touched=_tch)
