@@ -3,10 +3,11 @@ Video Helper 電腦版
 分頁 ①「安裝擋廣告」：一步一步帶使用者在 Chrome 裝好暴力猴和 Video Helper 腳本
 分頁 ②「下載影片」：貼上網址 → 選畫質 → 加入下載佇列（一次排很多部，依序下載；可取消、可重試）
 分頁 ③「下載紀錄」：完成／失敗／取消的任務，可重新下載、打開檔案位置
-分頁 ④「設定」：下載資料夾、預設畫質、檔名格式、是否保存紀錄、錯誤日誌
+分頁 ④「設定」：下載資料夾、預設畫質、檔名格式、關閉視窗的行為、備份匯出／匯入、檢查更新、錯誤日誌
+系統匣：關掉視窗時可以縮到右下角繼續下載，下載完成會跳通知
 
 執行前先安裝：
-    pip install yt-dlp imageio-ffmpeg
+    pip install yt-dlp imageio-ffmpeg pystray pillow
 執行：
     python video_helper_app.py
 
@@ -32,6 +33,12 @@ from logging.handlers import RotatingFileHandler
 
 import yt_dlp
 
+try:                                        # 系統匣（沒裝的話就沒有這個功能，其他照常）
+    import pystray
+    from PIL import Image, ImageDraw
+except Exception:
+    pystray = None
+
 FFMPEG = os.environ.get("VIDEO_HELPER_FFMPEG")      # 測試時可以指定別的 ffmpeg
 if not FFMPEG:
     try:
@@ -40,7 +47,7 @@ if not FFMPEG:
     except Exception:
         FFMPEG = None
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -108,6 +115,8 @@ DEFAULT_SETTINGS = {
     "default_quality": "最高",
     "keep_history": True,
     "filename_template": DEFAULT_TEMPLATE,
+    "close_action": "下載中才詢問",   # 關閉視窗時：下載中才詢問 / 一律縮到系統匣 / 直接結束
+    "last_version": "",               # 上次執行的版本（版本變了就自動備份）
     "mbps": 0,                   # 上次量到的網速
 }
 
@@ -184,6 +193,15 @@ class History:
         self.items = []
         self.save()
 
+    def merge(self, items):
+        """匯入別的紀錄：重複的不加，依時間排（新的在前），回傳新增幾筆"""
+        key = lambda r: (r.get("time"), r.get("url"), r.get("height"), r.get("status"))
+        have = {key(r) for r in self.items}
+        new = [r for r in items if isinstance(r, dict) and key(r) not in have]
+        self.items = sorted(self.items + new, key=lambda r: r.get("time") or "", reverse=True)[:self.MAX]
+        self.save()
+        return len(new)
+
     def save(self):
         try:
             tmp = self.path + ".tmp"
@@ -192,6 +210,106 @@ class History:
             os.replace(tmp, self.path)
         except Exception:
             log.exception("儲存下載紀錄失敗")
+
+
+# ======================================================================
+# 備份：匯出／匯入設定與紀錄；版本更新時自動備份
+# ======================================================================
+
+BACKUP_KIND = "VideoHelper-backup"
+CLOSE_CHOICES = ["下載中才詢問", "一律縮到系統匣", "直接結束"]
+
+
+def write_json(path, data):
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, path)
+
+
+def export_backup(path, settings, history=None):
+    """把設定（和紀錄）存成一個備份檔；網速、版本這種自動產生的不存"""
+    data = {
+        "kind": BACKUP_KIND,
+        "version": VERSION,
+        "exported": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "settings": {k: v for k, v in settings.data.items()
+                     if k in DEFAULT_SETTINGS and k not in ("mbps", "last_version")},
+    }
+    if history is not None:
+        data["history"] = history.items
+    write_json(path, data)
+
+
+def import_backup(path):
+    """讀備份檔，回傳 (設定, 紀錄或 None, 警告清單)；不認得或不合理的值會被丟掉"""
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict) or data.get("kind") != BACKUP_KIND:
+        raise ValueError("這不是 Video Helper 的備份檔")
+    warns = []
+    raw = data.get("settings") or {}
+    s = {}
+    for k, v in raw.items():
+        if k not in DEFAULT_SETTINGS or k in ("mbps", "last_version"):
+            continue
+        if k == "default_quality" and v not in QUALITY_CHOICES:
+            warns.append(f"預設畫質「{v}」不認得，略過")
+            continue
+        if k == "filename_template" and v not in FILENAME_TEMPLATES:
+            warns.append(f"檔名格式「{v}」不認得，略過")
+            continue
+        if k == "close_action" and v not in CLOSE_CHOICES:
+            continue
+        if k == "download_dir" and v and not os.path.isdir(v):
+            warns.append(f"下載資料夾「{v}」在這台電腦上不存在，改用預設的「下載」資料夾")
+            v = ""
+        if k == "keep_history":
+            v = bool(v)
+        s[k] = v
+    hist = data.get("history")
+    if hist is not None and not isinstance(hist, list):
+        warns.append("紀錄格式不對，略過")
+        hist = None
+    return s, hist, warns
+
+
+def backups_dir():
+    return os.path.join(data_dir(), "backups")
+
+
+def auto_backup_on_upgrade(settings, history, keep=5):
+    """版本變了 → 先把舊的設定和紀錄備份一份（最多留 5 份），回傳備份檔路徑或 None"""
+    last = settings["last_version"]
+    made = None
+    if last and last != VERSION:
+        made = os.path.join(backups_dir(), f"{datetime.now():%Y%m%d-%H%M%S}_v{last}.json")
+        try:
+            export_backup(made, settings, history)
+            files = sorted(glob.glob(os.path.join(backups_dir(), "*.json")))
+            for old in files[:-keep]:
+                os.remove(old)
+            log.info("版本 v%s → v%s，已自動備份：%s", last, VERSION, made)
+        except Exception:
+            log.exception("自動備份失敗")
+            made = None
+    if last != VERSION:
+        settings["last_version"] = VERSION
+        settings.save()
+    return made
+
+
+def make_icon_image(size=64):
+    """系統匣圖示：紅底白色向下箭頭"""
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([2, 2, size - 2, size - 2], radius=size // 5, fill=(229, 57, 53, 255))
+    w = size
+    d.rectangle([w * 0.42, w * 0.2, w * 0.58, w * 0.5], fill="white")
+    d.polygon([(w * 0.26, w * 0.46), (w * 0.74, w * 0.46), (w * 0.5, w * 0.76)], fill="white")
+    d.rectangle([w * 0.26, w * 0.8, w * 0.74, w * 0.86], fill="white")
+    return img
 
 
 # ======================================================================
@@ -362,8 +480,8 @@ def first_segment_url(m3u8_url, headers, depth=0):
     return nxt
 
 
-def check_update(q):
-    """問 GitHub 有沒有比現在更新的版本（連同更新內容）"""
+def check_update(q, manual=False):
+    """問 GitHub 有沒有比現在更新的版本（連同更新內容）；manual=True 時沒有新版也會回報"""
     try:
         req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/releases/latest",
                                      headers={"User-Agent": "VideoHelper"})
@@ -373,8 +491,11 @@ def check_update(q):
         ver = lambda v: tuple(int(x) for x in v.split("."))
         if tag and ver(tag) > ver(VERSION):
             q.put(("update", (tag, data.get("html_url"), (data.get("body") or "").strip())))
-    except Exception:
-        pass
+        elif manual:
+            q.put(("update_none", tag))
+    except Exception as e:
+        if manual:
+            q.put(("update_failed", str(e)))
 
 
 # ======================================================================
@@ -574,6 +695,10 @@ class App:
         self.q = queue.Queue()
         self.settings = Settings()
         self.history = History()
+        self.auto_backup = auto_backup_on_upgrade(self.settings, self.history)
+        self.tray = None               # 系統匣圖示（第一次縮下去時才建立）
+        self.tray_hinted = False       # 「在背景繼續下載」的提示只講一次
+        self.quitting = False
         self.formats = []
         self.title = ""
         self.duration = 0
@@ -680,6 +805,12 @@ class App:
         mark.config(text="✓")
         if url.startswith("chrome://"):
             messagebox.showinfo("提示", "如果 Chrome 沒有自動打開設定頁：\n在 Chrome 網址列按 Ctrl+V 貼上，再按 Enter。\n（網址已經幫你複製好了）")
+
+    def on_update_none(self, tag):
+        messagebox.showinfo("檢查更新", f"目前已經是最新版本（v{VERSION}）。")
+
+    def on_update_failed(self, msg):
+        messagebox.showwarning("檢查更新", f"無法連到 GitHub 檢查更新：\n{msg[:200]}")
 
     def on_update(self, data):
         tag, url, notes = data
@@ -1026,6 +1157,8 @@ class App:
         # 佇列表格不用每次都整個重畫，只改這一行的狀態
         if self.qtree.exists(str(tid)):
             self.qtree.set(str(tid), "status", f"⬇ {t['progress']:.0f}%")
+        if self.tray:
+            self.tray.title = f"Video Helper：下載中 {t['progress']:.0f}%" + (f"（還有 {w} 部）" if w else "")
 
     def on_progress_text(self, data):
         tid, text = data
@@ -1046,6 +1179,12 @@ class App:
         self.refresh_queue()
         self.pump()                   # 換下一個
         self.set_buttons()
+        if self.is_hidden() and t and status in (DONE, FAILED) and not self.quitting:
+            self.notify(("✅ 下載完成：" if status == DONE else "❌ 下載失敗：") + t["title"][:60])
+            if not self.queue.running() and not self.queue.next_waiting():
+                self.notify("佇列裡的影片都處理完了")
+        if self.tray:
+            self.tray.title = "Video Helper" + ("：下載中" if self.queue.running() else "")
         if not self.queue.running():
             self.prog["value"] = 100 if status == DONE else 0
 
@@ -1070,23 +1209,118 @@ class App:
         self.status.config(text="❌ 下載失敗：" + msg[:160] + "　→ 可以按「↻ 重試失敗的」")
         self.finish_task(tid, FAILED, error=msg[:500])
 
+    # ----- 關閉視窗、系統匣 -----
+
+    def downloads_active(self):
+        return bool(self.cancel_event) or self.queue.count(WAITING) > 0
+
     def on_close(self):
-        waiting = self.queue.count(WAITING)
-        if self.cancel_event or waiting:
-            msg = "還在下載，確定要離開嗎？\n目前的下載會被取消，已下載的部分會被刪除。"
-            if waiting:
-                msg += f"\n排隊中的 {waiting} 部也不會下載。"
-            if not messagebox.askyesno("下載中", msg):
+        """按視窗右上角的 X"""
+        action = self.settings["close_action"]
+        if pystray is None and action == "一律縮到系統匣":
+            action = "下載中才詢問"                      # 沒有系統匣功能就退回詢問
+        if action == "一律縮到系統匣":
+            self.hide_to_tray()
+            return
+        if self.downloads_active():
+            if action == "直接結束":
+                if messagebox.askyesno("下載中", self.quit_warning()):
+                    self.quit_app()
                 return
-            for t in self.queue.tasks:
-                if t["status"] == WAITING:
-                    t["status"] = CANCELLED
-            if self.cancel_event:
-                self.cancel_event.set()
-            if self.worker:
-                self.worker.join(timeout=5)     # 等它清完殘檔
+            if pystray is None:
+                if messagebox.askyesno("下載中", self.quit_warning()):
+                    self.quit_app()
+                return
+            ans = messagebox.askyesnocancel(
+                "還在下載",
+                "還有影片在下載，要怎麼做？\n\n"
+                "「是」：縮到右下角的系統匣，繼續下載（完成會通知你）\n"
+                "「否」：取消下載並結束程式\n"
+                "「取消」：回到視窗")
+            if ans is True:
+                self.hide_to_tray()
+            elif ans is False:
+                self.quit_app()
+            return
+        self.quit_app()
+
+    def quit_warning(self):
+        w = self.queue.count(WAITING)
+        msg = "還在下載，確定要離開嗎？\n目前的下載會被取消，已下載的部分會被刪除。"
+        return msg + (f"\n排隊中的 {w} 部也不會下載。" if w else "")
+
+    def quit_app(self):
+        """真的結束：取消下載、清殘檔、收掉系統匣圖示"""
+        self.quitting = True
+        for t in self.queue.tasks:
+            if t["status"] == WAITING:
+                t["status"] = CANCELLED
+        if self.cancel_event:
+            self.cancel_event.set()
+        if self.worker:
+            self.worker.join(timeout=5)         # 等它清完殘檔
+        if self.tray:
+            try:
+                self.tray.stop()
+            except Exception:
+                pass
         log.info("關閉")
         self.root.destroy()
+
+    def start_tray(self):
+        if self.tray or pystray is None:
+            return self.tray is not None
+        try:
+            # 系統匣的按鈕是在另一個執行緒觸發的，一律透過 self.q 交給主畫面處理
+            menu = pystray.Menu(
+                pystray.MenuItem("打開 Video Helper", lambda: self.q.put(("show_window", None)), default=True),
+                pystray.MenuItem("結束", lambda: self.q.put(("tray_quit", None))))
+            self.tray = pystray.Icon("VideoHelper", make_icon_image(), "Video Helper", menu)
+            self.tray.run_detached()
+            return True
+        except Exception:
+            log.exception("系統匣啟動失敗")
+            self.tray = None
+            return False
+
+    def hide_to_tray(self):
+        if not self.start_tray():
+            self.root.iconify()                  # 系統匣不能用 → 至少縮到工作列
+            return
+        self.root.withdraw()
+        if not self.tray_hinted:
+            self.tray_hinted = True
+            self.notify("Video Helper 在背景執行中" + ("，下載會繼續" if self.downloads_active() else "") +
+                        "。點右下角的圖示可以打開視窗。")
+        log.info("縮到系統匣")
+
+    def is_hidden(self):
+        try:
+            return self.root.state() == "withdrawn"
+        except Exception:
+            return False
+
+    def notify(self, msg):
+        if self.tray:
+            try:
+                self.tray.notify(msg, "Video Helper")
+            except Exception:
+                pass
+
+    def on_show_window(self, _):
+        self.root.deiconify()
+        self.root.lift()
+        try:
+            self.root.focus_force()
+        except Exception:
+            pass
+
+    def on_tray_quit(self, _):
+        if self.downloads_active():
+            self.on_show_window(None)
+            if not messagebox.askyesno("下載中", self.quit_warning()):
+                return
+        self.quit_app()
 
     # ------------------------------------------------------------------
     # ③ 下載紀錄
@@ -1175,48 +1409,126 @@ class App:
     # ------------------------------------------------------------------
 
     def build_settings(self, parent):
-        f = ttk.Frame(parent, padding=16)
-        f.pack(fill="both", expand=True)
-        f.columnconfigure(1, weight=1)
+        outer = ttk.Frame(parent, padding=(12, 8))
+        outer.pack(fill="both", expand=True)
+        box = lambda title: ttk.LabelFrame(outer, text=f" {title} ", padding=(10, 4))
 
-        ttk.Label(f, text="下載資料夾：").grid(row=0, column=0, sticky="w", pady=6)
+        # --- 下載 ---
+        f = box("下載")
+        f.pack(fill="x", pady=4)
+        f.columnconfigure(1, weight=1)
+        ttk.Label(f, text="下載資料夾：").grid(row=0, column=0, sticky="w", pady=3)
         self.dir_var = tk.StringVar(value=self.settings.download_dir)
         ttk.Entry(f, textvariable=self.dir_var).grid(row=0, column=1, sticky="ew", padx=6)
         ttk.Button(f, text="瀏覽…", command=self.choose_dir).grid(row=0, column=2)
 
-        ttk.Label(f, text="預設畫質：").grid(row=1, column=0, sticky="w", pady=6)
+        ttk.Label(f, text="預設畫質：").grid(row=1, column=0, sticky="w", pady=3)
         self.q_var = tk.StringVar(value=self.settings["default_quality"])
         ttk.Combobox(f, textvariable=self.q_var, values=QUALITY_CHOICES, state="readonly", width=10).grid(
             row=1, column=1, sticky="w", padx=6)
-        ttk.Label(f, text="讀取影片後自動選這個畫質（沒有的話選比它低的最高畫質）",
-                  foreground="#555").grid(row=2, column=1, columnspan=2, sticky="w", padx=6)
+        ttk.Label(f, text="（沒有這個畫質時，選比它低的最高畫質）", foreground="#555").grid(
+            row=1, column=1, sticky="w", padx=(110, 0))
 
-        ttk.Label(f, text="檔名格式：").grid(row=3, column=0, sticky="w", pady=(12, 6))
+        ttk.Label(f, text="檔名格式：").grid(row=2, column=0, sticky="w", pady=3)
         tpl = self.settings["filename_template"]
         self.tpl_var = tk.StringVar(value=tpl if tpl in FILENAME_TEMPLATES else DEFAULT_TEMPLATE)
         cb = ttk.Combobox(f, textvariable=self.tpl_var, values=list(FILENAME_TEMPLATES), state="readonly", width=28)
-        cb.grid(row=3, column=1, sticky="w", padx=6, pady=(12, 6))
+        cb.grid(row=2, column=1, sticky="w", padx=6)
         self.tpl_preview = ttk.Label(f, text="", foreground="#555")
-        self.tpl_preview.grid(row=4, column=1, columnspan=2, sticky="w", padx=6)
+        self.tpl_preview.grid(row=3, column=1, columnspan=2, sticky="w", padx=6)
         cb.bind("<<ComboboxSelected>>", lambda e: self.update_tpl_preview())
         self.update_tpl_preview()
 
+        # --- 程式 ---
+        g = box("程式")
+        g.pack(fill="x", pady=4)
         self.keep_var = tk.BooleanVar(value=bool(self.settings["keep_history"]))
-        ttk.Checkbutton(f, text="保存下載紀錄", variable=self.keep_var).grid(row=5, column=1, sticky="w", padx=6, pady=(12, 6))
+        ttk.Checkbutton(g, text="保存下載紀錄", variable=self.keep_var).grid(row=0, column=0, columnspan=2, sticky="w", pady=3)
+        ttk.Label(g, text="關閉視窗時：").grid(row=1, column=0, sticky="w", pady=3)
+        ca = self.settings["close_action"]
+        self.close_var = tk.StringVar(value=ca if ca in CLOSE_CHOICES else CLOSE_CHOICES[0])
+        choices = CLOSE_CHOICES if pystray else [c for c in CLOSE_CHOICES if "系統匣" not in c]
+        ttk.Combobox(g, textvariable=self.close_var, values=choices, state="readonly", width=16).grid(
+            row=1, column=1, sticky="w", padx=6)
+        ttk.Label(g, text=("縮到系統匣＝縮到右下角繼續下載，完成會跳通知" if pystray else "（這台電腦不支援系統匣）"),
+                  foreground="#555").grid(row=1, column=2, sticky="w", padx=6)
 
-        ttk.Button(f, text="💾 儲存設定", command=self.save_settings).grid(row=6, column=1, sticky="w", padx=6, pady=(6, 18))
+        ttk.Button(outer, text="💾 儲存設定", command=self.save_settings).pack(anchor="w", pady=(4, 6))
 
-        ttk.Separator(f).grid(row=7, column=0, columnspan=3, sticky="ew", pady=6)
-        ttk.Label(f, text="問題排查", font=("", 11, "bold")).grid(row=8, column=0, columnspan=3, sticky="w", pady=(6, 2))
-        ttk.Label(f, text="下載或讀取失敗時，詳細原因會寫進錯誤日誌。回報問題時把日誌檔傳給開發者。",
-                  foreground="#555", wraplength=600).grid(row=9, column=0, columnspan=3, sticky="w")
-        bar = ttk.Frame(f)
-        bar.grid(row=10, column=0, columnspan=3, sticky="w", pady=8)
-        ttk.Button(bar, text="📄 打開錯誤日誌", command=self.open_log).pack(side="left")
-        ttk.Button(bar, text="📂 打開設定資料夾", command=lambda: open_path(data_dir())).pack(side="left", padx=6)
-        ttk.Button(bar, text="清除網速紀錄", command=self.reset_speed).pack(side="left")
-        ttk.Label(f, text=f"設定資料夾：{data_dir()}　｜　版本 v{VERSION}", foreground="#888").grid(
-            row=11, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        # --- 備份 ---
+        b = box("備份")
+        b.pack(fill="x", pady=4)
+        ttk.Button(b, text="⬆ 匯出設定和紀錄…", command=self.export_settings).pack(side="left", pady=3)
+        ttk.Button(b, text="⬇ 匯入…", command=self.import_settings).pack(side="left", padx=6)
+        ttk.Button(b, text="📂 自動備份資料夾", command=self.open_backups).pack(side="left")
+        ttk.Label(b, text="換電腦、重灌時用；更新版本時也會自動備份", foreground="#555").pack(side="left", padx=8)
+
+        # --- 版本 ---
+        v = box("版本")
+        v.pack(fill="x", pady=4)
+        ttk.Label(v, text=f"目前版本：v{VERSION}").pack(side="left", pady=3)
+        ttk.Button(v, text="檢查更新", command=self.manual_update_check).pack(side="left", padx=8)
+        ttk.Button(v, text="查看更新內容", command=lambda: webbrowser.open(f"https://github.com/{REPO}/releases")).pack(side="left")
+
+        # --- 問題排查 ---
+        t = box("問題排查")
+        t.pack(fill="x", pady=4)
+        ttk.Button(t, text="📄 打開錯誤日誌", command=self.open_log).pack(side="left", pady=3)
+        ttk.Button(t, text="📂 打開設定資料夾", command=lambda: open_path(data_dir())).pack(side="left", padx=6)
+        ttk.Button(t, text="清除網速紀錄", command=self.reset_speed).pack(side="left")
+        ttk.Label(outer, text=f"設定資料夾：{data_dir()}", foreground="#888").pack(anchor="w", pady=(6, 0))
+
+    def apply_settings_to_ui(self):
+        """設定被匯入後，讓畫面上的選項跟著改"""
+        self.dir_var.set(self.settings.download_dir)
+        self.q_var.set(self.settings["default_quality"])
+        self.tpl_var.set(self.settings["filename_template"])
+        self.keep_var.set(bool(self.settings["keep_history"]))
+        self.close_var.set(self.settings["close_action"])
+        self.update_tpl_preview()
+        self.refresh_history()
+
+    def export_settings(self):
+        path = filedialog.asksaveasfilename(
+            title="匯出設定和紀錄", defaultextension=".json", filetypes=[("Video Helper 備份", "*.json")],
+            initialfile=f"VideoHelper-備份-{datetime.now():%Y%m%d}.json")
+        if not path:
+            return
+        with_hist = messagebox.askyesno("匯出", "要連下載紀錄一起匯出嗎？\n（選「否」只匯出設定）")
+        try:
+            export_backup(path, self.settings, self.history if with_hist else None)
+            messagebox.showinfo("匯出完成", f"已存到：\n{path}")
+        except Exception as e:
+            log.exception("匯出失敗")
+            messagebox.showerror("匯出失敗", str(e))
+
+    def import_settings(self, path=None):
+        path = path or filedialog.askopenfilename(
+            title="匯入設定", initialdir=backups_dir() if os.path.isdir(backups_dir()) else None,
+            filetypes=[("Video Helper 備份", "*.json")])
+        if not path:
+            return
+        try:
+            s, hist, warns = import_backup(path)
+        except Exception as e:
+            messagebox.showerror("匯入失敗", f"讀不了這個檔案：\n{e}")
+            return
+        self.settings.data.update(s)
+        self.settings.save()
+        added = self.history.merge(hist) if hist else 0
+        self.apply_settings_to_ui()
+        msg = f"已匯入 {len(s)} 項設定" + (f"、{added} 筆新的下載紀錄" if hist is not None else "") + "。"
+        if warns:
+            msg += "\n\n注意：\n" + "\n".join("・" + w for w in warns)
+        log.info("匯入備份：%s（設定 %d 項、紀錄 %d 筆）", path, len(s), added)
+        messagebox.showinfo("匯入完成", msg)
+
+    def open_backups(self):
+        os.makedirs(backups_dir(), exist_ok=True)
+        open_path(backups_dir())
+
+    def manual_update_check(self):
+        threading.Thread(target=check_update, args=(self.q, True), daemon=True).start()
 
     def update_tpl_preview(self):
         self.tpl_preview.config(text="範例：" + preview_filename(self.tpl_var.get()))
@@ -1238,6 +1550,7 @@ class App:
         self.settings["default_quality"] = self.q_var.get()
         self.settings["keep_history"] = bool(self.keep_var.get())
         self.settings["filename_template"] = self.tpl_var.get()
+        self.settings["close_action"] = self.close_var.get()
         self.settings.save()
         self.refresh_history()
         messagebox.showinfo("已儲存", "設定已儲存。")

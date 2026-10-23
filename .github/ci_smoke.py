@@ -73,5 +73,24 @@ assert app.queue.count(a.DONE) == 3, "批次加入的沒有下載完"
 app.queue_clear(); r.update()
 assert len(app.qtree.get_children()) == 0, "清除已結束沒有作用"
 assert app.tpl_preview.cget("text").startswith("範例："), "檔名格式範例沒有顯示"
-r.destroy()
+
+# 5. 匯出 → 改設定 → 匯入 → 畫面跟著更新
+bk = os.path.join(d, "backup.json")
+app.settings["default_quality"] = "480"
+a.export_backup(bk, app.settings, app.history)
+app.settings["default_quality"] = "最高"
+sset, hist, warns = a.import_backup(bk)
+app.settings.data.update(sset); app.apply_settings_to_ui(); r.update()
+assert app.q_var.get() == "480", "匯入後畫面沒有更新"
+
+# 6. 系統匣：關視窗 → 縮到系統匣 → 從系統匣打開 → 結束
+assert a.pystray is not None, "pystray 沒有裝進去"
+app.settings["close_action"] = "一律縮到系統匣"
+app.on_close(); r.update()
+assert app.tray is not None, "系統匣圖示沒有建立"
+assert app.is_hidden(), "視窗沒有縮到系統匣"
+app.q.put(("show_window", None))
+wait(lambda: not app.is_hidden())
+app.notify("測試通知")
+app.quit_app()
 print("GUI_OK")

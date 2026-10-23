@@ -40,7 +40,7 @@ jobs:
 
       - name: Install packages
         if: steps.chk.outputs.exists != '1'
-        run: pip install yt-dlp imageio-ffmpeg pyinstaller
+        run: pip install yt-dlp imageio-ffmpeg pystray pillow pyinstaller
 
       - name: Smoke test (window, tabs, history, bundled ffmpeg on Windows)
         if: steps.chk.outputs.exists != '1'
@@ -49,7 +49,21 @@ jobs:
 
       - name: Build exe
         if: steps.chk.outputs.exists != '1'
-        run: pyinstaller --onefile --windowed --name VideoHelper --collect-all imageio_ffmpeg --collect-all yt_dlp video_helper_app.py
+        run: pyinstaller --onefile --windowed --name VideoHelper --collect-all imageio_ffmpeg --collect-all yt_dlp --collect-submodules pystray video_helper_app.py
+
+      - name: Release notes from CHANGELOG.md
+        if: steps.chk.outputs.exists != '1'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          v = "${{ steps.ver.outputs.v }}"
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          m = re.search(r"^## v" + re.escape(v) + r"\s*\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+          body = (m.group(1).strip() if m else "") + "\n\n下載 VideoHelper.exe 雙擊即可使用。"
+          open("release_notes.md", "w", encoding="utf-8").write(body.strip())
+          print(body)
+          PY
 
       - name: Publish release
         if: steps.chk.outputs.exists != '1'
@@ -57,5 +71,5 @@ jobs:
         with:
           tag_name: v${{ steps.ver.outputs.v }}
           name: Video Helper v${{ steps.ver.outputs.v }}
-          body: 下載 VideoHelper.exe 雙擊即可使用。
+          body_path: release_notes.md
           files: dist/VideoHelper.exe
