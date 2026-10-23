@@ -1270,6 +1270,7 @@ class App:
 
     def on_analyzed(self, data):
         self.url, self.title, self.duration, self.formats, mbps = data
+        self.tree.delete(*self.tree.get_children())     # 不管怎麼被叫到，先清掉舊的清單
         self.remember_speed(mbps)
         self.analyzing = False
         self.title_lbl.config(text=f"{self.title}　（長度 {fmt_duration(self.duration)}）")
