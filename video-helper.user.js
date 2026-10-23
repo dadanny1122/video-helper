@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.1.1
+// @version      3.1.2
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -1251,58 +1251,207 @@
   }
 
   // 用 mux.js 把 .ts 片段轉成 .mp4（失敗就回傳 null，改存 .ts）
-  // 在 MP4 檔頭寫進影片總長度。
-  // mux.js 轉出來的是「分段式 MP4」，檔頭的長度寫著「不知道」，Windows 媒體播放器就會顯示 00:00:00、不能拖進度條。
-  // 這裡把 mvhd／tkhd／mdhd 的長度改成真正的秒數，再在 mvex 裡補一個 mehd（分段式 MP4 用來標示總長度的地方）。
-  function setMp4Duration(init, seconds) {
-    if (!(seconds > 0) || !init || init.length < 16) return init;
-    const dv = new DataView(init.buffer, init.byteOffset, init.byteLength);
-    const typeAt = i => String.fromCharCode(init[i + 4], init[i + 5], init[i + 6], init[i + 7]);
-    let movieTs = 0, moov = -1, mvex = -1, hasMehd = false;
-    const walk = (start, end) => {
+  /* 把「分段式 MP4」（mux.js 轉出來的、或網站本身給的 fMP4 切片）整理成「一般的 MP4」
+   *
+   * 分段式 MP4：檔頭幾乎是空的，影像聲音一段一段放，每段自己帶小目錄（moof）。
+   *   有些播放器（例如 Windows 媒體播放器）對這種檔案很挑：長度顯示 00:00:00、不能拖、甚至打不開。
+   * 一般的 MP4：檔頭（moov）有完整的目錄：每一格畫面多大、多長、哪些是關鍵畫面、放在檔案哪裡。
+   *   這就是 ffmpeg 平常輸出的格式，所有播放器都能開。
+   *
+   * 做法：讀每一段的小目錄 → 合成一份完整目錄 → 輸出 [檔頭, 目錄, 資料區標頭, 各段資料]。
+   *   影片資料本身只是「指過去」，不會再複製一份，所以大檔也不會多吃一倍記憶體。
+   */
+  function defragmentMp4(parts) {
+    const u32 = (b, i) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
+    const s32 = (b, i) => (b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3];
+    const u64 = (b, i) => u32(b, i) * 4294967296 + u32(b, i + 4);
+    const typeAt = (b, i) => String.fromCharCode(b[i + 4], b[i + 5], b[i + 6], b[i + 7]);
+    function list(b, start, end) {
+      const out = [];
       for (let i = start; i + 8 <= end;) {
-        const size = dv.getUint32(i), type = typeAt(i);
-        if (size < 8 || i + size > end) break;
-        const v1 = init[i + 8] === 1;              // version 1 用 64 位元
-        if (type === 'moov') moov = i;
-        if (type === 'mvhd') {
-          movieTs = dv.getUint32(i + (v1 ? 28 : 20));
-          const d = Math.round(seconds * movieTs);
-          if (v1) dv.setBigUint64(i + 32, BigInt(d)); else dv.setUint32(i + 24, d);
-        } else if (type === 'tkhd' && movieTs) {
-          const d = Math.round(seconds * movieTs);
-          if (v1) dv.setBigUint64(i + 36, BigInt(d)); else dv.setUint32(i + 28, d);
-        } else if (type === 'mdhd') {
-          const ts = dv.getUint32(i + (v1 ? 28 : 20));
-          const d = Math.round(seconds * ts);
-          if (v1) dv.setBigUint64(i + 32, BigInt(d)); else dv.setUint32(i + 24, d);
-        } else if (type === 'mvex') {
-          mvex = i;
-        } else if (type === 'mehd') {
-          hasMehd = true;
-          if (movieTs) { const d = Math.round(seconds * movieTs); if (v1) dv.setBigUint64(i + 12, BigInt(d)); else dv.setUint32(i + 12, d); }
-        }
-        if (['moov', 'trak', 'mdia', 'mvex'].includes(type)) walk(i + 8, i + size);
+        let size = u32(b, i), hdr = 8;
+        if (size === 1) { size = u64(b, i + 8); hdr = 16; } else if (size === 0) size = end - i;
+        if (size < hdr || i + size > end) break;
+        out.push({ t: typeAt(b, i), s: i, e: i + size, c: i + hdr });
         i += size;
       }
+      return out;
+    }
+    const child = (b, box, t) => list(b, box.c, box.e).find(x => x.t === t) || null;
+    const raw = (b, box) => b.subarray(box.s, box.e);
+
+    // ---- 讀檔頭（init）：每條軌道的基本資料 ----
+    const init = parts[0];
+    const moov = list(init, 0, init.length).find(x => x.t === 'moov');
+    if (!moov) throw new Error('找不到 moov');
+    const mvhd = child(init, moov, 'mvhd');
+    const movieTs = u32(init, mvhd.c + (init[mvhd.c] === 1 ? 20 : 12));
+    const tracks = new Map();
+    for (const trak of list(init, moov.c, moov.e).filter(x => x.t === 'trak')) {
+      const tkhd = child(init, trak, 'tkhd'), mdia = child(init, trak, 'mdia');
+      const mdhd = child(init, mdia, 'mdhd'), hdlr = child(init, mdia, 'hdlr'), minf = child(init, mdia, 'minf');
+      const stbl = child(init, minf, 'stbl');
+      const id = u32(init, tkhd.c + (init[tkhd.c] === 1 ? 20 : 12));
+      // 原本的「影音對齊」設定（edit list）：例如「影像晚 66 毫秒開始」，要原樣帶過去
+      let edits = null;
+      const edts = child(init, trak, 'edts'), elst = edts && child(init, edts, 'elst');
+      if (elst) {
+        const v1 = init[elst.c] === 1, n = u32(init, elst.c + 4);
+        edits = [];
+        for (let k = 0, q = elst.c + 8; k < n; k++) {
+          const dur = v1 ? u64(init, q) : u32(init, q);
+          const mt = v1 ? (s32(init, q + 8) * 4294967296 + u32(init, q + 12)) : s32(init, q + 4);
+          q += v1 ? 16 : 8;
+          edits.push({ dur, mt, rate: init.subarray(q, q + 4) });
+          q += 4;
+        }
+      }
+      tracks.set(id, {
+        edits,
+        id, tkhd: raw(init, tkhd), mdhd: raw(init, mdhd), hdlr: raw(init, hdlr),
+        mhd: raw(init, child(init, minf, 'vmhd') || child(init, minf, 'smhd') || child(init, minf, 'nmhd')),
+        dinf: child(init, minf, 'dinf') ? raw(init, child(init, minf, 'dinf')) : null,
+        stsd: raw(init, child(init, stbl, 'stsd')),
+        ts: u32(init, mdhd.c + (init[mdhd.c] === 1 ? 20 : 12)),
+        video: typeAt(init, hdlr.c + 4) === 'vide',
+        def: { dur: 0, size: 0, flags: 0 },
+        sizes: [], durs: [], ctos: [], sync: [], chunks: [], firstDts: null,
+      });
+    }
+    const mvex = child(init, moov, 'mvex');
+    if (mvex) for (const trex of list(init, mvex.c, mvex.e).filter(x => x.t === 'trex')) {
+      const tr = tracks.get(u32(init, trex.c + 4));
+      if (tr) tr.def = { dur: u32(init, trex.c + 12), size: u32(init, trex.c + 16), flags: u32(init, trex.c + 20) };
+    }
+
+    // ---- 讀每一段的小目錄（moof）----
+    const chunks = [];                                   // 依出現順序：{ track, data }
+    for (let pi = 1; pi < parts.length; pi++) {
+      const b = parts[pi];
+      for (const moof of list(b, 0, b.length).filter(x => x.t === 'moof')) {
+        let prevEnd = moof.s;
+        for (const traf of list(b, moof.c, moof.e).filter(x => x.t === 'traf')) {
+          const tfhd = child(b, traf, 'tfhd');
+          const fl = u32(b, tfhd.c) & 0xffffff;
+          const tr = tracks.get(u32(b, tfhd.c + 4));
+          if (!tr) continue;
+          let q = tfhd.c + 8;
+          let base = (fl & 0x20000) ? moof.s : prevEnd;
+          if (fl & 0x1) { base = u64(b, q); q += 8; }
+          if (fl & 0x2) q += 4;
+          let dDur = tr.def.dur, dSize = tr.def.size, dFlags = tr.def.flags;
+          if (fl & 0x8) { dDur = u32(b, q); q += 4; }
+          if (fl & 0x10) { dSize = u32(b, q); q += 4; }
+          if (fl & 0x20) { dFlags = u32(b, q); q += 4; }
+          const tfdt = child(b, traf, 'tfdt');
+          if (tfdt && tr.firstDts === null) tr.firstDts = b[tfdt.c] === 1 ? u64(b, tfdt.c + 4) : u32(b, tfdt.c + 4);
+          for (const trun of list(b, traf.c, traf.e).filter(x => x.t === 'trun')) {
+            const v1 = b[trun.c] === 1, tf = u32(b, trun.c) & 0xffffff, n = u32(b, trun.c + 4);
+            let r = trun.c + 8, ptr = base;
+            if (tf & 0x1) { ptr = base + s32(b, r); r += 4; }
+            let firstFlags = null;
+            if (tf & 0x4) { firstFlags = u32(b, r); r += 4; }
+            const start = ptr;
+            for (let k = 0; k < n; k++) {
+              const d = (tf & 0x100) ? u32(b, r) : dDur; if (tf & 0x100) r += 4;
+              const sz = (tf & 0x200) ? u32(b, r) : dSize; if (tf & 0x200) r += 4;
+              let sf = (tf & 0x400) ? u32(b, r) : dFlags; if (tf & 0x400) r += 4;
+              if (k === 0 && firstFlags !== null) sf = firstFlags;
+              const cto = (tf & 0x800) ? (v1 ? s32(b, r) : u32(b, r)) : 0; if (tf & 0x800) r += 4;
+              tr.durs.push(d); tr.sizes.push(sz); tr.ctos.push(cto); tr.sync.push(!(sf & 0x10000));
+              ptr += sz;
+            }
+            if (ptr > b.length) throw new Error('片段資料不完整');
+            if (n) { const c = { track: tr, data: b.subarray(start, ptr), count: n }; tr.chunks.push(c); chunks.push(c); }
+            prevEnd = ptr;
+          }
+        }
+      }
+    }
+    if (!chunks.length) throw new Error('沒有影片資料');
+
+    // ---- 寫出一般的 MP4 ----
+    const enc = s => [...s].map(c => c.charCodeAt(0));
+    const cat = arrs => { const n = arrs.reduce((a, x) => a + x.length, 0); const o = new Uint8Array(n); let i = 0; for (const x of arrs) { o.set(x, i); i += x.length; } return o; };
+    const be32 = v => [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
+    const be64 = v => [...be32(Math.floor(v / 4294967296)), ...be32(v >>> 0)];
+    const box = (t, ...kids) => { const body = cat(kids.map(k => k instanceof Uint8Array ? k : new Uint8Array(k))); return cat([new Uint8Array([...be32(body.length + 8), ...enc(t)]), body]); };
+    const full = (t, v, f, ...kids) => box(t, [v, (f >>> 16) & 255, (f >>> 8) & 255, f & 255], ...kids);
+    const rle = arr => { const out = []; for (const x of arr) { const l = out[out.length - 1]; if (l && l[1] === x) l[0]++; else out.push([1, x]); } return out; };
+    const setDur = (src, off32, off64, value) => {            // 複製一個 box 並改掉它的長度欄位
+      const b = src.slice(); const v1 = b[8] === 1;
+      b.fill(0, 12, v1 ? 28 : 20);                            // 建立／修改時間歸零（mux.js 寫的是 1904 年）
+      if (v1) b.set(be64(value), off64); else b.set(be32(Math.min(value, 0xffffffff)), off32);
+      return b;
     };
-    walk(0, init.length);
-    if (moov < 0 || mvex < 0 || hasMehd || !movieTs) return init;
-    // 補 mehd：16 位元組，放在 mvex 最前面；mvex 和 moov 的大小各加 16（moov 在影片資料前面，後面的位置不受影響）
-    const mehd = new Uint8Array(16);
-    const mv = new DataView(mehd.buffer);
-    mv.setUint32(0, 16); mehd.set([0x6d, 0x65, 0x68, 0x64], 4); mv.setUint32(12, Math.round(seconds * movieTs));
-    const out = new Uint8Array(init.length + 16);
-    out.set(init.subarray(0, mvex + 8), 0);
-    out.set(mehd, mvex + 8);
-    out.set(init.subarray(mvex + 8), mvex + 24);
-    const od = new DataView(out.buffer);
-    od.setUint32(mvex, dv.getUint32(mvex) + 16);
-    od.setUint32(moov, dv.getUint32(moov) + 16);
-    return out;
+
+    const mdatPayload = chunks.reduce((a, c) => a + c.data.length, 0);
+    const big = mdatPayload > 0xfff00000;                     // 超過 4 GB：用 64 位元的位置
+    let movieDur = 0;
+    const buildMoov = offsets => {
+      const traks = [];
+      for (const tr of tracks.values()) {
+        if (!tr.sizes.length) continue;
+        const mediaDur = tr.durs.reduce((a, x) => a + x, 0);
+        const lead = tr.firstDts ? Math.round(tr.firstDts * movieTs / tr.ts) : 0;   // 這條軌道晚開始的時間
+        // 影音對齊：原本有 edit list 就沿用（重新算長度），沒有的話用「晚開始的時間」補一段空白
+        let edits = null;
+        if (tr.edits && tr.edits.length) {
+          edits = tr.edits.map(x => ({ ...x }));
+          for (const x of edits) {
+            if (x.mt >= 0 && x.dur === 0) x.dur = Math.max(0, Math.round((mediaDur - x.mt) * movieTs / tr.ts));
+          }
+        } else if (lead > 0) {
+          edits = [{ dur: lead, mt: -1, rate: new Uint8Array([0, 1, 0, 0]) },
+                   { dur: Math.round(mediaDur * movieTs / tr.ts), mt: 0, rate: new Uint8Array([0, 1, 0, 0]) }];
+        }
+        const trackDur = edits ? edits.reduce((a, x) => a + x.dur, 0) : Math.round(mediaDur * movieTs / tr.ts);
+        movieDur = Math.max(movieDur, trackDur);
+        const stbl = [tr.stsd];
+        const stts = rle(tr.durs);                                                    // 每格畫面的長度（連續相同的合併）
+        stbl.push(full('stts', 0, 0, [...be32(stts.length), ...stts.flatMap(([n, d]) => [...be32(n), ...be32(d)])]));
+        if (tr.ctos.some(x => x !== 0)) {
+          const ct = rle(tr.ctos), neg = tr.ctos.some(x => x < 0);
+          stbl.push(full('ctts', neg ? 1 : 0, 0, [...be32(ct.length), ...ct.flatMap(([n, o]) => [...be32(n), ...be32(o >>> 0)])]));
+        }
+        if (tr.video && tr.sync.some(x => !x)) {
+          const idx = []; tr.sync.forEach((x, i) => { if (x) idx.push(i + 1); });
+          stbl.push(full('stss', 0, 0, [...be32(idx.length), ...idx.flatMap(be32)]));
+        }
+        const sc = []; tr.chunks.forEach((c, i) => { const l = sc[sc.length - 1]; if (!l || l[1] !== c.count) sc.push([i + 1, c.count]); });
+        stbl.push(full('stsc', 0, 0, [...be32(sc.length), ...sc.flatMap(([f, n]) => [...be32(f), ...be32(n), ...be32(1)])]));
+        stbl.push(full('stsz', 0, 0, [...be32(0), ...be32(tr.sizes.length), ...tr.sizes.flatMap(be32)]));
+        const offs = tr.chunks.map(c => offsets.get(c));
+        stbl.push(big ? full('co64', 0, 0, [...be32(offs.length), ...offs.flatMap(be64)])
+                      : full('stco', 0, 0, [...be32(offs.length), ...offs.flatMap(be32)]));
+        const minf = box('minf', tr.mhd, ...(tr.dinf ? [tr.dinf] : []), box('stbl', ...stbl));
+        const mdia = box('mdia', setDur(tr.mdhd, 24, 32, mediaDur), tr.hdlr, minf);
+        const parts2 = [setDur(tr.tkhd, 28, 36, trackDur)];
+        if (edits) {
+          parts2.push(box('edts', full('elst', 0, 0, [...be32(edits.length),
+            ...edits.flatMap(x => [...be32(Math.min(x.dur, 0xffffffff)), ...be32(x.mt >>> 0), ...x.rate])])));
+        }
+        traks.push(box('trak', ...parts2, mdia));
+      }
+      const mv = init.subarray(mvhd.s, mvhd.e);
+      return box('moov', setDur(mv, 24, 32, movieDur), ...traks);
+    };
+
+    const ftyp = box('ftyp', enc('isom'), be32(512), enc('isom'), enc('iso2'), enc('avc1'), enc('mp41'));
+    // 先用假的位置算出目錄多大，再填真正的位置（目錄放在資料前面，播放器一打開就讀得到）
+    const fake = new Map(chunks.map(c => [c, 0]));
+    const moovSize = buildMoov(fake).length;
+    const mdatHdr = big ? new Uint8Array([...be32(1), ...enc('mdat'), ...be64(mdatPayload + 16)])
+                        : new Uint8Array([...be32(mdatPayload + 8), ...enc('mdat')]);
+    let pos = ftyp.length + moovSize + mdatHdr.length;
+    const real = new Map();
+    for (const c of chunks) { real.set(c, pos); pos += c.data.length; }
+    const moovOut = buildMoov(real);
+    if (moovOut.length !== moovSize) throw new Error('目錄大小不一致');
+    return [ftyp, moovOut, mdatHdr, ...chunks.map(c => c.data)];
   }
 
-  function tsToMp4(parts, seconds) {
+  function tsToMp4(parts) {
     const mux = typeof muxjs !== 'undefined' ? muxjs : (window.muxjs || PW.muxjs);
     if (!mux) return null;
     try {
@@ -1310,7 +1459,7 @@
       let gotInit = false;
       const tm = new mux.mp4.Transmuxer();
       tm.on('data', seg => {
-        if (!gotInit) { out.push(setMp4Duration(new Uint8Array(seg.initSegment), seconds)); gotInit = true; }
+        if (!gotInit) { out.push(new Uint8Array(seg.initSegment)); gotInit = true; }
         out.push(new Uint8Array(seg.data));
       });
       for (const p of parts) { tm.push(p); tm.flush(); }
@@ -1318,6 +1467,12 @@
     } catch (e) {
       return null;
     }
+  }
+
+  // 整理成一般的 MP4；萬一失敗，就存原本的分段式 MP4（VLC 一定能播）
+  function toNormalMp4(parts) {
+    try { return defragmentMp4(parts); }
+    catch (e) { console.warn('[Video Helper] 整理 MP4 失敗，改存分段式', e); return parts; }
   }
 
   function saveBlob(parts, type, fileName) {
@@ -1360,17 +1515,17 @@
 
     // 片段本身就是 MP4 格式 → 直接接起來
     if (media.init) {
-      parts.unshift(setMp4Duration(new Uint8Array(await getData(media.init, 'arraybuffer')), media.dur));
-      saveBlob(parts, 'video/mp4', baseName + '.mp4');
+      parts.unshift(new Uint8Array(await getData(media.init, 'arraybuffer')));
+      saveBlob(toNormalMp4(parts), 'video/mp4', baseName + '.mp4');
       return baseName + '.mp4';
     }
 
     // .ts 片段 → 轉成 MP4
     onStage('轉換成 MP4 中…');
     await new Promise(r => setTimeout(r, 50));
-    const mp4 = tsToMp4(parts, media.dur);
+    const mp4 = tsToMp4(parts);
     if (mp4) {
-      saveBlob(mp4, 'video/mp4', baseName + '.mp4');
+      saveBlob(toNormalMp4(mp4), 'video/mp4', baseName + '.mp4');
       return baseName + '.mp4';
     }
     saveBlob(parts, 'video/mp2t', baseName + '.ts');
