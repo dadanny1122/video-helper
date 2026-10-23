@@ -163,8 +163,48 @@ app.check_clipboard(); r.update()
 assert app.clip_bar.winfo_manager() == "pack" and "xvideos.com" in app.clip_lbl.cget("text"), "剪貼簿提示列沒有放上去"
 app.nb.select(app.tab_dl); r.update()
 assert app.clip_bar.winfo_ismapped(), "切到「② 下載影片」時看不到剪貼簿提示列"
+app.nb.select(app.nb.tabs()[-1]); r.update()                 # 換到最後一個分頁（統計）
+assert app.clip_bar.winfo_ismapped(), "在別的分頁也要看得到剪貼簿提示列"
+app.nb.select(app.tab_dl); r.update()
 app.check_clipboard(); r.update()
 assert app.clip_bar.winfo_ismapped(), "同一個網址不該讓提示列消失"
+
+# 7b. MP4 分段下載（6 條線同時抓再接回去）：內容要跟原檔一模一樣，取消不留殘檔
+import http.server as _hs, re as _re, threading as _th, hashlib as _hl, tempfile as _tf
+_blob = os.urandom(12_000_000)
+class _RangeH(_hs.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    def log_message(self, *x): pass
+    def do_GET(self):
+        m = _re.match(r"bytes=(\d+)-(\d*)", self.headers.get("Range") or "")
+        s0 = int(m.group(1)) if m else 0
+        e0 = int(m.group(2) or len(_blob) - 1) if m else len(_blob) - 1
+        body = _blob[s0:e0 + 1]
+        self.send_response(206 if m else 200)
+        if m:
+            self.send_header("Content-Range", f"bytes {s0}-{e0}/{len(_blob)}")
+        self.send_header("Content-Length", str(len(body))); self.end_headers()
+        try:
+            for i in range(0, len(body), 65536):
+                self.wfile.write(body[i:i + 65536]); time.sleep(0.002)
+        except OSError:
+            pass
+_srv = _hs.ThreadingHTTPServer(("127.0.0.1", 0), _RangeH)
+_th.Thread(target=_srv.serve_forever, daemon=True).start()
+_dir = _tf.mkdtemp()
+_dest = os.path.join(_dir, "分段 測試 [720p].mp4")
+_res = a.parallel_download(f"http://127.0.0.1:{_srv.server_port}/v.mp4", {}, _dest)
+assert _res and _hl.md5(open(_dest, "rb").read()).digest() == _hl.md5(_blob).digest(), "分段下載的檔案跟原檔不一樣"
+assert sorted(os.listdir(_dir)) == ["分段 測試 [720p].mp4"], f"分段下載留下暫存檔：{os.listdir(_dir)}"
+_ev = _th.Event(); _th.Timer(0.3, _ev.set).start()
+_d2 = os.path.join(_dir, "取消.mp4"); _tch = set()
+try:
+    a.parallel_download(f"http://127.0.0.1:{_srv.server_port}/v.mp4", {}, _d2, cancel_event=_ev, touched=_tch)
+    raise AssertionError("分段下載取消沒有停")
+except a.Cancelled:
+    a.cleanup_partials(_tch, include_complete=True)
+assert sorted(os.listdir(_dir)) == ["分段 測試 [720p].mp4"], f"取消後留下暫存檔：{os.listdir(_dir)}"
+_srv.shutdown()
 
 # 8. 系統匣：關視窗 → 縮到系統匣 → 從系統匣打開 → 結束
 assert a.pystray is not None, "pystray 沒有裝進去"

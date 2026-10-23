@@ -78,7 +78,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.10.0"
+VERSION = "1.11.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -962,6 +962,130 @@ def cleanup_partials(paths, include_complete=False):
     return removed
 
 
+PARALLEL_PARTS = 6
+PARALLEL_MIN_BYTES = 8_000_000           # 太小的檔案不值得分段
+
+
+def parallel_ok(info):
+    """yt-dlp 選好的是「一個完整的 http 檔案」（不是切片、不用合併影音）才分段下載"""
+    return (bool(info.get("url")) and not info.get("requested_formats")
+            and (info.get("protocol") or "") in ("http", "https"))
+
+
+def _probe_size(url, headers):
+    """問伺服器檔案多大、能不能分段；不能就回傳 0"""
+    req = urllib.request.Request(url, headers={**headers, "Range": "bytes=0-0"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        cr = r.headers.get("Content-Range") or ""
+        if r.status != 206 or "/" not in cr:
+            return 0
+        total = cr.rsplit("/", 1)[1].strip()
+        return int(total) if total.isdigit() else 0
+
+
+def parallel_download(url, headers, dest, parts=PARALLEL_PARTS, on_progress=None, cancel_event=None,
+                      touched=None):
+    """
+    把一個檔案切成幾段同時下載，再接回去（內容跟一條線下載的一模一樣）。
+    成功回傳 {"bytes", "start", "end"}；伺服器不支援分段就回傳 None（改用一般下載）。
+    取消會丟出 Cancelled；某一段一直失敗會丟出例外。
+    """
+    try:
+        total = _probe_size(url, headers)
+    except Exception as e:
+        log.info("分段下載：問不到檔案大小，改用一般下載（%s）", e)
+        return None
+    if total < PARALLEL_MIN_BYTES:
+        return None
+    os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+    step = -(-total // parts)
+    ranges = [(i, i * step, min(total, (i + 1) * step) - 1) for i in range(parts) if i * step < total]
+    got = [0] * len(ranges)
+    lock = threading.Lock()
+    errors = []
+    start = time.time()
+    last = {"t": 0}
+
+    def report():
+        now = time.time()
+        if not on_progress or now - last["t"] < 0.25:
+            return
+        last["t"] = now
+        done = sum(got)
+        speed = done / max(0.01, now - start)
+        on_progress(done, total, speed, (total - done) / speed if speed else None)
+
+    def worker(i, a, b):
+        part = f"{dest}.part{i}"
+        if touched is not None:
+            touched.add(part)
+        tries = 0
+        with open(part, "wb") as f:
+            while a + got[i] <= b:
+                if cancel_event is not None and cancel_event.is_set():
+                    return
+                if errors:
+                    return
+                try:
+                    req = urllib.request.Request(url, headers={**headers, "Range": f"bytes={a + got[i]}-{b}"})
+                    with urllib.request.urlopen(req, timeout=30) as r:
+                        if r.status != 206:
+                            raise IOError(f"伺服器沒有照分段回應（{r.status}）")
+                        while True:
+                            if cancel_event is not None and cancel_event.is_set():
+                                return
+                            chunk = r.read(256 * 1024)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            with lock:
+                                got[i] += len(chunk)
+                                report()
+                    tries = 0
+                except Exception as e:
+                    tries += 1
+                    if tries > 8:
+                        errors.append(e)
+                        return
+                    time.sleep(min(10, tries * 1.5))
+
+    threads = [threading.Thread(target=worker, args=r, daemon=True) for r in ranges]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    parts_files = [f"{dest}.part{i}" for i, _, _ in ranges]
+    if cancel_event is not None and cancel_event.is_set():
+        raise Cancelled()
+    if errors or sum(got) != total:
+        for p in parts_files:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        raise errors[0] if errors else IOError(f"下載不完整（{sum(got)}/{total}）")
+    end = time.time()
+    tmp = dest + ".joining"
+    with open(tmp, "wb") as out:
+        for p in parts_files:
+            with open(p, "rb") as f:
+                while True:
+                    buf = f.read(4 * 1024 * 1024)
+                    if not buf:
+                        break
+                    out.write(buf)
+    os.replace(tmp, dest)
+    for p in parts_files:
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+    if on_progress:
+        on_progress(total, total, total / max(0.01, end - start), 0)
+    log.info("分段下載完成：%d 段，%.1f MB，%.1f 秒", len(ranges), total / 1e6, end - start)
+    return {"bytes": total, "start": start, "end": end}
+
+
 def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_event=None,
                  name_template=DEFAULT_TEMPLATE, stats=None):
     """
@@ -1044,9 +1168,23 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
                     for fm in raw.get("formats") or [raw]:
                         if not fm.get("height"):
                             fm["height"] = fmt["height"]
-                ydl.process_ie_result(raw, download=True)
+                info = ydl.process_ie_result(raw, download=False)
             else:
-                ydl.download([url])
+                info = ydl.extract_info(url, download=False)
+            # 單一個 MP4 檔：自己分 6 段同時下載（網站常限制每條連線的速度）
+            done = None
+            if parallel_ok(info):
+                path = ydl.prepare_filename(info)
+                touched.add(path)
+                done = parallel_download(info["url"], {**(info.get("http_headers") or {})}, path,
+                                         on_progress=on_progress, cancel_event=cancel_event,
+                                         touched=touched)
+                if done:
+                    clock["start"], clock["end"] = done["start"], done["end"]
+                    sizes[path] = done["bytes"]
+                    final["path"] = path
+            if not done:
+                ydl.process_ie_result(info, download=True)
     except BaseException as e:
         # yt-dlp 會把進度回呼裡丟出的例外包起來，所以也要檢查 cancel_event
         cancelled = isinstance(e, Cancelled) or (cancel_event is not None and cancel_event.is_set())
@@ -1261,7 +1399,8 @@ class App:
         self.btn_batch.pack(side="left", padx=(6, 0))
 
         # 剪貼簿裡有影片網址時，出現這一列（不會自動做任何事，要你按）
-        self.clip_bar = ttk.Frame(dl)
+        # 放在分頁的上面，不管現在在哪個分頁都看得到
+        self.clip_bar = ttk.Frame(self.root)
         self.clip_lbl = ttk.Label(self.clip_bar, text="", foreground="#1565c0")
         self.clip_lbl.pack(side="left")
         ttk.Button(self.clip_bar, text="讀取這個網址", command=self.use_clipboard).pack(side="left", padx=6)
@@ -1739,7 +1878,7 @@ class App:
             return
         self.last_clip = clip
         self.clip_lbl.config(text=f"📋 剪貼簿裡有影片網址：{clip[:60]}{'…' if len(clip) > 60 else ''}")
-        self.clip_bar.pack(fill="x", padx=10, pady=(0, 2), in_=self.clip_anchor)
+        self.clip_bar.pack(fill="x", padx=10, pady=(6, 2), before=self.nb)
 
     def use_clipboard(self):
         self.clip_bar.pack_forget()

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.2.1
+// @version      3.3.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -1105,16 +1105,67 @@
         const box = document.createElement('div');
         box.className = 'vh-ui';
         box.style.cssText = 'position:fixed;top:10px;right:20px;z-index:2147483647;background:rgba(0,0,0,.8);' +
-          'color:#fff;padding:8px 12px;border-radius:8px;font:14px/1.6 sans-serif;cursor:pointer;' +
-          'white-space:nowrap;display:none;';
-        box.title = '點一下收合 / 展開';
-        box.addEventListener('click', () => { collapsed = !collapsed; });
+          'color:#fff;padding:8px 12px;border-radius:8px;font:14px/1.6 sans-serif;cursor:move;' +
+          'white-space:nowrap;display:none;touch-action:none;user-select:none;';
+        box.title = '點一下收合 / 展開；按住可以拖到別的位置（雙擊還原位置）';
         document.body.appendChild(box);
+
+        // 位置：使用者拖過就用拖的位置；沒拖過就自動放在網站「固定在上方的選單」下面，不擋到它
+        let pos = store.get('estPos', null);             // { right, top }
+        const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+        const headerBottom = () => {
+          let bottom = 0;
+          for (const x of [PW.innerWidth - 40, PW.innerWidth - 200]) {
+            for (const el of document.elementsFromPoint(x, 15)) {
+              if (el === box || el.closest('.vh-ui') || el === document.body || el === document.documentElement) continue;
+              let e = el;
+              while (e && e !== document.body) {
+                const p = getComputedStyle(e).position;
+                if (p === 'fixed' || p === 'sticky') {
+                  const r = e.getBoundingClientRect();
+                  if (r.top <= 5 && r.bottom < 220) bottom = Math.max(bottom, r.bottom);
+                  break;
+                }
+                e = e.parentElement;
+              }
+            }
+          }
+          return bottom;
+        };
+        const place = () => {
+          const w = box.offsetWidth || 200, h = box.offsetHeight || 40;
+          const right = pos ? pos.right : 20;
+          const top = pos ? pos.top : headerBottom() + 10;
+          box.style.right = clamp(right, 0, PW.innerWidth - w) + 'px';
+          box.style.top = clamp(top, 0, PW.innerHeight - h) + 'px';
+        };
+        let drag = null;
+        box.addEventListener('pointerdown', e => {
+          const r = box.getBoundingClientRect();
+          drag = { x: e.clientX, y: e.clientY, right: PW.innerWidth - r.right, top: r.top, moved: false };
+          try { box.setPointerCapture(e.pointerId); } catch (err) {}
+        });
+        box.addEventListener('pointermove', e => {
+          if (!drag) return;
+          const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+          if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+          drag.moved = true;
+          pos = { right: drag.right - dx, top: drag.top + dy };
+          place();
+        });
+        box.addEventListener('pointerup', () => {
+          if (!drag) return;
+          if (drag.moved) store.set('estPos', pos);
+          else collapsed = !collapsed;                  // 沒有拖 → 當成點一下
+          drag = null;
+        });
+        box.addEventListener('dblclick', () => { pos = null; store.set('estPos', null); place(); });
 
         setInterval(() => {
           const main = getMain();
           if (!main) { box.style.display = 'none'; return; }
           box.style.display = 'block';
+          place();
           if (collapsed) { box.textContent = '⏱'; return; }
 
           const speed = measureSpeed();
