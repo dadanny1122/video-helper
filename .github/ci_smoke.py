@@ -31,7 +31,7 @@ print("FFMPEG_OK", a.FFMPEG)
 r = tk.Tk()
 app = a.App(r)
 r.update()
-assert len(app.nb.tabs()) == 4, "分頁數量不對"
+assert len(app.nb.tabs()) == 5, "分頁數量不對"
 assert len(app.step_marks) == 3, "安裝精靈步驟數量不對"
 
 # 3. 換成假的讀取／下載函式，走一遍佇列
@@ -46,7 +46,7 @@ fmts = [{"id": h, "height": h, "size": h * 100000, "exact": False, "audio": True
         for h in (1080, 720, 480)]
 def fake_analyze(url):
     return (url, 634, fmts, 20.0)
-def fake_download(url, fmt, out, on_progress=None, on_stage=None, cancel_event=None, name_template=None):
+def fake_download(url, fmt, out, on_progress=None, on_stage=None, cancel_event=None, name_template=None, stats=None):
     if url.startswith("fail"):
         raise RuntimeError("HTTP 404")
     if url.startswith("slow"):
@@ -54,6 +54,8 @@ def fake_download(url, fmt, out, on_progress=None, on_stage=None, cancel_event=N
             on_progress(1, 10, 1e6, 5); time.sleep(0.05)
         raise a.Cancelled()
     on_progress(10, 10, 1e6, 0)
+    if stats is not None:
+        stats.update(bytes=fmt["size"] * 2, seconds=2.0)     # 假裝實際是預估的 2 倍大
     return (dst, None)
 app.analyze_fn, app.download_fn = fake_analyze, fake_download
 
@@ -81,6 +83,13 @@ wait(lambda: t_fail["status"] == a.FAILED and app.cancel_event is None)
 app.start_batch(["okA", "okB"])
 wait(lambda: not app.batch_running and app.queue.count(a.WAITING, a.RUNNING) == 0)
 assert app.queue.count(a.DONE) == 3, "批次加入的沒有下載完"
+
+# 統計：上面完成了好幾部 → 統計分頁有資料、預估開始校正
+app.refresh_stats(); r.update()
+assert len(app.stree.get_children()) >= 1, "統計分頁沒有資料"
+assert "倍" in app.stats_lbl.cget("text"), "統計沒有算出校正倍數"
+app.on_analyzed(("https://www.pornhub.com/view_video.php?viewkey=again", "再讀一次", 634, fmts, 20.0)); r.update()
+assert "校正" in app.speed_lbl.cget("text"), "預估沒有標示已校正"
 
 app.queue_clear(); r.update()
 assert len(app.qtree.get_children()) == 0, "清除已結束沒有作用"

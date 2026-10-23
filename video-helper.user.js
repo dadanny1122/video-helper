@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      2.9.0
-// @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
+// @version      3.0.0
+// @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
 // @match        *://*.xvideos.com/*
@@ -168,6 +168,49 @@
 
   function ratingOf(ratio) { return ratio >= 2 ? '🟢' : ratio >= 1.2 ? '🟡' : '🔴'; }
 
+  // ---- 載入品質紀錄：每個網站最近 20 次「實際開始播放秒數 ÷ 預估秒數」----
+  function startupSamples(site) {
+    const all = store.get('vqSamples', {}) || {};
+    return Array.isArray(all[site]) ? all[site] : [];
+  }
+
+  function recordStartup(ratio) {
+    if (!isFinite(ratio) || ratio < 0.05 || ratio > 20) return;     // 太離譜的（例如網頁卡住）不記
+    const all = store.get('vqSamples', {}) || {};
+    const key = HOME;
+    all[key] = [ratio, ...startupSamples(key)].slice(0, 20);
+    store.set('vqSamples', all);
+  }
+
+  function startupFactor() {
+    const xs = startupSamples(HOME).slice().sort((a, b) => a - b);
+    if (xs.length < 3) return [null, xs.length];
+    const m = xs.length % 2 ? xs[(xs.length - 1) / 2] : (xs[xs.length / 2 - 1] + xs[xs.length / 2]) / 2;
+    return [Math.min(5, Math.max(0.2, m)), xs.length];
+  }
+
+  // 「開始播放要多久」的原始預估（還沒校正）：先載 5 秒影片的時間 + 0.5 秒
+  function startupEstimate(height) {
+    const sp = measureSpeed();
+    return sp ? bitrateFor(height) * 5 / sp.mbps + 0.5 : null;
+  }
+
+  function statusLine(vq) {
+    if (!vq) return '';
+    const stall = vq.stalls ? `｜卡頓 ${vq.stalls} 次（共 ${(vq.stallMs / 1000).toFixed(1)} 秒）` : '';
+    const text = {
+      searching: '🔎 尋找影片中',
+      loading: shared.adShowing ? '📺 廣告播放中' : '⏳ 影片載入中…',
+      ready: '✅ 已經可以播放了',
+      playing: '▶ 播放中' + stall,
+      buffering: '⏳ 緩衝中…' + stall,
+      paused: '⏸ 暫停' + stall,
+      ended: '⏹ 播完了' + stall,
+      error: '❌ 載入失敗：' + vq.error,
+    }[vq.state] || '';
+    return text ? `<b>${text}</b><br>` : '';
+  }
+
   function recommend(mbps) {
     const keys = Object.keys(BITRATE).map(Number).reverse();
     for (const k of keys) if (mbps / BITRATE[k] >= 1.2) return k + 'p';
@@ -330,7 +373,8 @@
       };
       const settingsBtn = mkBtn('⚙ 功能開關', '#555', () => this.actions.settings && this.actions.settings());
       const diagBtn = mkBtn('🔧 診斷', '#6a1b9a', () => this.actions.diagnose && this.actions.diagnose());
-      foot.append(copy, settingsBtn, diagBtn, note);
+      const healthBtn = mkBtn('🩺 狀態檢查', '#00695c', () => this.actions.health && this.actions.health());
+      foot.append(copy, settingsBtn, healthBtn, diagBtn, note);
       p.appendChild(foot);
 
       document.body.appendChild(p);
@@ -362,7 +406,7 @@
    * 第二層：網站轉接器
    * ================================================================== */
 
-  const ALL = ['security', 'saveData', 'autoSkip', 'estimator', 'listLabels', 'download'];
+  const ALL = ['security', 'saveData', 'autoSkip', 'videoStatus', 'estimator', 'listLabels', 'download'];
 
   const SITES = [
     {
@@ -390,6 +434,8 @@
       },
       isVideoPage: () => location.pathname.includes('view_video'),
       findSources: findPhSources,
+      limits: ['寫在網頁最開頭的廣告程式仍會被瀏覽器先下載（腳本只能讓它不執行）',
+               'Pornhub 改版時，網站專屬規則可能失效（盾牌數字突然變很少就是徵兆）'],
     },
     {
       name: 'XVideos',
@@ -405,15 +451,18 @@
       },
       isVideoPage: () => /setVideo(UrlHigh|UrlLow|HLS)/.test(document.documentElement.innerHTML),
       findSources: findXvSources,
+      limits: ['720p 以上是切片，在瀏覽器裡下載完要轉 MP4，大檔建議用「🖥 送到電腦版」'],
     },
     // 盜版轉貼站：只開防護和隱藏廣告
     // 不開下載：內容多為片商作品的轉載
     { name: 'Jable', match: /(^|\.)jable\.tv$/,
-      features: ['security', 'saveData', 'hideAds', 'autoSkip', 'estimator', 'listLabels'] },
+      features: ['security', 'saveData', 'hideAds', 'autoSkip', 'videoStatus', 'estimator', 'listLabels'],
+      limits: ['不提供下載（內容多為片商作品的轉載）'] },
     // MissAV：按播放時會開 /pop?url=廣告商 的新分頁
     // 不開下載：內容多為片商作品的轉載
     { name: 'MissAV', match: /(^|\.)missav[^.]*\.[a-z]+$/, adPath: /^\/pop/,
-      features: ['security', 'saveData', 'hideAds', 'autoSkip', 'estimator', 'listLabels'] },
+      features: ['security', 'saveData', 'hideAds', 'autoSkip', 'videoStatus', 'estimator', 'listLabels'],
+      limits: ['不提供下載（內容多為片商作品的轉載）', 'MissAV 常換網址；換到不是 missav 開頭的網址時腳本不會啟動'] },
   ];
 
   const site = SITES.find(s => s.match.test(HOST));
@@ -861,6 +910,74 @@
       },
     },
 
+    /* ---------- 影片狀態與載入品質紀錄 ----------
+     * 聽播放器的事件，知道影片現在是：載入中、播放中、緩衝卡住、暫停、出錯
+     * 「開始播放要多久」量的是：正片開始載入（loadstart）→ 可以開始播（canplay）
+     *   這段時間跟你什麼時候按播放無關，也不含廣告
+     * 量到後跟當時的預估比，記下比例（只存數字，依網站分開）；評估框用最近 20 次的中位數校正預估
+     */
+    videoStatus: {
+      label: '影片狀態與載入品質紀錄（只存數字，可清除）',
+      early: true,                 // 網頁一開始就聽，才量得到正片什麼時候開始載入
+      run() {
+        if (!IS_TOP) return;
+        const vq = shared.vq = { state: 'searching', stalls: 0, stallMs: 0, startup: null, estAtStart: null, error: '' };
+        const ERR = { 1: '被中斷', 2: '網路錯誤', 3: '解碼錯誤', 4: '格式不支援或網址失效' };
+        const info = new WeakMap();          // 每個 <video>：最近一次開始載入的時間
+        let stallFrom = 0;
+        const isMain = v => isFinite(v.duration) && v.duration > 120;
+
+        const on = (v, type) => {
+          const now = performance.now();
+          const inf = info.get(v);
+          if (type === 'loadstart') { inf.loadstart = now; return; }
+          if (!isMain(v)) return;                             // 廣告、預覽小影片不管
+          if (type === 'canplay' && vq.startup === null) {
+            vq.startup = (now - inf.loadstart) / 1000;
+            vq.estAtStart = startupEstimate(v.videoHeight) || shared.startEstRaw || null;
+            if (vq.estAtStart) recordStartup(vq.startup / vq.estAtStart);
+            if (vq.state === 'searching' || vq.state === 'loading') vq.state = v.paused ? 'ready' : 'playing';
+          } else if (type === 'playing') {
+            if (stallFrom) { vq.stallMs += now - stallFrom; stallFrom = 0; }
+            vq.state = 'playing';
+          } else if (type === 'waiting') {
+            if (vq.state !== 'playing' && vq.state !== 'buffering') return;   // 還沒開始播時的等待不算卡頓
+            if (!stallFrom) { stallFrom = now; vq.stalls++; }
+            vq.state = 'buffering';
+          } else if (type === 'pause') {
+            if (!v.ended && vq.state !== 'error') vq.state = 'paused';
+          } else if (type === 'ended') {
+            vq.state = 'ended';
+          } else if (type === 'error') {
+            vq.state = 'error';
+            vq.error = ERR[v.error && v.error.code] || '未知錯誤';
+          }
+        };
+
+        const attach = v => {
+          if (info.has(v)) return;
+          // 太晚才找到（網頁已經在播了）→ 這次不記錄開始時間，避免記到錯的數字
+          const late = v.readyState >= 3;
+          info.set(v, { loadstart: performance.now() });
+          for (const t of ['loadstart', 'canplay', 'playing', 'waiting', 'pause', 'ended', 'error']) {
+            v.addEventListener(t, () => on(v, t));
+          }
+          if (late && isMain(v)) {
+            if (vq.startup === null) vq.startup = -1;
+            vq.state = v.paused ? 'paused' : 'playing';
+          }
+        };
+
+        const scan = () => {
+          document.querySelectorAll('video').forEach(attach);
+          if (vq.state === 'searching' && [...document.querySelectorAll('video')].some(isMain)) vq.state = 'loading';
+        };
+        new MutationObserver(scan).observe(document, { childList: true, subtree: true });
+        scan();
+        setInterval(scan, 1000);
+      },
+    },
+
     /* ---------- 影片頁評估框 ---------- */
     estimator: {
       label: '載入時間評估框（右上角）',
@@ -906,11 +1023,21 @@
           const ratingText = ratio >= 2 ? '順暢' : ratio >= 1.2 ? '可能偶爾卡' : '會卡，建議降畫質';
           const header = shared.adShowing ? '📺 廣告中，以下為預估<br>' : main.fromPage ? '📄 影片還沒開始，以下為預估<br>' : '';
 
-          box.innerHTML = header +
+          // 開始播放的預估：原始值存起來給「影片狀態」記錄；有足夠紀錄就校正
+          const raw = startupEstimate(main.height) || (need * 5 / speed.mbps + 0.5);
+          shared.startEstRaw = raw;
+          const [f, n] = startupFactor();
+          const vq = shared.vq;
+          let startLine = `開始播放：約 ${fmt(raw * (f || 1))}` + (f ? `（依你過去 ${n} 次校正）` : '');
+          if (vq && vq.startup !== null && vq.startup >= 0) {
+            startLine = `實際開始播放：${fmt(vq.startup)}` + (vq.estAtStart ? `（預估 ${fmt(vq.estAtStart * (f || 1))}）` : '');
+          }
+
+          box.innerHTML = statusLine(vq) + header +
             `網速：${speed.mbps.toFixed(1)} Mbps（${speed.source}）<br>` +
             `影片長度：${fmt(main.sec)}<br>` +
             `畫質：${main.height ? main.height + 'p' : '以 720p 預估'}<br>` +
-            `開始播放：約 ${fmt(need * 5 / speed.mbps + 0.5)}<br>` +
+            `${startLine}<br>` +
             `整部載完：約 ${fmt(need * main.sec / speed.mbps)}<br>` +
             `${ratingOf(ratio)} ${ratingText}｜建議最高 ${recommend(speed.mbps)}` +
             (ui.saved ? `<br>🚫 已擋 ${ui.saved} 個廣告請求，網速留給影片` : '');
@@ -1296,6 +1423,61 @@
       }
     } catch (e) {}
   }
+
+  // 🩺 狀態檢查：一眼看出腳本每個部分有沒有正常運作，以及這個網站的功能和已知限制
+  ui.actions.health = () => {
+    if (ui.panel) { ui.panel.remove(); ui.panel = null; }
+    const p = ui.panel = document.createElement('div');
+    p.className = 'vh-ui';
+    p.style.cssText = 'position:fixed;bottom:60px;left:20px;z-index:2147483647;background:rgba(20,20,20,.97);color:#fff;' +
+      'padding:12px 14px;border-radius:10px;font:13px/1.7 sans-serif;width:400px;max-height:75vh;overflow-y:auto;' +
+      'box-shadow:0 2px 12px rgba(0,0,0,.5);';
+    const add = (html) => { const d = document.createElement('div'); d.innerHTML = html; p.appendChild(d); return d; };
+    const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const ok = (cond, good, bad, warn) => cond ? `✅ ${good}` : (warn ? `⚠ ${bad}` : `❌ ${bad}`);
+
+    let storeOk = false;
+    try { const t = String(Date.now()); store.set('vh_health', t); storeOk = store.get('vh_health') === t; } catch (e) {}
+    const hooked = active.includes('saveData') ? !/native code/.test(String(PW.fetch)) : true;
+    const hasMux = typeof muxjs !== 'undefined' || !!(window.muxjs || PW.muxjs);
+    const sp = measureSpeed();
+    const ver = (typeof GM_info !== 'undefined' && GM_info.script) ? GM_info.script.version : '?';
+
+    add(`<b>🩺 狀態檢查（${esc(site.name)}）</b>`);
+    add(`腳本版本：v${esc(ver)}`);
+    add(ok(hooked, '在網頁本身執行（擋廣告的功能才有效）', '沒有在網頁本身執行，擋廣告可能無效（暴力猴設定或版本問題）'));
+    add(ok(storeOk, '設定可以存檔', '設定存不了，功能開關和黑名單會不見'));
+    if (active.includes('download')) add(ok(hasMux, '切片轉 MP4 的工具已載入', '切片轉 MP4 的工具沒載入，下載會存成 .ts', true));
+    add(sp ? `${sp.source === '實測' ? '✅' : '⚠'} 網速：${sp.mbps.toFixed(1)} Mbps（${esc(sp.source)}）` : '⚠ 還沒量到網速（播一下影片就會有）');
+
+    add('<br><b>這個網站開啟的功能</b>');
+    for (const name of site.features) add(`${isOn(name) ? '✅' : '⬜'} ${esc(MODULES[name].label)}`);
+    if (site.limits && site.limits.length) {
+      add('<br><b>已知限制</b>');
+      for (const l of site.limits) add(`・${esc(l)}`);
+    }
+
+    const n = startupSamples(HOME).length;
+    const [f] = startupFactor();
+    add('<br><b>載入品質紀錄</b>');
+    const rec = add(n ? `記錄了 ${n} 次「實際開始播放」的時間` + (f ? `，實際約是預估的 ${f.toFixed(2)} 倍，評估框已自動校正` : '（滿 3 次才會開始校正）')
+                      : '還沒有紀錄（看影片時會自動記錄，只存數字）');
+    if (n) {
+      const clr = document.createElement('span');
+      clr.textContent = '清除紀錄';
+      clr.style.cssText = 'margin-left:8px;color:#8cf;text-decoration:underline;cursor:pointer;';
+      clr.addEventListener('click', () => {
+        const all = store.get('vqSamples', {}) || {};
+        delete all[HOME];
+        store.set('vqSamples', all);
+        rec.textContent = '已清除';
+      });
+      rec.appendChild(clr);
+    }
+    const close = add('<br><span style="color:#8cf;text-decoration:underline;cursor:pointer">關閉</span>');
+    close.addEventListener('click', () => { p.remove(); ui.panel = null; });
+    document.body.appendChild(p);
+  };
 
   // 網頁上的「功能開關」面板（不依賴暴力猴選單，手機也能用）
   ui.actions.settings = () => {

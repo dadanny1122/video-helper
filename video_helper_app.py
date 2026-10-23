@@ -3,6 +3,7 @@ Video Helper 電腦版
 分頁 ①「安裝擋廣告」：一步一步帶使用者在 Chrome 裝好暴力猴和 Video Helper 腳本
 分頁 ②「下載影片」：貼上網址 → 選畫質 → 加入下載佇列（一次排很多部，依序下載；可取消、可重試）
 分頁 ③「下載紀錄」：完成／失敗／取消的任務，可重新下載、打開檔案位置
+分頁 ⑤「統計」：每次下載的預估和實際結果（只存數字和網站名稱），並用來校正之後的預估
 分頁 ④「設定」：下載資料夾、預設畫質、檔名格式、關閉視窗的行為、備份匯出／匯入、檢查更新、錯誤日誌
 系統匣：關掉視窗時可以縮到右下角繼續下載，下載完成會跳通知
 瀏覽器連動：配對後，瀏覽器腳本可以把 Pornhub／XVideos 影片直接送進下載佇列（只聽本機 127.0.0.1）
@@ -52,7 +53,7 @@ if not FFMPEG:
     except Exception:
         FFMPEG = None
 
-VERSION = "1.7.0"
+VERSION = "1.8.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -119,6 +120,7 @@ DEFAULT_SETTINGS = {
     "download_dir": "",          # 空的 = 使用者的「下載」資料夾
     "default_quality": "最高",
     "keep_history": True,
+    "keep_stats": True,               # 記錄下載統計（只存數字和網站名稱）
     "filename_template": DEFAULT_TEMPLATE,
     "close_action": "下載中才詢問",   # 關閉視窗時：下載中才詢問 / 一律縮到系統匣 / 直接結束
     "last_version": "",               # 上次執行的版本（版本變了就自動備份）
@@ -217,6 +219,95 @@ class History:
             os.replace(tmp, self.path)
         except Exception:
             log.exception("儲存下載紀錄失敗")
+
+
+# ======================================================================
+# 下載統計：預估 vs 實際，用來校正之後的預估
+#   只存「網站名稱 + 數字」（大小、秒數、畫質），不存標題和網址
+# ======================================================================
+
+def site_of(url):
+    h = (urllib.parse.urlparse(url or "").hostname or "").lower()
+    return ".".join(h.split(".")[-2:]) if h else "?"
+
+
+def median(xs):
+    xs = sorted(xs)
+    n = len(xs)
+    if not n:
+        return None
+    return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2
+
+
+class Stats:
+    MAX = 300
+    MIN_SAMPLES = 3          # 至少 3 次才拿來校正
+    RECENT = 20              # 只看最近 20 次
+
+    def __init__(self, path=None):
+        self.path = path or os.path.join(data_dir(), "stats.json")
+        try:
+            with open(self.path, encoding="utf-8") as f:
+                self.items = [r for r in json.load(f) if isinstance(r, dict)]
+        except Exception:
+            self.items = []
+
+    def add(self, **rec):
+        rec.setdefault("time", datetime.now().strftime("%Y-%m-%d %H:%M"))
+        if rec.get("seconds") and rec.get("bytes"):
+            rec["mbps"] = rec["bytes"] * 8 / rec["seconds"] / 1e6
+        self.items.insert(0, rec)
+        del self.items[self.MAX:]
+        self.save()
+
+    def clear(self):
+        self.items = []
+        self.save()
+
+    def save(self):
+        try:
+            write_json(self.path, self.items)
+        except Exception:
+            log.exception("儲存統計失敗")
+
+    def ratios(self, kind, site=None):
+        """kind='time'：實際秒數 ÷ 預估秒數；kind='size'：實際大小 ÷ 預估大小（只看「約」的估算）"""
+        out = []
+        for r in self.items:
+            if site and r.get("site") != site:
+                continue
+            if kind == "time" and r.get("est_seconds") and r.get("seconds"):
+                out.append(r["seconds"] / r["est_seconds"])
+            elif kind == "size" and not r.get("exact") and r.get("est_bytes") and r.get("bytes"):
+                out.append(r["bytes"] / r["est_bytes"])
+            if len(out) >= self.RECENT:
+                break
+        return out
+
+    def factor(self, kind, site=None):
+        """回傳 (校正倍數, 用了幾次)；樣本不夠回傳 (None, 次數)。同網站樣本不夠就用全部的"""
+        rs = self.ratios(kind, site)
+        if site and len(rs) < self.MIN_SAMPLES:
+            rs = self.ratios(kind)
+        if len(rs) < self.MIN_SAMPLES:
+            return None, len(rs)
+        return min(5.0, max(0.2, median(rs))), len(rs)
+
+    def summary(self):
+        """每個網站：次數、總量、平均速度、時間預估誤差、大小預估誤差（誤差＝跟實際差多少 %，取中位數）"""
+        sites = {}
+        for r in self.items:
+            sites.setdefault(r.get("site", "?"), []).append(r)
+        rows = []
+        for site, rs in sorted(sites.items(), key=lambda kv: -len(kv[1])):
+            tot = sum(r.get("bytes") or 0 for r in rs)
+            secs = sum(r.get("seconds") or 0 for r in rs)
+            terr = median([abs(x - 1) for x in self.ratios("time", site)])
+            serr = median([abs(x - 1) for x in self.ratios("size", site)])
+            rows.append({"site": site, "count": len(rs), "bytes": tot,
+                         "mbps": tot * 8 / secs / 1e6 if secs else 0,
+                         "time_err": terr, "size_err": serr})
+        return rows
 
 
 # ======================================================================
@@ -807,15 +898,18 @@ def cleanup_partials(paths, include_complete=False):
 
 
 def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_event=None,
-                 name_template=DEFAULT_TEMPLATE):
+                 name_template=DEFAULT_TEMPLATE, stats=None):
     """
     下載一個影片，成功回傳 (檔案路徑, 警告)；警告平常是 None。
     fmt：collect_formats() 回傳的其中一個畫質
     cancel_event：設成 set() 就會停止，並丟出 Cancelled
     name_template：FILENAME_TEMPLATES 裡的名字
+    stats：傳一個 dict 進來，下載完會填上實際的 bytes（總大小）和 seconds（下載花的秒數，不含轉檔）
     """
     touched = set()          # 這次下載碰過的檔案（取消時要清掉）
     final = {"path": None}
+    sizes = {}               # 每個檔案下載了多少（影像和聲音可能是分開的兩個檔）
+    clock = {"start": None, "end": None}
 
     def hook(d):
         if cancel_event is not None and cancel_event.is_set():
@@ -825,10 +919,19 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
             touched.add(fn)
         if d.get("tmpfilename"):
             touched.add(d["tmpfilename"])
+        if clock["start"] is None:
+            clock["start"] = time.time()
+        if fn:
+            got = d.get("total_bytes") if d["status"] == "finished" else d.get("downloaded_bytes")
+            if got:
+                sizes[fn] = max(sizes.get(fn, 0), got)
         if d["status"] == "downloading" and on_progress:
             total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
             on_progress(d.get("downloaded_bytes", 0), total, d.get("speed"), d.get("eta"))
         elif d["status"] == "finished":
+            clock["end"] = time.time()
+            if fn and fn not in sizes and os.path.isfile(fn):
+                sizes[fn] = os.path.getsize(fn)
             final["path"] = fn
             if on_stage:
                 on_stage("下載完成，處理中（轉成 MP4）…")
@@ -873,6 +976,8 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
         # 影片已經下載完，只是最後的修正／轉檔失敗 → 保留檔案，不要讓使用者白等
         if "Postprocessing" in str(e) and final["path"] and os.path.isfile(final["path"]):
             cleanup_partials(touched)
+            if stats is not None and clock["start"] and clock["end"]:
+                stats.update(bytes=sum(sizes.values()), seconds=max(0.01, clock["end"] - clock["start"]))
             log.warning("下載完成但轉檔失敗，保留原檔：%s → %s（%s）", url, final["path"], e)
             return final["path"], "下載完成，但轉檔失敗；檔案還是可以播放（建議用 VLC）"
         n = cleanup_partials(touched)
@@ -881,6 +986,8 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
     if cancel_event is not None and cancel_event.is_set():
         cleanup_partials(touched, include_complete=True)
         raise Cancelled()
+    if stats is not None and clock["start"] and clock["end"]:
+        stats.update(bytes=sum(sizes.values()), seconds=max(0.01, clock["end"] - clock["start"]))
     log.info("下載完成：%s → %s", url, final["path"])
     return final["path"], None
 
@@ -915,6 +1022,7 @@ class App:
         self.q = queue.Queue()
         self.settings = Settings()
         self.history = History()
+        self.stats = Stats()
         self.auto_backup = auto_backup_on_upgrade(self.settings, self.history)
         self.tray = None               # 系統匣圖示（第一次縮下去時才建立）
         self.tray_hinted = False       # 「在背景繼續下載」的提示只講一次
@@ -950,7 +1058,7 @@ class App:
         self.nb.pack(fill="both", expand=True)
         tabs = {}
         for key, text in (("setup", "① 安裝擋廣告（第一次用）"), ("dl", "② 下載影片"),
-                          ("hist", "③ 下載紀錄"), ("set", "④ 設定")):
+                          ("hist", "③ 下載紀錄"), ("set", "④ 設定"), ("stats", "⑤ 統計")):
             tabs[key] = ttk.Frame(self.nb)
             self.nb.add(tabs[key], text=f"  {text}  ")
         self.tab_dl = tabs["dl"]
@@ -958,6 +1066,7 @@ class App:
         self.build_download(tabs["dl"])
         self.build_history(tabs["hist"])
         self.build_settings(tabs["set"])
+        self.build_stats(tabs["stats"])
 
         if self.settings["bridge_enabled"]:
             self.bridge.start()
@@ -1170,11 +1279,19 @@ class App:
             self.title_lbl.config(text=f"{self.title}：找不到可下載的畫質")
             self.set_buttons()
             return
+        site = site_of(self.url)
+        tf, tn = self.stats.factor("time", site)
+        sf, sn = self.stats.factor("size", site)
         for i, f in enumerate(self.formats):
-            size = ("" if f["exact"] or not f["size"] else "約 ") + fmt_size(f["size"])
-            t = fmt_time(f["size"] * 8 / (self.mbps * 1e6)) if f["size"] and self.mbps else "時間未知"
+            show_size = f["size"] * (sf if (sf and not f["exact"]) else 1)
+            size = ("" if f["exact"] or not f["size"] else "約 ") + fmt_size(show_size)
+            raw_t = f["size"] * 8 / (self.mbps * 1e6) if f["size"] and self.mbps else None
+            t = fmt_time(raw_t * (tf or 1)) if raw_t else "時間未知"
             kind = "MP4 直連" if f["direct"] else "切片"
             self.tree.insert("", "end", iid=str(i), values=(quality_label(f["height"]), size, t, kind))
+        if tf or sf:
+            n = max(tn, sn)
+            self.speed_lbl.config(text=self.speed_lbl.cget("text").split("｜")[0] + f"｜預估已依過去 {n} 次下載校正")
 
         # 預設選哪個畫質：從紀錄重新下載 → 同畫質；否則 → 設定裡的預設畫質
         if self.want_height is not None:
@@ -1296,6 +1413,10 @@ class App:
     # ----- 佇列 -----
 
     def enqueue(self, task):
+        f = task["fmt"]
+        task.setdefault("est_bytes", f.get("size") or 0)       # 原始預估（沒校正過的），之後拿來跟實際比
+        task.setdefault("est_exact", bool(f.get("exact")))
+        task.setdefault("est_seconds", (f.get("size") or 0) * 8 / (self.mbps * 1e6) if self.mbps and f.get("size") else 0)
         t = self.queue.add(task)
         log.info("加入佇列 #%d：%s（%s）", t["id"], t["title"], quality_label(t["fmt"]["height"]))
         self.refresh_queue()
@@ -1321,12 +1442,15 @@ class App:
 
     def _download_worker(self, task, cancel_event):
         tid = task["id"]
+        measured = {}
         try:
             result = self.download_fn(task["url"], task["fmt"], task["out"],
                                       on_progress=lambda *a: self.q.put(("progress", (tid,) + a)),
                                       on_stage=lambda t: self.q.put(("progress_text", (tid, t))),
                                       cancel_event=cancel_event,
-                                      name_template=self.settings["filename_template"])
+                                      name_template=self.settings["filename_template"],
+                                      stats=measured)
+            task["measured"] = measured
             self.q.put(("done", (tid, result)))
         except Cancelled:
             self.q.put(("cancelled", tid))
@@ -1439,6 +1563,12 @@ class App:
         t = self.queue.get(tid)
         if t and warning:
             t["note"] = warning
+        m = (t or {}).get("measured") or {}
+        if t and self.settings["keep_stats"] and m.get("bytes") and m.get("seconds", 0) > 0.5:
+            self.stats.add(site=site_of(t["url"]), height=t["fmt"]["height"], exact=t.get("est_exact"),
+                           est_bytes=t.get("est_bytes"), est_seconds=t.get("est_seconds"),
+                           bytes=m["bytes"], seconds=m["seconds"])
+            self.refresh_stats()
         name = os.path.basename(path) if path else "檔案在下載資料夾"
         self.status.config(text=(f"⚠ {warning}：{name}" if warning else f"✅ 下載完成：{name}"))
         self.finish_task(tid, DONE, file=path, error=warning)
@@ -1814,6 +1944,9 @@ class App:
         g.pack(fill="x", pady=4)
         self.keep_var = tk.BooleanVar(value=bool(self.settings["keep_history"]))
         ttk.Checkbutton(g, text="保存下載紀錄", variable=self.keep_var).grid(row=0, column=0, columnspan=2, sticky="w", pady=3)
+        self.keep_stats_var = tk.BooleanVar(value=bool(self.settings["keep_stats"]))
+        ttk.Checkbutton(g, text="記錄下載統計（用來校正預估；只存數字和網站名稱）", variable=self.keep_stats_var).grid(
+            row=0, column=2, sticky="w", pady=3)
         ttk.Label(g, text="關閉視窗時：").grid(row=1, column=0, sticky="w", pady=3)
         ca = self.settings["close_action"]
         self.close_var = tk.StringVar(value=ca if ca in CLOSE_CHOICES else CLOSE_CHOICES[0])
@@ -1864,6 +1997,7 @@ class App:
         self.q_var.set(self.settings["default_quality"])
         self.tpl_var.set(self.settings["filename_template"])
         self.keep_var.set(bool(self.settings["keep_history"]))
+        self.keep_stats_var.set(bool(self.settings["keep_stats"]))
         self.close_var.set(self.settings["close_action"])
         self.update_tpl_preview()
         self.refresh_history()
@@ -1910,6 +2044,52 @@ class App:
     def manual_update_check(self):
         threading.Thread(target=check_update, args=(self.q, True), daemon=True).start()
 
+    # ------------------------------------------------------------------
+    # ⑤ 統計
+    # ------------------------------------------------------------------
+
+    def build_stats(self, parent):
+        pad = {"padx": 10, "pady": 6}
+        self.stats_lbl = ttk.Label(parent, text="", justify="left", font=("", 10))
+        self.stats_lbl.pack(fill="x", **pad)
+        cols = ("site", "count", "bytes", "mbps", "terr", "serr")
+        self.stree = ttk.Treeview(parent, columns=cols, show="headings", height=8)
+        for c, name, w in (("site", "網站", 150), ("count", "次數", 60), ("bytes", "總量", 100), ("mbps", "平均速度", 110),
+                           ("terr", "時間預估誤差", 120), ("serr", "大小預估誤差", 120)):
+            self.stree.heading(c, text=name)
+            self.stree.column(c, width=w, anchor="center")
+        self.stree.pack(fill="both", expand=True, **pad)
+        ttk.Label(parent, foreground="#555", wraplength=740, justify="left",
+                  text="誤差＝原本的預估跟實際差多少（中位數）。同一個網站下載 3 次以上，之後的預估會自動用這些結果校正。\n"
+                       "只記錄網站名稱和數字（大小、秒數、畫質），不記錄影片標題和網址。可以在「④ 設定」關掉。").pack(fill="x", **pad)
+        bar = ttk.Frame(parent)
+        bar.pack(fill="x", **pad)
+        ttk.Button(bar, text="清除統計", command=self.clear_stats).pack(side="right")
+        self.refresh_stats()
+
+    def refresh_stats(self):
+        if not hasattr(self, "stree"):
+            return
+        self.stree.delete(*self.stree.get_children())
+        pct = lambda x: "—" if x is None else f"±{x * 100:.0f}%"
+        rows = self.stats.summary()
+        for r in rows:
+            self.stree.insert("", "end", values=(r["site"], r["count"], fmt_size(r["bytes"]),
+                                                 f"{r['mbps']:.1f} Mbps" if r["mbps"] else "—", pct(r["time_err"]), pct(r["size_err"])))
+        total = sum(r["bytes"] for r in rows)
+        n = sum(r["count"] for r in rows)
+        tf, tn = self.stats.factor("time")
+        if not n:
+            self.stats_lbl.config(text="還沒有統計。下載完成後會自動記錄。")
+            return
+        self.stats_lbl.config(text=(f"共下載 {n} 部｜總量 {fmt_size(total)}｜"
+                                    + (f"整體來說實際時間是預估的 {tf:.2f} 倍（依最近 {tn} 次）" if tf else "累積 3 次以上就會開始校正預估")))
+
+    def clear_stats(self):
+        if self.stats.items and messagebox.askyesno("清除統計", "確定要清除所有下載統計嗎？預估會回到沒有校正的狀態。"):
+            self.stats.clear()
+            self.refresh_stats()
+
     def update_tpl_preview(self):
         self.tpl_preview.config(text="範例：" + preview_filename(self.tpl_var.get()))
 
@@ -1931,6 +2111,7 @@ class App:
         self.settings["keep_history"] = bool(self.keep_var.get())
         self.settings["filename_template"] = self.tpl_var.get()
         self.settings["close_action"] = self.close_var.get()
+        self.settings["keep_stats"] = bool(self.keep_stats_var.get())
         self.settings.save()
         self.refresh_history()
         messagebox.showinfo("已儲存", "設定已儲存。")
