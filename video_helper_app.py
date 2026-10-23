@@ -78,7 +78,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.9.1"
+VERSION = "1.10.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -525,12 +525,16 @@ log = setup_log()
 
 BRIDGE_PORTS = list(range(47321, 47326))
 BRIDGE_HOSTS = ("pornhub.com", "xvideos.com")
+# 瀏覽器送來的「影片真正的位址」只接受這兩個網站自己的影片伺服器
+BRIDGE_MEDIA_HOSTS = ("phncdn.com", "pornhub.com", "xvideos-cdn.com", "xvideos.com")
+BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
 PAIR_SECONDS = 300
 PAIR_MAX_FAILS = 5
 RATE_PER_MIN = 30
 
 
-def bridge_url_allowed(url):
+def bridge_url_allowed(url, hosts=BRIDGE_HOSTS):
     try:
         u = urllib.parse.urlparse(str(url))
     except Exception:
@@ -538,7 +542,7 @@ def bridge_url_allowed(url):
     if u.scheme not in ("http", "https"):
         return False
     h = (u.hostname or "").lower()
-    return any(h == d or h.endswith("." + d) for d in BRIDGE_HOSTS)
+    return any(h == d or h.endswith("." + d) for d in hosts)
 
 
 def hash_token(t):
@@ -714,8 +718,15 @@ class Bridge:
                         return self.send(429, {"error": "太頻繁了，等一分鐘再試"})
                     h = data.get("height")
                     h = int(h) if isinstance(h, (int, float)) or (isinstance(h, str) and h.isdigit()) else None
+                    media = data.get("media") or ""
+                    if media:
+                        if not (isinstance(media, str) and len(media) < 4000
+                                and bridge_url_allowed(media, BRIDGE_MEDIA_HOSTS)):
+                            return self.send(400, {"error": "影片位址不是這個網站的影片伺服器"})
+                        media = {"url": media, "referer": url,
+                                 "title": str(data.get("title") or "")[:300]}
                     ticket = secrets.token_hex(8)
-                    bridge.on_enqueue(ticket, url, h)
+                    bridge.on_enqueue(ticket, url, h, media or None)
                     log.info("瀏覽器送來：%s（%s）", url, quality_label(h) if h else "預設畫質")
                     return self.send(200, {"ok": True, "ticket": ticket})
                 self.send(404, {"error": "not found"})
@@ -891,6 +902,35 @@ def analyze_url(url):
     return info.get("title") or "video", info.get("duration") or 0, fmts, mbps
 
 
+def media_headers(referer):
+    """跟瀏覽器一樣的請求標頭：有些影片伺服器會檢查是從哪個網頁來的"""
+    return {"User-Agent": BROWSER_UA, "Referer": referer}
+
+
+def analyze_media(media, height=None):
+    """
+    瀏覽器送來影片真正的位址（MP4 或 m3u8）時用這個：直接讀影片伺服器，不開網頁。
+    media：{"url", "referer", "title"}；回傳跟 analyze_url 一樣
+    """
+    hdrs = media_headers(media["referer"])
+    with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True,
+                           "http_headers": hdrs}) as ydl:
+        info = ydl.extract_info(media["url"], download=False)
+    fmts = collect_formats(info)
+    for f in fmts:
+        if not f["height"] and height:          # 直接的 MP4 不知道高度 → 用網頁上那一行的畫質
+            f["height"] = int(height)
+        f["media"] = media                      # 下載時也走同一個位址
+    mbps = 0
+    for f in fmts:
+        if f["url"]:
+            u = f["url"] if f["direct"] else first_segment_url(f["url"], hdrs)
+            mbps = speed_test(u, hdrs) if u else 0
+            if mbps:
+                break
+    return media.get("title") or info.get("title") or "video", info.get("duration") or 0, fmts, mbps
+
+
 # ======================================================================
 # 下載（可取消）
 # ======================================================================
@@ -988,9 +1028,25 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
         opts["ffmpeg_location"] = FFMPEG
         opts["postprocessors"] = [{"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"}]
 
+    media = fmt.get("media")
+    if media:
+        opts["http_headers"] = media_headers(media["referer"])
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([url])
+            if media:
+                # 直接下載影片伺服器上的檔案，檔名用網頁上的標題（不然會變成 index-v1-a1 之類）
+                raw = ydl.extract_info(media["url"], download=False, process=False)
+                if media.get("title"):
+                    raw["title"] = media["title"]
+                raw["extractor_key"] = {"pornhub.com": "PornHub", "xvideos.com": "XVideos"}.get(
+                    site_of(url), site_of(url))         # 「網站 - 標題」的檔名格式要用
+                if fmt.get("height"):                   # 影片伺服器沒寫高度 → 檔名一樣加上 [1080p]
+                    for fm in raw.get("formats") or [raw]:
+                        if not fm.get("height"):
+                            fm["height"] = fmt["height"]
+                ydl.process_ie_result(raw, download=True)
+            else:
+                ydl.download([url])
     except BaseException as e:
         # yt-dlp 會把進度回呼裡丟出的例外包起來，所以也要檢查 cancel_event
         cancelled = isinstance(e, Cancelled) or (cancel_event is not None and cancel_event.is_set())
@@ -1066,6 +1122,7 @@ class App:
         self.want_height = None        # 從紀錄重新下載時，想要的畫質
         # 真正做事的函式（測試時可以換成假的）
         self.analyze_fn = analyze_url
+        self.analyze_media_fn = analyze_media
         self.download_fn = run_download
         # 瀏覽器連動
         self.remote = {}               # 配對的瀏覽器送來的任務：ticket → 狀態
@@ -1620,13 +1677,13 @@ class App:
             return {"status": t["status"], "progress": round(t["progress"]), "title": t["title"]}
         return {k: rec.get(k) for k in ("status", "progress", "title", "error")}
 
-    def remote_register(self, ticket, url, h):
+    def remote_register(self, ticket, url, h, media=None):
         """連線服務的執行緒呼叫：先記下任務再回覆瀏覽器，瀏覽器馬上來問進度才查得到"""
         self.remote[ticket] = {"status": "讀取中", "progress": 0, "title": url, "error": ""}
-        self.q.put(("remote_enqueue", (ticket, url, h)))
+        self.q.put(("remote_enqueue", (ticket, url, h, media)))
 
     def on_remote_enqueue(self, data):
-        ticket, url, h = data
+        ticket, url, h, media = data
         self.remote.setdefault(ticket, {"status": "讀取中", "progress": 0, "title": url, "error": ""})
         if len(self.remote) > 200:                  # 舊的忘掉
             for k in list(self.remote)[:50]:
@@ -1634,6 +1691,15 @@ class App:
                     self.remote.pop(k, None)
         def work():
             try:
+                if media:
+                    # 先用瀏覽器給的影片位址；不行才自己開網頁（網站可能會擋）
+                    try:
+                        title, dur, fmts, mbps = self.analyze_media_fn(media, h)
+                        if fmts:
+                            self.q.put(("remote_analyzed", (ticket, url, h, title, fmts, mbps)))
+                            return
+                    except Exception:
+                        log.exception("瀏覽器給的影片位址讀不到，改開網頁：%s", url)
                 title, dur, fmts, mbps = self.analyze_fn(url)
                 self.q.put(("remote_analyzed", (ticket, url, h, title, fmts, mbps)))
             except Exception as e:

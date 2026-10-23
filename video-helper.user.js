@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.1.3
+// @version      3.2.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -1563,14 +1563,19 @@
   }
 
   // 回傳一個 ticket（之後拿來查進度），失敗就丟出錯誤訊息
-  async function sendToDesktop(height) {
+  // s：畫質清單裡的一項（有影片真正的位址）。一起送過去，電腦版就不用自己再開一次網頁
+  //    （有些網站會擋不是瀏覽器的程式開網頁，例如 Pornhub 回 410）
+  async function sendToDesktop(s, title) {
     const url = location.href.split('#')[0];
+    const height = s.height;
     const port = await findBridge();
     if (!port) {
       try { GM_setClipboard(url); } catch (e) {}
       throw new Error('找不到電腦版。請先打開 Video Helper 電腦版，並在「④ 設定」按「🔗 配對瀏覽器…」。\n（網址已經幫你複製，切到電腦版也會自動偵測）');
     }
-    const enqueue = () => bridgeReq('POST', port, '/enqueue', { url, height }, store.get('bridgeToken', ''));
+    const media = s.url ? new URL(s.url, location.href).href : '';
+    const enqueue = () => bridgeReq('POST', port, '/enqueue',
+      { url, height, media, kind: s.kind, title: String(title || '').slice(0, 300) }, store.get('bridgeToken', ''));
     let r = await enqueue();
     if (r.status === 401) {
       const code = prompt('第一次使用，請輸入電腦版顯示的 6 位數配對碼：\n（電腦版 →「④ 設定」→「🔗 配對瀏覽器…」）');
@@ -1656,7 +1661,7 @@
           e.stopPropagation();
           desk.textContent = '🖥 送到電腦版中…';
           try {
-            const { port, ticket } = await sendToDesktop(s.height);
+            const { port, ticket } = await sendToDesktop(s, src.title);
             watchDesktop(desk, port, ticket);
           } catch (err) {
             desk.textContent = '🖥 ' + err.message;

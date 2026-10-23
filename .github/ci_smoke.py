@@ -62,7 +62,11 @@ def fake_download(url, fmt, out, on_progress=None, on_stage=None, cancel_event=N
     if stats is not None:
         stats.update(bytes=fmt["size"] * 2, seconds=2.0)     # 假裝實際是預估的 2 倍大
     return (dst, None)
-app.analyze_fn, app.download_fn = fake_analyze, fake_download
+media_calls = []
+def fake_analyze_media(media, h):
+    media_calls.append(media)
+    return (media["title"], 634, [dict(f, media=media) for f in fmts], 20.0)
+app.analyze_fn, app.download_fn, app.analyze_media_fn = fake_analyze, fake_download, fake_analyze_media
 
 app.settings["default_quality"] = "720"
 app.on_analyzed(("https://example.com/v", "測試影片", 634, fmts, 20.0))
@@ -139,6 +143,17 @@ st, dd = call("GET", f"/status?ticket={ticket}", token=tok)
 assert st == 200, f"剛送出就問進度應該查得到，卻回 {st}"
 wait(lambda: call("GET", f"/status?ticket={ticket}", token=tok)[1].get("status") == a.DONE)
 assert app.queue.tasks[-1]["fmt"]["height"] == 480, "沒有用瀏覽器指定的畫質"
+# 瀏覽器一起送來影片位址 → 直接用，不開網頁（Pornhub 會對程式開網頁回 410）
+page2 = "https://www.pornhub.com/view_video.php?viewkey=ci2"
+st, dd = call("POST", "/enqueue", {"url": page2, "height": 720, "title": "CI 標題",
+                                   "media": "https://ev-h.phncdn.com/hls/ci/master.m3u8"}, tok)
+assert st == 200, "送影片位址失敗"
+t2 = dd["ticket"]
+wait(lambda: call("GET", f"/status?ticket={t2}", token=tok)[1].get("status") == a.DONE)
+assert media_calls and media_calls[-1]["referer"] == page2, "沒有用瀏覽器給的影片位址"
+assert app.queue.tasks[-1]["fmt"].get("media") and app.queue.tasks[-1]["title"] == "CI 標題", "下載沒有走影片位址"
+st, _ = call("POST", "/enqueue", {"url": page2, "height": 720, "media": "https://evil.example/x.m3u8"}, tok)
+assert st == 400, "不是網站影片伺服器的位址應該被拒絕"
 app.refresh_bridge_label(); r.update()
 assert "執行中" in app.bridge_lbl.cget("text"), "設定頁沒有顯示連動狀態"
 
