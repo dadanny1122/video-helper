@@ -7,6 +7,8 @@ on:
     paths:
       - 'video_helper_app.py'
       - '.github/workflows/build.yml'
+      - '.github/ci_smoke.py'
+      - 'CHANGELOG.md'
   workflow_dispatch:
 
 permissions:
