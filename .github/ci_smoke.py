@@ -22,27 +22,56 @@ r.update()
 assert len(app.nb.tabs()) == 4, "分頁數量不對"
 assert len(app.step_marks) == 3, "安裝精靈步驟數量不對"
 
-# 3. 模擬讀取完成 → 依預設畫質選取
-app.settings["default_quality"] = "720"
+# 3. 換成假的讀取／下載函式，走一遍佇列
+import time
+def wait(cond, sec=15):
+    end = time.time() + sec
+    while not cond():
+        r.update(); time.sleep(0.02)
+        assert time.time() < end, "等太久"
+
 fmts = [{"id": h, "height": h, "size": h * 100000, "exact": False, "audio": True, "direct": False, "url": "", "headers": {}}
         for h in (1080, 720, 480)]
+def fake_analyze(url):
+    return (url, 634, fmts, 20.0)
+def fake_download(url, fmt, out, on_progress=None, on_stage=None, cancel_event=None, name_template=None):
+    if url.startswith("fail"):
+        raise RuntimeError("HTTP 404")
+    if url.startswith("slow"):
+        while not cancel_event.is_set():
+            on_progress(1, 10, 1e6, 5); time.sleep(0.05)
+        raise a.Cancelled()
+    on_progress(10, 10, 1e6, 0)
+    return (dst, None)
+app.analyze_fn, app.download_fn = fake_analyze, fake_download
+
+app.settings["default_quality"] = "720"
 app.on_analyzed(("https://example.com/v", "測試影片", 634, fmts, 20.0))
 r.update()
 assert app.tree.selection() == ("1",), "預設畫質沒有選到 720p"
 assert "10:34" in app.title_lbl.cget("text"), "沒有顯示影片長度"
 
-# 4. 模擬下載完成 / 失敗 / 取消 → 紀錄與按鈕
-app.current = {"url": "https://example.com/v", "title": "測試影片", "fmt": fmts[1], "size": 1, "out": d}
-app.busy, app.cancel_event = True, object()
-app.set_buttons(); r.update()
+mk = lambda u: {"url": u, "title": u, "fmt": fmts[1], "size": 1, "out": d}
+t_ok, t_fail, t_slow = app.enqueue(mk("ok")), app.enqueue(mk("fail")), app.enqueue(mk("slow"))
+wait(lambda: t_slow["status"] == a.RUNNING)
 assert str(app.btn_cancel["state"]) == "normal", "下載中取消按鈕應該可以按"
-app.on_done((dst, None)); r.update()
-app.busy, app.cancel_event = True, object()
-app.on_download_error("HTTP 404"); r.update()
-assert str(app.btn_retry["state"]) == "normal", "失敗後應該可以重試"
-app.busy, app.cancel_event = True, object()
-app.on_cancelled(None); r.update()
+app.cancel_event.set()
+wait(lambda: t_slow["status"] == a.CANCELLED)
+assert [t["status"] for t in (t_ok, t_fail, t_slow)] == [a.DONE, a.FAILED, a.CANCELLED], "佇列狀態不對"
+assert str(app.btn_retry["state"]) == "normal", "有失敗的應該可以重試"
 assert [x["status"] for x in app.history.items] == ["取消", "失敗", "完成"], "下載紀錄不對"
-assert len(app.htree.get_children()) == 3, "紀錄分頁沒有顯示"
+assert len(app.qtree.get_children()) == 3 and len(app.htree.get_children()) == 3, "表格沒有顯示"
+
+app.retry()
+wait(lambda: t_fail["status"] == a.FAILED and app.cancel_event is None)
+
+# 4. 一次加入多個網址
+app.start_batch(["okA", "okB"])
+wait(lambda: not app.batch_running and app.queue.count(a.WAITING, a.RUNNING) == 0)
+assert app.queue.count(a.DONE) == 3, "批次加入的沒有下載完"
+
+app.queue_clear(); r.update()
+assert len(app.qtree.get_children()) == 0, "清除已結束沒有作用"
+assert app.tpl_preview.cget("text").startswith("範例："), "檔名格式範例沒有顯示"
 r.destroy()
 print("GUI_OK")
