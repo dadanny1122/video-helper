@@ -1,5 +1,17 @@
 """GitHub Actions 打包前的檢查：在 Windows 上打開視窗、走過各分頁，並確認內建 ffmpeg 能用"""
-import os, sys, subprocess, tempfile
+import os, sys, subprocess, tempfile, traceback
+
+
+def _report(exc_type, exc, tb):
+    # 失敗原因印成 GitHub 的「註解」，在網頁和 API 都看得到
+    lines = traceback.format_exception(exc_type, exc, tb)
+    where = next((l.strip() for l in reversed(lines) if "ci_smoke.py" in l), "")
+    msg = f"{exc_type.__name__}: {exc} | {where}".replace("\n", " ")[:900]
+    print(f"::error title=Smoke test failed::{msg}", flush=True)
+    sys.__excepthook__(exc_type, exc, tb)
+
+
+sys.excepthook = _report
 os.environ["VIDEO_HELPER_HOME"] = tempfile.mkdtemp()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import tkinter as tk
