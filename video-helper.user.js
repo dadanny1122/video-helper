@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.0.0
+// @version      3.1.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -253,11 +253,57 @@
     });
   }
 
+  // ---- 這個分頁暫停擋廣告（存在 sessionStorage：只對這個分頁有效，關掉分頁就恢復）----
+  const PAUSABLE = ['security', 'siteRules', 'saveData', 'hideAds', 'autoSkip'];
+  const PAUSED = (() => { try { return sessionStorage.getItem('vh_paused') === '1'; } catch (e) { return false; } })();
+  function setPaused(on) {
+    try { if (on) sessionStorage.setItem('vh_paused', '1'); else sessionStorage.removeItem('vh_paused'); } catch (e) {}
+    location.reload();
+  }
+
+  // ---- 攔截紀錄：每次擋了什麼、為什麼擋（最近 50 筆，只在這個分頁，不存檔）----
+  const WHY = [
+    ['擋下彈出視窗', '網頁想偷開新分頁或彈出視窗，開到別的網站（常趁你按播放時一起開）'],
+    ['擋下危險檔案下載', '安裝檔（.exe、.apk 等）常是病毒；看影片不需要安裝任何程式'],
+    ['擋下廣告連結', '連結會開新分頁到別的網站，是常見的廣告手法'],
+    ['擋下隱藏的彈窗連結', '網頁做了看不見的連結再自己點它，是彈窗廣告的手法'],
+    ['擋下自動跳轉', '網頁想把你帶去別的網站，但不是你點的'],
+    ['擋下通知權限請求', '「允許通知」常被拿來推送垃圾訊息和假的中毒警告'],
+    ['擋下透明廣告點擊層', '一層蓋住整個畫面的透明東西，點哪裡都會開廣告'],
+  ];
+  const whyOf = msg => (WHY.find(([k]) => msg.startsWith(k)) || [null, ''])[1];
+  const hostOf = url => { try { return new URL(url, location.href).hostname; } catch (e) { return ''; } };
+  const events = [];
+  function logEvent(what, why, url) {
+    const host = url ? hostOf(url) : '';
+    const last = events[0];
+    if (last && last.what === what && last.host === host) {          // 同一件事連續發生 → 合併成一筆
+      last.n++; last.time = new Date().toLocaleTimeString();
+      return;
+    }
+    events.unshift({ what, why, host, url: url ? String(url).split('?')[0].slice(0, 200) : '', n: 1,
+                     time: new Date().toLocaleTimeString() });
+    events.length = Math.min(events.length, 50);
+  }
+
+  // 「這是誤擋」→ 複製一份回報（不含網址後面的參數）
+  function reportWrong(ev) {
+    const text = JSON.stringify({
+      type: '誤擋回報', version: (typeof GM_info !== 'undefined' && GM_info.script) ? GM_info.script.version : '?',
+      site: (typeof site !== 'undefined' && site) ? site.name : HOST, page: location.href.split('?')[0],
+      event: ev, recent: events.slice(0, 10),
+    }, null, 1);
+    navigator.clipboard.writeText(text).then(
+      () => alert('✅ 誤擋回報已複製，貼給開發者就好。\n\n要先看影片的話，可以按「⏸ 這個分頁先暫停擋廣告」。'),
+      () => prompt('請複製下面的內容：', text));
+  }
+
   // ---- 左下角盾牌 + 提示 ----
   const ui = {
     count: 0, saved: 0, blockedHosts: {}, actions: {}, shield: null, toasts: null, pending: [], realOpen: null,
 
     report(msg, url) {
+      logEvent(msg, whyOf(msg), url);
       this.count++;
       this.pending.push([msg, url]);
       this.flush();
@@ -278,7 +324,9 @@
           'flex-direction:column-reverse;gap:6px;max-width:360px;';
         document.body.append(this.shield, this.toasts);
       }
-      this.shield.textContent = `🛡 已攔截 ${this.count} 次` + (this.saved ? `｜省下 ${this.saved} 個廣告請求` : '');
+      this.shield.textContent = PAUSED ? '⏸ 這個分頁暫停擋廣告中（點這裡恢復）'
+        : `🛡 已攔截 ${this.count} 次` + (this.saved ? `｜省下 ${this.saved} 個廣告請求` : '');
+      if (PAUSED) this.shield.style.background = 'rgba(180,120,0,.95)';
       while (this.pending.length) this.toast(...this.pending.shift());
     },
 
@@ -314,8 +362,43 @@
       p.style.cssText = 'position:fixed;bottom:60px;left:20px;z-index:2147483647;background:rgba(20,20,20,.97);color:#fff;' +
         'padding:12px 14px;border-radius:10px;font:13px/1.6 sans-serif;width:380px;max-height:70vh;overflow-y:auto;' +
         'box-shadow:0 2px 12px rgba(0,0,0,.5);';
-      p.innerHTML = '<b>這頁連到的其他網站</b><div style="opacity:.7;font-size:12px">' +
+      if (PAUSED) {
+        const pb = document.createElement('div');
+        pb.style.cssText = 'margin-bottom:10px;padding:8px;background:#5d4300;border-radius:6px;';
+        pb.innerHTML = '⏸ <b>這個分頁暫停擋廣告中</b><br><small>關掉分頁就會自動恢復</small> ';
+        const go = document.createElement('span');
+        go.textContent = '▶ 現在恢復';
+        go.style.cssText = 'cursor:pointer;background:#2e7d32;padding:2px 10px;border-radius:4px;';
+        go.addEventListener('click', () => setPaused(false));
+        pb.appendChild(go);
+        p.appendChild(pb);
+      }
+
+      // 最近攔截了什麼、為什麼
+      const evBox = document.createElement('div');
+      evBox.innerHTML = '<b>最近攔截</b>' + (events.length ? '' : '<div style="opacity:.7;font-size:12px">這個分頁還沒有攔截任何東西</div>');
+      for (const ev of events.slice(0, 12)) {
+        const row = document.createElement('div');
+        row.style.cssText = 'margin-top:4px;padding:4px 8px;background:#2a2a2a;border-radius:6px;font-size:12px;';
+        const head = document.createElement('div');
+        head.textContent = `${ev.time}　${ev.what}${ev.n > 1 ? ` ×${ev.n}` : ''}${ev.host ? `（${ev.host}）` : ''}`;
+        const why = document.createElement('div');
+        why.style.cssText = 'opacity:.7;';
+        why.textContent = ev.why ? '原因：' + ev.why : '';
+        const wrong = document.createElement('span');
+        wrong.textContent = '這是誤擋？';
+        wrong.style.cssText = 'float:right;color:#8cf;text-decoration:underline;cursor:pointer;';
+        wrong.addEventListener('click', () => reportWrong(ev));
+        head.prepend(wrong);
+        row.append(head, why);
+        evBox.appendChild(row);
+      }
+      p.appendChild(evBox);
+
+      const hostsTitle = document.createElement('div');
+      hostsTitle.innerHTML = '<br><b>這頁連到的其他網站</b><div style="opacity:.7;font-size:12px">' +
         '影片和圖片常放在網站自己的另一個網域（例如 phncdn.com），封鎖前先確認不是它</div>';
+      p.appendChild(hostsTitle);
 
       if (!rows.length) p.insertAdjacentHTML('beforeend', '<div style="margin-top:8px">目前沒有</div>');
 
@@ -374,7 +457,12 @@
       const settingsBtn = mkBtn('⚙ 功能開關', '#555', () => this.actions.settings && this.actions.settings());
       const diagBtn = mkBtn('🔧 診斷', '#6a1b9a', () => this.actions.diagnose && this.actions.diagnose());
       const healthBtn = mkBtn('🩺 狀態檢查', '#00695c', () => this.actions.health && this.actions.health());
-      foot.append(copy, settingsBtn, healthBtn, diagBtn, note);
+      const pauseBtn = PAUSED
+        ? mkBtn('▶ 恢復擋廣告', '#2e7d32', () => setPaused(false))
+        : mkBtn('⏸ 這個分頁先暫停擋廣告', '#8d6e00', () => {
+          if (confirm('這個分頁先暫停擋廣告、擋彈窗嗎？\n\n網頁會重新整理。關掉這個分頁就會自動恢復，其他分頁不受影響。')) setPaused(true);
+        });
+      foot.append(copy, settingsBtn, healthBtn, diagBtn, pauseBtn, note);
       p.appendChild(foot);
 
       document.body.appendChild(p);
@@ -671,13 +759,17 @@
           if (/flashvars_/.test(text)) {
             let t = text;
             for (const { key, re } of keyRes) t = t.replace(re, '$1vhOff_' + key + '$1$2');
-            if (t !== text) { sc.textContent = t; ui.saved++; ui.blockedHosts['影片前廣告設定'] = 1; }
+            if (t !== text) {
+              sc.textContent = t; ui.saved++; ui.blockedHosts['影片前廣告設定'] = 1;
+              logEvent('拿掉影片前廣告設定', '播放器找不到廣告設定，就不會去要影片前廣告', '');
+            }
             return;
           }
           if ((R.blockInlineScript || []).some(group => group.every(re => re.test(text)))) {
             sc.type = 'javascript/blocked';
             ui.saved++;
             ui.blockedHosts['網頁內的廣告程式'] = (ui.blockedHosts['網頁內的廣告程式'] || 0) + 1;
+            logEvent('不讓網頁內的廣告程式執行', '符合這個網站的擋廣告規則（參考 uBlock Origin 規則庫）', '');
           }
         };
         new MutationObserver(muts => {
@@ -714,6 +806,14 @@
         let pendingUpdate = false;
         const saved = url => {
           try { const b = baseOf(new URL(url, location.href).hostname); ui.blockedHosts[b] = (ui.blockedHosts[b] || 0) + 1; } catch (e) {}
+          let why = '已知的廣告網路';
+          try {
+            const u = new URL(url, location.href);
+            if (userBlock.has(baseOf(u.hostname))) why = '在你的個人黑名單裡';
+            else if (siteAdPath && baseOf(u.hostname) === HOME && siteAdPath.test(u.pathname)) why = '網站自己放廣告用的網址';
+            else if (!AD_RE.test(u.hostname)) why = '別的網站放進來的框框（這個網站只留自己的框框）';
+          } catch (e) {}
+          logEvent('擋下廣告請求（還沒下載就擋掉）', why, url);
           ui.saved++;
           if (!pendingUpdate) { pendingUpdate = true; setTimeout(() => { pendingUpdate = false; ui.flush(); }, 500); }
         };
@@ -1408,7 +1508,9 @@
    * 啟動
    * ================================================================== */
 
-  const active = site.features.filter(isOn);
+  // 這個分頁暫停時，擋廣告相關的功能先不開（評估框、下載等照常）
+  const active = site.features.filter(isOn).filter(n => !(PAUSED && PAUSABLE.includes(n)));
+  if (PAUSED && IS_TOP) document.addEventListener('DOMContentLoaded', () => ui.flush());
 
   // 暴力猴選單：每個功能一個開關
   if (IS_TOP) {
@@ -1549,6 +1651,8 @@
           flashvarsAdKeys: fv ? Object.keys(fv).filter(k => /ad/i.test(k)) : null,
           adRollConfig: fv && fv.adRollGlobalConfig ? JSON.stringify(fv.adRollGlobalConfig).slice(0, 1500) : null,
           blocked: ui.blockedHosts,
+          paused: PAUSED,
+          recentEvents: events.slice(0, 20),
           userBlockStored: store.get('userBlock', null),
           storageTest: (() => { try { const t = Date.now(); GM_setValue('vh_test', t); return GM_getValue('vh_test') === t ? 'ok' : 'mismatch'; } catch (e) { return 'error: ' + e.message; } })(),
           otherHosts: [...new Set(performance.getEntriesByType('resource').map(e => {
