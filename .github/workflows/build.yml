@@ -44,6 +44,7 @@ jobs:
 
       - name: Smoke test (window, tabs, history, bundled ffmpeg on Windows)
         if: steps.chk.outputs.exists != '1'
+        timeout-minutes: 5
         run: python .github/ci_smoke.py
 
       - name: Build exe

@@ -918,10 +918,9 @@ class App:
         self.batch_running = False
         self.set_buttons()
         msg = f"已加入 {ok} 部" + (f"，{fail} 部讀取失敗（原因在「③ 下載紀錄」）" if fail else "")
-        if not self.queue.running():
-            self.status.config(text=msg)
-        else:
-            messagebox.showinfo("批次加入完成", msg)
+        # 不跳視窗打斷使用者，寫在佇列標題旁邊
+        self.refresh_queue()
+        self.qhead.config(text=self.qhead.cget("text") + f"　｜　批次：{msg}")
 
     # ----- 佇列 -----
 
