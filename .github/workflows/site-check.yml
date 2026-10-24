@@ -1,0 +1,31 @@
+name: Site change alarm
+
+# 每天台灣時間早上 9:17 檢查一次（GitHub 排程有時會晚一點）；也可以手動按 Run workflow
+on:
+  schedule:
+    - cron: '17 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Pornhub and XVideos pages
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          PYTHONIOENCODING: utf-8
+        run: python3 .github/site_check.py .github/site_status.json
+
+      # 記住今天的狀態，明天才知道有沒有「變」（不會觸發其他自動流程）
+      - name: Remember status
+        run: |
+          git add .github/site_status.json
+          git diff --cached --quiet && exit 0
+          git -c user.name="github-actions[bot]" -c user.email="41898+github-actions[bot]@users.noreply.github.com" \
+            commit -m "記住網站檢查結果"
+          git pull --rebase -q origin main && git push -q origin HEAD:main
