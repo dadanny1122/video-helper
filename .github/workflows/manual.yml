@@ -1,0 +1,40 @@
+name: Manual to Discord
+
+# 說明書改了 → 更新 Discord「使用手冊」頻道（改原本的訊息，不會越貼越多）
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/manual/index.html'
+      - '.github/discord_manual.py'
+      - '.github/workflows/manual.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: manual-discord
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Post or update the manual in Discord
+        env:
+          DISCORD_MANUAL_WEBHOOK: ${{ secrets.DISCORD_MANUAL_WEBHOOK }}
+          PYTHONIOENCODING: utf-8
+        run: python3 .github/discord_manual.py post .github/discord_manual_ids.json
+
+      # 記住這次貼的訊息編號，下次才能直接修改（不會再觸發其他自動流程）
+      - name: Remember message ids
+        run: |
+          [ -f .github/discord_manual_ids.json ] || exit 0
+          git add .github/discord_manual_ids.json
+          git diff --cached --quiet && exit 0
+          git -c user.name="github-actions[bot]" -c user.email="41898+github-actions[bot]@users.noreply.github.com" \
+            commit -m "記住 Discord 使用手冊的訊息編號"
+          git pull --rebase -q origin main && git push -q origin HEAD:main
