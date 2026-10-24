@@ -1,9 +1,10 @@
 name: Ranking to Discord
 
-# 每週一台灣時間 10:41 檢查 ThePornDude 的影片網站排行，更新 Discord 排行榜頻道
+# 每天台灣時間晚上 8 點檢查 ThePornDude 的影片網站排行，更新 Discord 排行榜頻道
+# （GitHub 排程常會晚幾分鐘，所以設 19:55 開始跑，大約 8 點貼出）
 on:
   schedule:
-    - cron: '41 2 * * 1'
+    - cron: '55 11 * * *'   # UTC 11:55 = 台灣 19:55
   workflow_dispatch:
 
 permissions:
@@ -28,5 +29,5 @@ jobs:
           git diff --cached --quiet && exit 0
           git config user.name "github-actions[bot]"
           git config user.email "41898+github-actions[bot]@users.noreply.github.com"
-          git commit -m "記住本週的網站排行"
+          git commit -m "記住今天的網站排行"
           for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 5; done

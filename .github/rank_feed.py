@@ -1,7 +1,7 @@
 """
 ThePornDude「影片網站排行」→ Discord 排行榜頻道。
 只貼「名次、網站名稱」和連結（不轉貼它的介紹文字），並標出 Video Helper 支援到什麼程度。
-每週檢查一次：排行榜那則訊息直接修改（頻道裡永遠只有一份最新的），名次有變動時另外發一則通知。
+每天晚上 8 點檢查：排行榜那則訊息直接修改（頻道裡永遠只有一份最新的），另外每天發一則「跟昨天比」的名次變動。
 
 用法：python rank_feed.py 狀態檔.json [--probe]
 """
@@ -63,7 +63,7 @@ def embed_for(rows, now_tw):
         "color": 0xF9A825,
         "description": "\n".join(lines) + f"\n\n**⬇ 可以下載的（{len(can)} 個）：**{'、'.join(can)}\n"
                        "其他網站只擋廣告、預估時間，不提供下載。\n"
-                       f"🕒 最後檢查：{now_tw}（每週一更新）",
+                       f"🕒 最後檢查：{now_tw}（每天晚上 8 點更新）",
     }
 
 
@@ -132,10 +132,12 @@ def main(path):
         state["message_id"] = r["id"]
     old = [tuple(x) for x in state.get("rows", [])]
     diff = changes(old, rows) if old else []
-    if diff:
+    # 每天都發一則：有變動列出來，沒變動也說一聲（第一次跑沒有昨天的資料可比，就不發）
+    if old:
+        body = "\n".join(diff)[:4000] if diff else "今天前 20 名都沒有變動 👌"
         call("POST", base, {"username": "Video Helper 排行榜",
-                            "embeds": [{"title": "📊 本週排名變動", "url": PAGE, "color": 0xF9A825,
-                                        "description": "\n".join(diff)[:4000]}]})
+                            "embeds": [{"title": f"📊 今日排名變動（{now_tw[:10]}，跟昨天比）", "url": PAGE,
+                                        "color": 0xF9A825, "description": body}]})
     state["rows"] = [list(x) for x in rows[:TOP]]
     json.dump(state, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(f"::notice title=排行榜::已更新；變動 {len(diff)} 筆")
