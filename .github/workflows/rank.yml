@@ -1,14 +1,10 @@
 name: Ranking to Discord
 
+# 每週一台灣時間 10:41 檢查 ThePornDude 的影片網站排行，更新 Discord 排行榜頻道
 on:
   schedule:
-    - cron: '41 2 * * 1'     # 每週一台灣時間 10:41
+    - cron: '41 2 * * 1'
   workflow_dispatch:
-    inputs:
-      probe:
-        description: '只看網頁長怎樣（測試用）'
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -18,8 +14,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Ranking
+
+      - name: Update the ranking message
         env:
           DISCORD_RANK_WEBHOOK: ${{ secrets.DISCORD_RANK_WEBHOOK }}
           PYTHONIOENCODING: utf-8
-        run: python3 .github/rank_feed.py .github/rank_state.json ${{ inputs.probe && '--probe' || '' }}
+        run: python3 .github/rank_feed.py .github/rank_state.json
+
+      - name: Remember the ranking
+        run: |
+          [ -f .github/rank_state.json ] || exit 0
+          git add .github/rank_state.json
+          git diff --cached --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          git commit -m "記住本週的網站排行"
+          for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 5; done
