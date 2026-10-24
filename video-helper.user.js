@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.5.2
+// @version      3.6.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -10,6 +10,7 @@
 // @match        *://*.pornhub.com/*
 // @match        *://*.xvideos.com/*
 // @match        *://*.jable.tv/*
+// @match        *://*.hanime1.me/*
 // @include      /^https?:\/\/([^\/]*\.)?missav[^\/]*\//
 // @require      https://cdn.jsdelivr.net/npm/mux.js@6.3.0/dist/mux.min.js
 // @grant        GM_download
@@ -608,6 +609,11 @@
     { name: 'MissAV', match: /(^|\.)missav[^.]*\.[a-z]+$/, adPath: /^\/pop/,
       features: ['security', 'saveData', 'hideAds', 'autoSkip', 'videoStatus', 'estimator', 'listLabels'],
       limits: ['不提供下載（內容多為片商作品的轉載）', 'MissAV 常換網址；換到不是 missav 開頭的網址時腳本不會啟動'] },
+    // Hanime1：動畫轉貼站
+    // 不開下載：內容多為動畫公司作品的轉載
+    { name: 'Hanime1', match: /(^|\.)hanime1\.me$/,
+      features: ['security', 'saveData', 'hideAds', 'autoSkip', 'videoStatus', 'estimator', 'listLabels'],
+      limits: ['不提供下載（內容多為動畫公司作品的轉載）', '剛加入，還沒有這個網站專屬的擋廣告規則；有漏掉的廣告請回報'] },
   ];
 
   const site = SITES.find(s => s.match.test(HOST));

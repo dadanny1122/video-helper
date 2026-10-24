@@ -23,7 +23,7 @@
 
 ## 支援網站
 - Pornhub、XVideos：全部功能
-- MissAV、Jable：全部功能（不含下載）
+- MissAV、Jable、Hanime1：全部功能（不含下載）
 
 ## 安裝
 1. 安裝瀏覽器擴充功能 [Violentmonkey](https://violentmonkey.github.io/)（或 Tampermonkey）
