@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.8.1
+// @version      3.9.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -14,6 +14,20 @@
 // @match        *://*.redtube.com/*
 // @match        *://*.jable.tv/*
 // @match        *://*.hanime1.me/*
+// @match        *://*.eporner.com/*
+// @match        *://*.hqporner.com/*
+// @match        *://*.beeg.com/*
+// @match        *://*.sxyprn.com/*
+// @match        *://*.spankbang.com/*
+// @match        *://*.xmoviesforyou.com/*
+// @match        *://*.porntrex.com/*
+// @match        *://*.youjizz.com/*
+// @match        *://*.pornone.com/*
+// @match        *://*.3movs.com/*
+// @match        *://*.tube8.com/*
+// @match        *://*.porndig.com/*
+// @match        *://*.vporn.com/*
+// @include      /^https?:\/\/([^\/]*\.)?xhamster\d*\.(com|desi|one)\//
 // @include      /^https?:\/\/([^\/]*\.)?missav[^\/]*\//
 // @require      https://cdn.jsdelivr.net/npm/mux.js@6.3.0/dist/mux.min.js
 // @grant        GM_download
@@ -554,6 +568,10 @@
 
   const ALL = ['security', 'saveData', 'autoSkip', 'videoStatus', 'estimator', 'listLabels', 'download'];
 
+  // 只擋廣告、不下載的網站共用的功能清單
+  const ADBLOCK_ONLY = ['security', 'saveData', 'hideAds', 'autoSkip', 'videoStatus', 'estimator', 'listLabels'];
+  const TUBE_LIMITS = ['不提供下載', '剛加入，還沒有這個網站專屬的擋廣告規則；有漏掉的廣告請回報'];
+
   const SITES = [
     {
       name: 'Pornhub',
@@ -641,6 +659,21 @@
     { name: 'MissAV', match: /(^|\.)missav[^.]*\.[a-z]+$/, adPath: /^\/pop/,
       features: ['security', 'saveData', 'hideAds', 'autoSkip', 'videoStatus', 'estimator', 'listLabels'],
       limits: ['不提供下載（內容多為片商作品的轉載）', 'MissAV 常換網址；換到不是 missav 開頭的網址時腳本不會啟動'] },
+    // 其他影片網站（參考 ThePornDude 的影片網站排行）：只開擋廣告、預估時間，不開下載
+    //   這些網站很多影片是片商作品的轉載；xHamster 之後測試穩定再考慮加下載
+    { name: 'xHamster', match: /(^|\.)xhamster\d*\.(com|desi|one)$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: 'Eporner', match: /(^|\.)eporner\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: 'HQporner', match: /(^|\.)hqporner\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: 'Beeg', match: /(^|\.)beeg\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: 'YourPorn', match: /(^|\.)sxyprn\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: 'SpankBang', match: /(^|\.)spankbang\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: 'XMoviesForYou', match: /(^|\.)xmoviesforyou\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: 'PornTrex', match: /(^|\.)porntrex\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: 'YouJizz', match: /(^|\.)youjizz\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: 'PornOne', match: /(^|\.)(pornone|vporn)\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: '3Movs', match: /(^|\.)3movs\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: 'Tube8', match: /(^|\.)tube8\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: 'PornDig', match: /(^|\.)porndig\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
     // Hanime1：動畫轉貼站
     // 不開下載：內容多為動畫公司作品的轉載
     { name: 'Hanime1', match: /(^|\.)hanime1\.me$/,
