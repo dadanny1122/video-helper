@@ -24,7 +24,7 @@
 ## 支援網站
 - Pornhub、XVideos、XNXX、YouPorn、RedTube：全部功能
 - MissAV、Jable、Hanime1：全部功能（不含下載）
-- xHamster、Eporner、HQporner、Beeg、YourPorn、SpankBang、XMoviesForYou、PornTrex、YouJizz、PornOne、3Movs、Tube8、PornDig：擋廣告、預估時間（不含下載）
+- xHamster、Eporner、HQporner、Beeg、YourPorn、SpankBang、XMoviesForYou、PornTrex、YouJizz、PornOne、3Movs、Tube8、PornDig、CumLouder、TXXX、PornDoe：擋廣告、預估時間（不含下載）
 
 ## 安裝
 1. 安裝瀏覽器擴充功能 [Violentmonkey](https://violentmonkey.github.io/)（或 Tampermonkey）

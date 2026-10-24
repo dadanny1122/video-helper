@@ -21,7 +21,8 @@ TOP = 20
 # Video Helper 對每個網站的支援程度（名稱用排行榜上的寫法，比對時不分大小寫）
 FULL = {"pornhub", "xvideos", "xnxx", "redtube", "youporn"}                      # 擋廣告＋下載
 ADBLOCK = {"xhamster", "eporner", "hqporner", "beeg", "yourporn", "spankbang", "xmoviesforyou", "porntrex",
-           "youjizz", "pornone", "3movs", "tube8", "porndig", "missav", "jable", "hanime1"}   # 只擋廣告
+           "youjizz", "pornone", "3movs", "tube8", "porndig", "cumlouder", "txxx", "porndoe",
+           "missav", "jable", "hanime1"}   # 只擋廣告
 
 
 def fetch():

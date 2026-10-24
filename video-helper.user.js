@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.9.0
+// @version      3.10.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -26,6 +26,9 @@
 // @match        *://*.3movs.com/*
 // @match        *://*.tube8.com/*
 // @match        *://*.porndig.com/*
+// @match        *://*.cumlouder.com/*
+// @match        *://*.txxx.com/*
+// @match        *://*.porndoe.com/*
 // @match        *://*.vporn.com/*
 // @include      /^https?:\/\/([^\/]*\.)?xhamster\d*\.(com|desi|one)\//
 // @include      /^https?:\/\/([^\/]*\.)?missav[^\/]*\//
@@ -674,6 +677,9 @@
     { name: '3Movs', match: /(^|\.)3movs\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
     { name: 'Tube8', match: /(^|\.)tube8\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
     { name: 'PornDig', match: /(^|\.)porndig\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: 'CumLouder', match: /(^|\.)cumlouder\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: 'TXXX', match: /(^|\.)txxx\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    { name: 'PornDoe', match: /(^|\.)porndoe\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
     // Hanime1：動畫轉貼站
     // 不開下載：內容多為動畫公司作品的轉載
     { name: 'Hanime1', match: /(^|\.)hanime1\.me$/,
