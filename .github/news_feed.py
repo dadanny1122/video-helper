@@ -17,6 +17,11 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
+# 「會影響使用者」的新聞會出現的字：封鎖、法規、訴訟、罰款、年齡驗證、資料外洩…
+IMPACT = (r"(ban|bans|banned|block|blocked|law|laws|bill|court|lawsuit|sue|sued|fine|fined|regulat|"
+          r"age.?verif|age check|shut|outage|hack|breach|leak of|data|policy|investigat|"
+          r"封鎖|禁|法|訴|罰|驗證|關閉|外洩|駭|調查|政策)")
+
 # 要追的網站：名稱、搜尋字、標題裡一定要出現的字
 #   名字很特別的（Pornhub、XVideos…）：內文提到就算，不限標題（中文新聞標題常常不寫網站名）
 #   名字是常見字的（Jable）：標題一定要有，不然會混進很多不相關的新聞
@@ -26,9 +31,9 @@ TOPICS = [
     ("MissAV", "\"MissAV\"", None),
     ("Jable", "\"Jable\"", r"jable"),
     ("Hanime1", "\"hanime1\" OR \"hanime\"", None),
-    ("XNXX", "\"XNXX\"", r"xnxx"),                       # 很多垃圾網頁，標題要有才算
+    ("XNXX", "\"XNXX\"", r"xnxx.*" + IMPACT + "|" + IMPACT + ".*xnxx"),   # 垃圾網頁很多：標題要有名字＋影響類的字
     ("xHamster", "\"xHamster\"", None),
-    ("OnlyFans", "\"OnlyFans\"", r"onlyfans"),          # 新聞很多，標題要有才算，不然會洗版
+    ("OnlyFans", "\"OnlyFans\"", r"onlyfans.*" + IMPACT + "|" + IMPACT + ".*onlyfans"),  # 新聞太多：只要跟法規、封鎖有關的
     ("Aylo", "\"Aylo\"", r"aylo|pornhub"),              # Pornhub 的母公司
     # 年齡驗證法規：最常讓成人網站在某些地區被封鎖的原因
     ("年齡驗證法規", "\"age verification\" porn OR 年齡驗證 成人網站",
