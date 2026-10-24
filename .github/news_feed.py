@@ -17,13 +17,15 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
-# 要追的網站：名稱、搜尋字、標題裡一定要出現的字（過濾掉不相關的）
+# 要追的網站：名稱、搜尋字、標題裡一定要出現的字
+#   名字很特別的（Pornhub、XVideos…）：內文提到就算，不限標題（中文新聞標題常常不寫網站名）
+#   名字是常見字的（Jable）：標題一定要有，不然會混進很多不相關的新聞
 TOPICS = [
-    ("Pornhub", "Pornhub", r"pornhub|aylo|mindgeek"),
-    ("XVideos", "XVideos", r"xvideos"),
-    ("MissAV", "MissAV", r"missav"),
-    ("Jable", "Jable.tv OR \"Jable\"", r"jable"),
-    ("Hanime1", "hanime1 OR \"Hanime1\"", r"hanime"),
+    ("Pornhub", "\"Pornhub\"", None),
+    ("XVideos", "\"XVideos\"", None),
+    ("MissAV", "\"MissAV\"", None),
+    ("Jable", "\"Jable\"", r"jable"),
+    ("Hanime1", "\"hanime1\" OR \"hanime\"", None),
 ]
 # 中文（台灣）和英文都搜
 EDITIONS = [("zh-TW", "TW", "TW:zh-Hant"), ("en-US", "US", "US:en")]
@@ -68,10 +70,10 @@ def collect():
         for hl, gl, ceid in EDITIONS:
             try:
                 got = fetch(q, hl, gl, ceid)
-                print(f"::notice title=抓到 {name}/{hl}::原始 {len(got)} 則" +
+                print(f"抓到 {name}/{hl}：{len(got)} 則" +
                       (f"，例：{got[0]['title'][:60]}（{got[0]['when']}）" if got else ""))
                 for n in got:
-                    if not re.search(must, n["title"], re.I):
+                    if must and not re.search(must, n["title"], re.I):
                         continue
                     if n["when"] and now - n["when"] > timedelta(days=MAX_AGE_DAYS):
                         continue
