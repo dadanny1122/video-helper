@@ -20,7 +20,8 @@ from datetime import datetime, timedelta, timezone
 # 「會影響使用者」的新聞會出現的字：封鎖、法規、訴訟、罰款、年齡驗證、資料外洩…
 IMPACT = (r"(ban|bans|banned|block|blocked|law|laws|bill|court|lawsuit|sue|sued|fine|fined|regulat|"
           r"age.?verif|age check|shut|outage|hack|breach|leak of|data|policy|investigat|"
-          r"封鎖|禁|法|訴|罰|驗證|關閉|外洩|駭|調查|政策)")
+          r"封鎖|禁|法|訴|罰|驗證|關閉|外洩|駭|調查|政策|"
+          r"逮捕|摘発|規制|禁止|閉鎖|年齢確認|流出|送検|罰金|削除|停止|警察|起訴|判決|違法|捜索|捜査|容疑")
 
 # 要追的網站：名稱、搜尋字、標題裡一定要出現的字
 #   名字很特別的（Pornhub、XVideos…）：內文提到就算，不限標題（中文新聞標題常常不寫網站名）
@@ -35,12 +36,19 @@ TOPICS = [
     ("xHamster", "\"xHamster\"", None),
     ("OnlyFans", "\"OnlyFans\"", r"onlyfans.*" + IMPACT + "|" + IMPACT + ".*onlyfans"),  # 新聞太多：只要跟法規、封鎖有關的
     ("Aylo", "\"Aylo\"", r"aylo|pornhub"),              # Pornhub 的母公司
+    # 日本的個人創作者平台
+    ("FC2", "\"FC2\" アダルト OR \"FC2コンテンツマーケット\" OR \"FC2動画\"",
+     r"fc2.*" + IMPACT + "|" + IMPACT + ".*fc2"),          # FC2 也有部落格等服務，只要跟取締、規定有關的
+    ("myfans", "\"myfans\" OR \"マイファンズ\"", r"myfans|マイファンズ"),
+    ("Fantia", "\"Fantia\" OR \"ファンティア\"", r"fantia|ファンティア"),
+    # 日本 2022 年的 AV 新法（AV 出演被害防止・救済法）
+    ("AV新法", "\"AV新法\" OR \"AV出演被害防止\"", r"av新法|av出演被害"),
     # 年齡驗證法規：最常讓成人網站在某些地區被封鎖的原因
     ("年齡驗證法規", "\"age verification\" porn OR 年齡驗證 成人網站",
      r"age.?verif|年齡驗證|年龄验证|age check"),
 ]
 # 中文（台灣）和英文都搜
-EDITIONS = [("zh-TW", "TW", "TW:zh-Hant"), ("en-US", "US", "US:en")]
+EDITIONS = [("zh-TW", "TW", "TW:zh-Hant"), ("en-US", "US", "US:en"), ("ja", "JP", "JP:ja")]
 MAX_AGE_DAYS = 7            # 太舊的不貼
 MAX_PER_RUN = 10            # 一次最多貼幾則（避免洗版）
 MAX_PER_TOPIC = 2           # 每個網站一次最多貼幾則（OnlyFans 這種新聞很多的才不會洗版）
@@ -87,9 +95,17 @@ TRUSTED = {
     "taipeitimes.com", "focustaiwan.tw", "hk01.com", "mingpao.com", "rthk.hk", "news.rthk.hk", "hket.com",
     "on.cc", "zaobao.com.sg", "zaobao.com", "8world.com", "thenewslens.com", "twreporter.org", "gvm.com.tw",
     "managertoday.com.tw", "kocpc.com.tw", "4gamers.com.tw", "gamebase.com.tw", "yahoo.com",
-    # 日本、韓國
-    "nhk.or.jp", "asahi.com", "mainichi.jp", "yomiuri.co.jp", "itmedia.co.jp", "gigazine.net", "koreaherald.com",
-    "koreatimes.co.kr", "yna.co.kr",
+    # 日本
+    "nhk.or.jp", "asahi.com", "mainichi.jp", "yomiuri.co.jp", "sankei.com", "nikkei.com", "jiji.com", "kyodo.co.jp",
+    "47news.jp", "tokyo-np.co.jp", "nishinippon.co.jp", "kahoku.news", "hokkaido-np.co.jp", "chunichi.co.jp",
+    "itmedia.co.jp", "gigazine.net", "impress.co.jp", "watch.impress.co.jp", "ascii.jp", "gizmodo.jp", "cnet.com",
+    "news.yahoo.co.jp", "bunshun.jp", "president.jp", "toyokeizai.net", "diamond.jp", "j-cast.com", "oricon.co.jp",
+    "nikkansports.com", "sponichi.co.jp", "sanspo.com", "hochi.news", "fnn.jp", "newsdig.tbs.co.jp", "news.ntv.co.jp",
+    "news.tv-asahi.co.jp", "tbs.co.jp", "ntv.co.jp", "tv-asahi.co.jp", "smart-flash.jp", "friday.kodansha.co.jp",
+    "dailyshincho.jp", "gendai.media", "news-postseven.com", "bengo4.com", "nlab.itmedia.co.jp", "mantan-web.jp",
+    "huffingtonpost.jp", "businessinsider.jp", "wired.jp", "buzzfeed.com", "withnews.jp", "jprime.jp", "zakzak.co.jp",
+    # 韓國
+    "koreaherald.com", "koreatimes.co.kr", "yna.co.kr",
 }
 
 
@@ -242,6 +258,29 @@ def verify(n, now):
     return True
 
 
+# ---- 標題翻成中文（日文、英文新聞）----
+def needs_translation(t):
+    if re.search(r"[぀-ヿ]", t):                      # 有平假名、片假名 → 日文
+        return "ja"
+    if not re.search(r"[一-鿿]", t):                   # 完全沒有漢字 → 英文
+        return "en"
+    return None
+
+
+def translate(t, src):
+    """用 Google 翻譯的公開網址翻成繁體中文；失敗回傳 None（照樣貼原文）"""
+    try:
+        q = urllib.parse.urlencode({"client": "gtx", "sl": src, "tl": "zh-TW", "dt": "t", "q": t})
+        r = urllib.request.urlopen(urllib.request.Request(
+            "https://translate.googleapis.com/translate_a/single?" + q, headers={"User-Agent": UA}), timeout=15)
+        data = json.loads(r.read().decode("utf-8"))
+        out = "".join(seg[0] for seg in data[0] if seg and seg[0]).strip()
+        return out if out and out != t else None
+    except Exception as e:
+        print(f"翻譯失敗：{e}")
+        return None
+
+
 def norm_title(t):
     return re.sub(r"\W+", "", t.lower())[:80]
 
@@ -282,8 +321,10 @@ def collect():
 
 def post(hook, n):
     tw = n["when"].astimezone(timezone(timedelta(hours=8))).strftime("%m/%d %H:%M") if n["when"] else ""
-    embed = {"title": n["title"][:250], "url": n["link"], "color": 0x1565C0,
-             "description": f"🏷 {n['topic']}　📰 {n['source'] or '新聞'}" + (f"　🕒 {tw}" if tw else "")}
+    desc = f"🏷 {n['topic']}　📰 {n['source'] or '新聞'}" + (f"　🕒 {tw}" if tw else "")
+    if n.get("zh"):
+        desc = f"🈯 {n['zh']}\n" + desc
+    embed = {"title": n["title"][:250], "url": n["link"], "color": 0x1565C0, "description": desc[:4000]}
     data = json.dumps({"username": "Video Helper 新聞", "embeds": [embed]}).encode("utf-8")
     for _ in range(5):
         req = urllib.request.Request(hook, data=data, method="POST",
@@ -327,6 +368,10 @@ def main(path, dry=False, mark_only=False):
     hook = os.environ.get("DISCORD_NEWS_WEBHOOK", "").strip()
     now = datetime.now(timezone.utc)
     to_post = [n for n in to_post if verify(n, now)]
+    for n in to_post:                                    # 日文、英文標題附上中文翻譯
+        lang = needs_translation(n["title"])
+        if lang:
+            n["zh"] = translate(n["title"], lang)
     posted = 0
     for n in reversed(to_post):                          # 舊的先貼，頻道裡由舊到新
         print(f"[{n['topic']}] {n['title']} ({n['source']})")
@@ -358,6 +403,10 @@ def test_verify():
         keep = verify(n, now)
         real = not n["link"].startswith("https://news.google.com")
         ok += real
+        lang = needs_translation(n["title"])
+        zh = translate(n["title"], lang) if lang else None
+        if zh:
+            print(f"::notice title=翻譯::{n['title'][:50]} → {zh[:50]}")
         print(f"::notice title=日期檢查::{'✓原文' if real else '✗還是 Google 連結'}｜Google 說 {g.date() if g else '?'}"
               f"｜原文 {n['when'].date() if n['when'] else '?'}｜{'貼' if keep else '不貼'}｜{n['link'][:70]}")
     print(f"::notice title=日期檢查結果::{ok}/{min(6, len(items))} 則換到原文網址")
