@@ -67,7 +67,10 @@ def collect():
     for name, q, must in TOPICS:
         for hl, gl, ceid in EDITIONS:
             try:
-                for n in fetch(q, hl, gl, ceid):
+                got = fetch(q, hl, gl, ceid)
+                print(f"::notice title=抓到 {name}/{hl}::原始 {len(got)} 則" +
+                      (f"，例：{got[0]['title'][:60]}（{got[0]['when']}）" if got else ""))
+                for n in got:
                     if not re.search(must, n["title"], re.I):
                         continue
                     if n["when"] and now - n["when"] > timedelta(days=MAX_AGE_DAYS):
