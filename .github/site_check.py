@@ -53,9 +53,45 @@ def check_xvideos():
     return "ok", ""
 
 
+def media_hosts(page):
+    """影片網址放在哪些伺服器（給電腦版的允許清單用）"""
+    hs = set()
+    for u in re.findall(r'https?:(?:\\?/){2}([a-z0-9.-]+)[^"\'\s]*?\.(?:m3u8|mp4)', page, re.I):
+        hs.add(".".join(u.lower().split(".")[-2:]))
+    return sorted(hs)
+
+
+def check_xnxx():
+    """XNXX 跟 XVideos 同一家，播放器寫法一樣（setVideoHLS）"""
+    home = get("https://www.xnxx.com/")
+    m = re.search(r'href="(/video-[a-z0-9]+/[^"]+)"', home)
+    if not m:
+        return "blocked" if BLOCKED_HINTS.search(home) else "broken", "首頁找不到影片連結"
+    page = get("https://www.xnxx.com" + m.group(1))
+    if not re.search(r"setVideo(UrlHigh|UrlLow|HLS)", page):
+        return "blocked" if BLOCKED_HINTS.search(page) else "broken", "影片頁找不到 setVideoHLS"
+    return "ok", "伺服器：" + ",".join(media_hosts(page))
+
+
+def check_aylo(base, link_re):
+    """YouPorn、RedTube 跟 Pornhub 同一家（Aylo），看影片清單是不是也叫 mediaDefinition(s)"""
+    home = get(base, "age_verified=1")
+    m = re.search(link_re, home)
+    if not m:
+        return "blocked" if BLOCKED_HINTS.search(home) else "broken", "首頁找不到影片連結"
+    page = get(base.rstrip("/") + m.group(1), "age_verified=1")
+    marks = [k for k in ("mediaDefinitions", "mediaDefinition", "flashvars_", "playervars", "videoUrl")
+             if k in page]
+    if not any(k.startswith("mediaDefinition") for k in marks):
+        return "blocked" if BLOCKED_HINTS.search(page) else "broken", f"影片頁找不到 mediaDefinition（有：{marks}）"
+    return "ok", f"有：{marks}｜伺服器：" + ",".join(media_hosts(page))
+
+
 def run_checks():
     out = {}
-    for name, fn in (("Pornhub", check_pornhub), ("XVideos", check_xvideos)):
+    for name, fn in (("Pornhub", check_pornhub), ("XVideos", check_xvideos), ("XNXX", check_xnxx),
+                     ("YouPorn", lambda: check_aylo("https://www.youporn.com/", r'href="(/watch/\d+/[^"]*)"')),
+                     ("RedTube", lambda: check_aylo("https://www.redtube.com/", r'href="(/\d{4,})"'))):
         try:
             out[name] = fn()
         except urllib.error.HTTPError as e:
@@ -89,8 +125,8 @@ def main(state_path):
     for name, (st, why) in now.items():
         print(f"{name}: {st} {why}")
         print(f"::notice title={name}::{st} {why}")
-        was = old.get(name, {}).get("status", "ok")
-        if st == was:
+        was = old.get(name, {}).get("status", "new")
+        if st == was or was == "new":                    # 剛加入的網站第一次檢查不通知
             continue
         if st == "broken":
             lines.append(f"⚠ **{name} 可能改版了**：{why}\n　腳本可能會漏掉廣告或不能下載，作者會盡快更新。")

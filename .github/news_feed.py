@@ -26,11 +26,18 @@ TOPICS = [
     ("MissAV", "\"MissAV\"", None),
     ("Jable", "\"Jable\"", r"jable"),
     ("Hanime1", "\"hanime1\" OR \"hanime\"", None),
+    ("XNXX", "\"XNXX\"", None),
+    ("xHamster", "\"xHamster\"", None),
+    ("OnlyFans", "\"OnlyFans\"", r"onlyfans"),          # 新聞很多，標題要有才算，不然會洗版
+    ("Aylo", "\"Aylo\"", r"aylo|pornhub"),              # Pornhub 的母公司
+    # 年齡驗證法規：最常讓成人網站在某些地區被封鎖的原因
+    ("年齡驗證法規", "\"age verification\" porn OR 年齡驗證 成人網站",
+     r"age.?verif|年齡驗證|年龄验证|age check"),
 ]
 # 中文（台灣）和英文都搜
 EDITIONS = [("zh-TW", "TW", "TW:zh-Hant"), ("en-US", "US", "US:en")]
 MAX_AGE_DAYS = 7            # 太舊的不貼
-MAX_PER_RUN = 8             # 一次最多貼幾則（避免洗版）
+MAX_PER_RUN = 10            # 一次最多貼幾則（避免洗版）
 FIRST_RUN_POST = 3          # 第一次執行：每個網站只貼最新的幾則，其他的記成看過
 SEEN_MAX = 3000
 UA = "Mozilla/5.0 (compatible; VideoHelper-NewsBot/1.0)"
