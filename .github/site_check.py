@@ -66,7 +66,8 @@ def check_xnxx():
     home = get("https://www.xnxx.com/")
     m = re.search(r'href="(/video-[a-z0-9]+/[^"]+)"', home)
     if not m:
-        return "blocked" if BLOCKED_HINTS.search(home) else "broken", "首頁找不到影片連結"
+        sample = sorted(set(re.findall(r'href="(/[^"]{0,40})', home)))[:12]
+        return "blocked" if BLOCKED_HINTS.search(home) else "broken", f"首頁找不到影片連結（{len(home)} 字，連結例：{sample}）"
     page = get("https://www.xnxx.com" + m.group(1))
     if not re.search(r"setVideo(UrlHigh|UrlLow|HLS)", page):
         return "blocked" if BLOCKED_HINTS.search(page) else "broken", "影片頁找不到 setVideoHLS"
