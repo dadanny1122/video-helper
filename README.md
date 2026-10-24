@@ -27,7 +27,8 @@
 
 ## 安裝
 1. 安裝瀏覽器擴充功能 [Violentmonkey](https://violentmonkey.github.io/)（或 Tampermonkey）
-2. 點這裡安裝腳本：[video-helper.user.js](https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js)
+2. 點這裡安裝腳本：[Greasy Fork 頁面](https://greasyfork.org/zh-TW/scripts/601901-video-helper) → 按綠色「安裝此腳本」
+   （或直接從 GitHub 裝：[video-helper.user.js](https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js)）
 3. 之後有新版本會自動更新
 
 ## 電腦版（下載工具）
