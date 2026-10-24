@@ -17,6 +17,8 @@ from datetime import datetime, timedelta, timezone
 PAGE = "https://theporndude.com/zh/top-porn-tube-sites"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 TOP = 20
+# 交叉比對用：Similarweb 依「實際流量」排的成人網站排行（只附連結，不抓內容）
+CROSS = "https://www.similarweb.com/top-websites/adult/"
 
 # Video Helper 對每個網站的支援程度（名稱用排行榜上的寫法，比對時不分大小寫）
 FULL = {"pornhub", "xvideos", "xnxx", "redtube", "youporn", "xhamster"}                      # 擋廣告＋下載
@@ -63,7 +65,10 @@ def embed_for(rows, now_tw):
         "color": 0xF9A825,
         "description": "\n".join(lines) + f"\n\n**⬇ 可以下載的（{len(can)} 個）：**{'、'.join(can)}\n"
                        "其他網站只擋廣告、預估時間，不提供下載。\n"
-                       f"🕒 最後檢查：{now_tw}（每天晚上 8 點更新）",
+                       f"🕒 最後檢查：{now_tw}（每天晚上 8 點更新）\n\n"
+                       f"📎 **資料來源：**[ThePornDude 影片網站排行]({PAGE})\n"
+                       "⚠ 這是**單一網站**的排行（站長自己評分，可能有廣告合作），僅供參考；\n"
+                       f"想看依實際流量的排名，可以對照 [Similarweb 成人網站流量排行]({CROSS})",
     }
 
 
@@ -121,6 +126,12 @@ def main(path):
     e = embed_for(rows, now_tw)
     mid = state.get("message_id")
     done = False
+    if mid and os.environ.get("REPOST") == "true":    # 手動要求「重新貼一份新的」：刪掉舊的那則
+        try:
+            call("DELETE", f"{base}/messages/{mid}")
+        except urllib.error.HTTPError as err:
+            print(f"刪不到舊的排行榜訊息（{err.code}），直接貼新的")
+        mid = None
     if mid:
         try:
             call("PATCH", f"{base}/messages/{mid}", {"embeds": [e]})
@@ -137,7 +148,7 @@ def main(path):
         body = "\n".join(diff)[:4000] if diff else "今天前 20 名都沒有變動 👌"
         call("POST", base, {"username": "Video Helper 排行榜",
                             "embeds": [{"title": f"📊 今日排名變動（{now_tw[:10]}，跟昨天比）", "url": PAGE,
-                                        "color": 0xF9A825, "description": body}]})
+                                        "color": 0xF9A825, "description": body + f"\n\n📎 來源：[ThePornDude]({PAGE})（單一網站，僅供參考）"}]})
     state["rows"] = [list(x) for x in rows[:TOP]]
     json.dump(state, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(f"::notice title=排行榜::已更新；變動 {len(diff)} 筆")

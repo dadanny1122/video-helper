@@ -6,6 +6,11 @@ on:
   schedule:
     - cron: '55 11 * * *'   # UTC 11:55 = 台灣 19:55
   workflow_dispatch:
+    inputs:
+      repost:
+        description: '刪掉舊的排行榜訊息，重新貼一份新的'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -20,6 +25,7 @@ jobs:
         env:
           DISCORD_RANK_WEBHOOK: ${{ secrets.DISCORD_RANK_WEBHOOK }}
           PYTHONIOENCODING: utf-8
+          REPOST: ${{ inputs.repost }}
         run: python3 .github/rank_feed.py .github/rank_state.json
 
       - name: Remember the ranking
