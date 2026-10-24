@@ -31,6 +31,7 @@ import queue
 import logging
 import threading
 import subprocess
+import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -78,7 +79,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.12.0"
+VERSION = "1.13.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -153,6 +154,8 @@ DEFAULT_SETTINGS = {
     "bridge_tokens": [],              # 已配對的瀏覽器（只存雜湊值，不存原本的密碼）
     "mbps": 0,                   # 上次量到的網速
     "setup_seen": False,         # 看過「安裝擋廣告」了（第一次打開才自動切過去）
+    "ai_key": "",                # AI 判斷廣告網域用的 API 金鑰（只存在這台電腦，不會匯出）
+    "ai_cache": {},              # AI 判斷過的網域：網域 → {verdict, reason, t}（問過就不再問）
 }
 
 
@@ -342,7 +345,7 @@ class Stats:
 
 BACKUP_KIND = "VideoHelper-backup"
 # 不放進備份檔的：自動產生的值，以及配對密碼（不能跟著備份檔到處跑）
-NOT_EXPORTED = ("mbps", "last_version", "bridge_enabled", "bridge_tokens")
+NOT_EXPORTED = ("mbps", "last_version", "bridge_enabled", "bridge_tokens", "ai_key", "ai_cache")
 CLOSE_CHOICES = ["下載中才詢問", "一律縮到系統匣", "直接結束"]
 
 
@@ -546,12 +549,72 @@ def bridge_url_allowed(url, hosts=BRIDGE_HOSTS):
     return any(h == d or h.endswith("." + d) for d in hosts)
 
 
+# ----------------------------------------------------------------------
+# AI 判斷廣告網域：只送「網域名稱」和網站名稱，不送影片標題、網址、觀看紀錄
+# ----------------------------------------------------------------------
+
+AI_API = "https://api.anthropic.com/v1/messages"
+AI_MODEL = "claude-haiku-5-5"            # 便宜、快；判斷網域綽綽有餘
+AI_MAX_DOMAINS = 30
+AI_CACHE_DAYS = 30
+AI_CACHE_MAX = 800
+AI_VERDICTS = {"ad": "廣告", "tracker": "追蹤", "popup": "彈窗廣告", "site": "網站自己的", "cdn": "影片／圖片伺服器",
+               "service": "一般服務", "unknown": "不確定"}
+AI_BLOCK = ("ad", "tracker", "popup")    # 這幾種建議封鎖
+DOMAIN_RE = __import__("re").compile(r"^(?=.{3,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+
+
+def ai_prompt(site, domains):
+    return (
+        "你是廣告封鎖規則的專家。使用者在影片網站「" + site + "」上，這一頁連到了下面這些其他網域。\n"
+        "請判斷每個網域是什麼，用這幾種之一：\n"
+        "ad＝廣告網路、popup＝彈窗／跳轉廣告、tracker＝追蹤或統計、cdn＝這個網站自己的影片或圖片伺服器、"
+        "site＝這個網站自己的其他網域、service＝一般服務（例如字型、驗證碼、播放器函式庫）、unknown＝不確定。\n"
+        "封鎖 cdn、site、service 會讓網站壞掉，所以不確定時寧可回答 unknown。\n"
+        "只回 JSON，不要其他文字，格式："
+        '[{"domain":"…","verdict":"ad","reason":"一句繁體中文，20 字以內"}]\n\n'
+        "網域：\n" + "\n".join(domains))
+
+
+def parse_ai_json(text):
+    """從 AI 的回答裡挖出 JSON 陣列（有時候會多包一層 ```）"""
+    i, j = text.find("["), text.rfind("]")
+    if i < 0 or j <= i:
+        raise ValueError("AI 的回答看不懂")
+    return json.loads(text[i:j + 1])
+
+
+def ai_classify(key, site, domains, timeout=40):
+    """問 AI；回傳 {網域: {"verdict", "reason"}}。失敗丟出 RuntimeError（訊息給使用者看）"""
+    body = json.dumps({"model": AI_MODEL, "max_tokens": 2000,
+                       "messages": [{"role": "user", "content": ai_prompt(site, domains)}]}).encode("utf-8")
+    req = urllib.request.Request(AI_API, data=body, method="POST", headers={
+        "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        msg = {401: "API 金鑰不對", 403: "這個金鑰沒有權限", 429: "問太快了或額度用完，等一下再試",
+               529: "AI 伺服器太忙，等一下再試"}.get(e.code, f"AI 伺服器回應錯誤（{e.code}）")
+        raise RuntimeError(msg) from None
+    except Exception as e:
+        raise RuntimeError(f"連不到 AI 伺服器（{e}）") from None
+    text = "".join(c.get("text", "") for c in data.get("content", []) if c.get("type") == "text")
+    out = {}
+    for it in parse_ai_json(text):
+        d = str(it.get("domain", "")).lower().strip()
+        v = str(it.get("verdict", "unknown")).lower().strip()
+        if d in domains:
+            out[d] = {"verdict": v if v in AI_VERDICTS else "unknown", "reason": str(it.get("reason", ""))[:60]}
+    return out
+
+
 def hash_token(t):
     return hashlib.sha256(t.encode("utf-8")).hexdigest()
 
 
 class Bridge:
-    def __init__(self, settings, on_enqueue, get_status):
+    def __init__(self, settings, on_enqueue, get_status, on_classify=None):
         """
         on_enqueue(ticket, url, height)：收到「加入下載」時呼叫（在連線服務的執行緒裡，要自己轉回主畫面）
         get_status(ticket)：回傳 {"status":…, "progress":…, "title":…} 或 None
@@ -559,6 +622,7 @@ class Bridge:
         self.settings = settings
         self.on_enqueue = on_enqueue
         self.get_status = get_status
+        self.on_classify = on_classify             # AI 判斷網域（可以沒有）
         self.server = None
         self.port = None
         self.pair_code = None
@@ -730,6 +794,25 @@ class Bridge:
                     bridge.on_enqueue(ticket, url, h, media or None)
                     log.info("瀏覽器送來：%s（%s）", url, quality_label(h) if h else "預設畫質")
                     return self.send(200, {"ok": True, "ticket": ticket})
+                if self.path == "/classify":
+                    if not bridge.token_ok(self.headers.get("X-VH-Token")):
+                        return self.send(401, {"error": "需要重新配對"})
+                    if not bridge.on_classify:
+                        return self.send(404, {"error": "not found"})
+                    doms = data.get("domains")
+                    if not isinstance(doms, list):
+                        return self.send(400, {"error": "格式不對"})
+                    doms = [str(d).lower().strip() for d in doms][:AI_MAX_DOMAINS]
+                    doms = [d for d in dict.fromkeys(doms) if DOMAIN_RE.match(d)]
+                    if not doms:
+                        return self.send(400, {"error": "沒有可以判斷的網域"})
+                    if not bridge.rate_ok():
+                        return self.send(429, {"error": "太頻繁了，等一分鐘再試"})
+                    site = str(data.get("site") or "")[:40]
+                    try:
+                        return self.send(200, {"results": bridge.on_classify(site, doms)})
+                    except RuntimeError as e:
+                        return self.send(503, {"error": str(e)})
                 self.send(404, {"error": "not found"})
 
         return Handler
@@ -1268,7 +1351,9 @@ class App:
         self.last_clip = ""
         self.bridge = Bridge(self.settings,
                              on_enqueue=self.remote_register,
-                             get_status=self.remote_status)
+                             get_status=self.remote_status,
+                             on_classify=self.classify_domains)
+        self.ai_fn = ai_classify
 
         root.title(f"Video Helper v{VERSION}")
         root.geometry("800x700")
@@ -1849,6 +1934,40 @@ class App:
             return {"status": t["status"], "progress": round(t["progress"]), "title": t["title"]}
         return {k: rec.get(k) for k in ("status", "progress", "title", "error")}
 
+    def classify_domains(self, site, domains):
+        """
+        連線服務的執行緒呼叫：先查記憶，沒問過的才問 AI。
+        回傳 {網域: {"verdict", "label", "reason", "block", "cached"}}
+        """
+        cache = dict(self.settings["ai_cache"] or {})
+        now = time.time()
+        out, ask = {}, []
+        for d in domains:
+            c = cache.get(d)
+            if c and now - c.get("t", 0) < AI_CACHE_DAYS * 86400:
+                out[d] = dict(c, cached=True)
+            else:
+                ask.append(d)
+        if ask:
+            key = (self.settings["ai_key"] or "").strip()
+            if not key:
+                raise RuntimeError("還沒設定 AI 金鑰：電腦版「③ 設定」→「⚙ 進階設定…」→「AI」")
+            got = self.ai_fn(key, site, ask)
+            for d in ask:
+                r = got.get(d, {"verdict": "unknown", "reason": "AI 沒有回答這個"})
+                out[d] = dict(r, t=now, cached=False)
+                cache[d] = {"verdict": r["verdict"], "reason": r["reason"], "t": now}
+            if len(cache) > AI_CACHE_MAX:              # 太多就忘掉最舊的
+                cache = dict(sorted(cache.items(), key=lambda kv: kv[1].get("t", 0))[-AI_CACHE_MAX:])
+            self.settings["ai_cache"] = cache
+            self.settings.save()
+            log.info("AI 判斷 %d 個網域（%d 個用記憶）", len(ask), len(domains) - len(ask))
+        for d, r in out.items():
+            r["label"] = AI_VERDICTS.get(r["verdict"], "不確定")
+            r["block"] = r["verdict"] in AI_BLOCK
+            r.pop("t", None)
+        return out
+
     def remote_register(self, ticket, url, h, media=None):
         """連線服務的執行緒呼叫：先記下任務再回覆瀏覽器，瀏覽器馬上來問進度才查得到"""
         self.remote[ticket] = {"status": "讀取中", "progress": 0, "title": url, "error": ""}
@@ -2257,7 +2376,7 @@ class App:
         nb.pack(fill="both", expand=True)
         pages = {}
         for key, text in (("prog", "檔名與程式"), ("link", "瀏覽器連動"), ("backup", "備份與更新"),
-                          ("debug", "問題排查"), ("stats", "統計")):
+                          ("debug", "問題排查"), ("ai", "AI"), ("stats", "統計")):
             pages[key] = ttk.Frame(nb, padding=(12, 10))
             nb.add(pages[key], text=f"  {text}  ")
 
@@ -2327,8 +2446,68 @@ class App:
         ttk.Button(row, text="清除網速紀錄", command=self.reset_speed).pack(side="left")
         ttk.Label(t, text=f"設定資料夾：{data_dir()}", foreground="#888").pack(anchor="w", pady=(10, 0))
 
+        # --- AI ---
+        x = pages["ai"]
+        ttk.Label(x, justify="left", wraplength=700, text=(
+            "在影片網頁點左下角 🛡 →「🤖 問 AI」，AI 會判斷「這頁連到的其他網站」哪些是廣告、哪些是網站自己的。\n"
+            "只送網域名稱（例如 pemsrv.com）和網站名稱，不送影片標題、網址、觀看紀錄。\n"
+            "問過的網域會記住 30 天，不會重複花錢。AI 只給建議，要不要封鎖還是你決定。")).pack(anchor="w")
+        ttk.Label(x, justify="left", foreground="#555", wraplength=700, text=(
+            "需要 Anthropic 的 API 金鑰：到 console.anthropic.com 註冊 → API Keys → Create Key，複製貼到下面。\n"
+            "依用量收費；判斷一頁的網域通常不到新台幣 1 角。金鑰只存在這台電腦，不會被匯出。")).pack(anchor="w", pady=(8, 4))
+        row = ttk.Frame(x)
+        row.pack(anchor="w", fill="x", pady=4)
+        ttk.Label(row, text="API 金鑰：").pack(side="left")
+        self.ai_key_var = tk.StringVar(value=self.settings["ai_key"])
+        ttk.Entry(row, textvariable=self.ai_key_var, show="•", width=48).pack(side="left", padx=6)
+        ttk.Button(row, text="💾 儲存", command=self.save_ai_key).pack(side="left")
+        row = ttk.Frame(x)
+        row.pack(anchor="w", pady=4)
+        ttk.Button(row, text="測試", command=self.test_ai).pack(side="left")
+        ttk.Button(row, text="取得金鑰（打開網頁）",
+                   command=lambda: webbrowser.open("https://console.anthropic.com/settings/keys")).pack(side="left", padx=6)
+        ttk.Button(row, text="清除 AI 記憶", command=self.clear_ai_cache).pack(side="left")
+        self.ai_lbl = ttk.Label(x, text="", foreground="#555", wraplength=700, justify="left")
+        self.ai_lbl.pack(anchor="w", pady=6)
+        self.refresh_ai_label()
+
         # --- 統計 ---
         self.build_stats(pages["stats"])
+
+    def refresh_ai_label(self, extra=""):
+        n = len(self.settings["ai_cache"] or {})
+        has = bool((self.settings["ai_key"] or "").strip())
+        self.ai_lbl.config(text=("✅ 已設定金鑰" if has else "還沒設定金鑰") + f"｜記住 {n} 個網域" +
+                           (f"\n{extra}" if extra else ""))
+
+    def save_ai_key(self):
+        self.settings["ai_key"] = self.ai_key_var.get().strip()
+        self.settings.save()
+        self.refresh_ai_label("已儲存。")
+
+    def test_ai(self):
+        key = self.ai_key_var.get().strip()
+        if not key:
+            self.refresh_ai_label("先貼上金鑰再測試。")
+            return
+        self.refresh_ai_label("測試中…")
+
+        def work():
+            try:
+                r = self.ai_fn(key, "Pornhub", ["doubleclick.net", "phncdn.com"])
+                txt = "測試成功：" + "、".join(f"{d}＝{AI_VERDICTS.get(v['verdict'], '?')}" for d, v in r.items())
+            except Exception as e:
+                txt = f"❌ 測試失敗：{e}"
+            self.q.put(("ai_test", txt))
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_ai_test(self, txt):
+        self.refresh_ai_label(txt)
+
+    def clear_ai_cache(self):
+        self.settings["ai_cache"] = {}
+        self.settings.save()
+        self.refresh_ai_label("已清除。")
 
     def show_advanced(self, page=None):
         self.adv.deiconify()

@@ -1,9 +1,12 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.3.1
+// @version      3.4.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
+// @license      MIT
+// @homepageURL  https://github.com/dadanny1122/video-helper
+// @supportURL   https://github.com/dadanny1122/video-helper/issues
 // @match        *://*.pornhub.com/*
 // @match        *://*.xvideos.com/*
 // @match        *://*.jable.tv/*
@@ -21,8 +24,6 @@
 // @connect      127.0.0.1
 // @run-at       document-start
 // @inject-into  page
-// @updateURL    https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js
-// @downloadURL  https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js
 // ==/UserScript==
 
 /*
@@ -404,6 +405,42 @@
 
       if (!rows.length) p.insertAdjacentHTML('beforeend', '<div style="margin-top:8px">目前沒有</div>');
 
+      // 🤖 問 AI：判斷還沒被內建規則擋的網域
+      const aiTags = {};                                   // 網域 → 顯示 AI 結果的那一格
+      const unknown = rows.map(([b]) => b).filter(b => !AD_RE.test(b)).slice(0, 30);
+      if (unknown.length) {
+        const aiBar = document.createElement('div');
+        aiBar.style.cssText = 'margin-top:6px;font-size:12px;';
+        const aiBtn = document.createElement('span');
+        aiBtn.textContent = `🤖 問 AI 這 ${unknown.length} 個是什麼`;
+        aiBtn.title = '只送網域名稱給 AI（透過電腦版），不送影片標題和網址；AI 只給建議，封不封鎖你決定';
+        aiBtn.style.cssText = 'cursor:pointer;background:#6a1b9a;padding:3px 10px;border-radius:4px;';
+        const aiMsg = document.createElement('span');
+        aiMsg.style.cssText = 'margin-left:8px;opacity:.8;';
+        aiBtn.addEventListener('click', async () => {
+          if (aiBtn.dataset.busy) return;
+          aiBtn.dataset.busy = '1';
+          aiMsg.textContent = '問 AI 中…';
+          try {
+            const res = await askAi(unknown);
+            let n = 0;
+            for (const [d, r] of Object.entries(res)) {
+              const tag = aiTags[d];
+              if (!tag) continue;
+              tag.textContent = (r.block ? '⚠ ' : '✓ ') + r.label + (r.reason ? '：' + r.reason : '');
+              tag.style.color = r.block ? '#ff8a80' : '#a5d6a7';
+              if (r.block) n++;
+            }
+            aiMsg.textContent = n ? `AI 建議封鎖 ${n} 個（紅字），確認後按「封鎖」` : 'AI 覺得都不用封鎖';
+          } catch (err) {
+            aiMsg.textContent = '❌ ' + err.message;
+          }
+          delete aiBtn.dataset.busy;
+        });
+        aiBar.append(aiBtn, aiMsg);
+        p.appendChild(aiBar);
+      }
+
       for (const [b, st] of rows) {
         const builtIn = AD_RE.test(b);
         const mine = userBlock.has(b);
@@ -412,6 +449,9 @@
         const name = document.createElement('div');
         name.style.cssText = 'flex:1;word-break:break-all;';
         name.textContent = b;
+        const tag = aiTags[b] = document.createElement('div');   // AI 的判斷會填在這裡
+        tag.style.cssText = 'font-size:11px;';
+        name.appendChild(tag);
         const info = document.createElement('div');
         info.style.cssText = 'font-size:11px;opacity:.75;white-space:nowrap;';
         const hows = Object.keys(st.how).join('、');
@@ -1615,6 +1655,29 @@
     return 0;
   }
 
+  // 送一個請求給電腦版；還沒配對（401）就請使用者輸入配對碼，配好再送一次
+  async function bridgeCall(port, path, body) {
+    let r = await bridgeReq('POST', port, path, body, store.get('bridgeToken', ''));
+    if (r.status === 401) {
+      const code = prompt('第一次使用，請輸入電腦版顯示的 6 位數配對碼：\n（電腦版 →「③ 設定」→「🔗 配對瀏覽器…」）');
+      if (!code) throw new Error('已取消配對');
+      const p = await bridgeReq('POST', port, '/pair', { code: code.replace(/\s/g, '') });
+      if (p.status !== 200 || !p.data.token) throw new Error(p.data.error || '配對失敗');
+      store.set('bridgeToken', p.data.token);
+      r = await bridgeReq('POST', port, path, body, p.data.token);
+    }
+    return r;
+  }
+
+  // AI 判斷網域：只送網域名稱和網站名稱。回傳 {網域: {label, reason, block}}
+  async function askAi(domains) {
+    const port = await findBridge();
+    if (!port) throw new Error('要先打開電腦版（AI 是透過電腦版問的，金鑰只存在你的電腦）');
+    const r = await bridgeCall(port, '/classify', { site: site ? site.name : HOST, domains });
+    if (r.status !== 200) throw new Error(r.data.error || `電腦版回應錯誤（${r.status}）`);
+    return r.data.results || {};
+  }
+
   // 回傳一個 ticket（之後拿來查進度），失敗就丟出錯誤訊息
   // s：畫質清單裡的一項（有影片真正的位址）。一起送過去，電腦版就不用自己再開一次網頁
   //    （有些網站會擋不是瀏覽器的程式開網頁，例如 Pornhub 回 410）
@@ -1627,17 +1690,8 @@
       throw new Error('找不到電腦版。請先打開 Video Helper 電腦版，並在「③ 設定」按「🔗 配對瀏覽器…」。\n（網址已經幫你複製，切到電腦版也會自動偵測）');
     }
     const media = s.url ? new URL(s.url, location.href).href : '';
-    const enqueue = () => bridgeReq('POST', port, '/enqueue',
-      { url, height, media, kind: s.kind, title: String(title || '').slice(0, 300) }, store.get('bridgeToken', ''));
-    let r = await enqueue();
-    if (r.status === 401) {
-      const code = prompt('第一次使用，請輸入電腦版顯示的 6 位數配對碼：\n（電腦版 →「③ 設定」→「🔗 配對瀏覽器…」）');
-      if (!code) throw new Error('已取消配對');
-      const p = await bridgeReq('POST', port, '/pair', { code: code.replace(/\s/g, '') });
-      if (p.status !== 200 || !p.data.token) throw new Error(p.data.error || '配對失敗');
-      store.set('bridgeToken', p.data.token);
-      r = await enqueue();
-    }
+    const r = await bridgeCall(port, '/enqueue',
+      { url, height, media, kind: s.kind, title: String(title || '').slice(0, 300) });
     if (r.status !== 200) throw new Error(r.data.error || `電腦版回應錯誤（${r.status}）`);
     return { port, ticket: r.data.ticket };
   }

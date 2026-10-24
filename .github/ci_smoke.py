@@ -43,7 +43,7 @@ assert app.settings["setup_seen"], "看過安裝頁應該記下來"
 # 進階設定：一開始藏著，按了才出現，關掉又藏起來
 assert app.adv.state() == "withdrawn", "進階設定一開始應該藏起來"
 app.show_advanced(); r.update()
-assert app.adv.state() == "normal" and len(app.adv_nb.tabs()) == 5, "進階設定打不開"
+assert app.adv.state() == "normal" and len(app.adv_nb.tabs()) == 6, "進階設定打不開"
 app.adv.withdraw(); r.update()
 assert not app.btn_retry.winfo_manager(), "沒有失敗的時候不該出現「重試」"
 app.nb.select(app.tab_dl); r.update()
@@ -166,6 +166,50 @@ st, _ = call("POST", "/enqueue", {"url": page2, "height": 720, "media": "https:/
 assert st == 400, "不是網站影片伺服器的位址應該被拒絕"
 app.refresh_bridge_label(); r.update()
 assert "執行中" in app.bridge_lbl.cget("text"), "設定頁沒有顯示連動狀態"
+
+# 6b. AI 判斷網域：沒金鑰要說清楚；問過的記住；不合格的網域不送
+ai_calls = []
+def fake_ai(key, site, domains):
+    ai_calls.append((key, site, list(domains)))
+    return {d: {"verdict": "ad" if "ads" in d else "cdn", "reason": "測試"} for d in domains}
+app.ai_fn = fake_ai
+app.settings["ai_key"] = ""
+st, dd = call("POST", "/classify", {"site": "XVideos", "domains": ["ads.example.com"]}, tok)
+assert st == 503 and "金鑰" in dd.get("error", ""), f"沒金鑰應該提示設定：{st} {dd}"
+app.settings["ai_key"] = "sk-test"
+st, dd = call("POST", "/classify", {"site": "XVideos", "domains": ["ads.example.com", "img.example-cdn.com",
+                                                                     "<script>", "x" * 300]}, tok)
+assert st == 200, f"AI 判斷失敗：{st} {dd}"
+res = dd["results"]
+assert set(res) == {"ads.example.com", "img.example-cdn.com"}, f"不合格的網域不該送：{res}"
+assert res["ads.example.com"]["block"] and not res["img.example-cdn.com"]["block"], "建議封鎖判斷錯"
+assert ai_calls[-1][2] == ["ads.example.com", "img.example-cdn.com"] and ai_calls[-1][1] == "XVideos"
+n = len(ai_calls)
+st, dd = call("POST", "/classify", {"site": "XVideos", "domains": ["ads.example.com"]}, tok)
+assert st == 200 and len(ai_calls) == n and dd["results"]["ads.example.com"]["cached"], "問過的應該用記憶"
+assert call("POST", "/classify", {"domains": ["ads.example.com"]})[0] == 401, "沒配對不能用 AI"
+_bk = os.path.join(tempfile.mkdtemp(), "b.json"); a.export_backup(_bk, app.settings)
+assert "ai_key" not in json.load(open(_bk, encoding="utf-8"))["settings"], "金鑰不該被匯出"
+# 真的 ai_classify：接一個假的 AI 伺服器，看送出去的內容和解析
+import http.server as _hs2, threading as _th2
+_seen = {}
+class _AiH(_hs2.BaseHTTPRequestHandler):
+    def log_message(self, *x): pass
+    def do_POST(self):
+        _seen["key"] = self.headers.get("x-api-key")
+        _seen["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        out = json.dumps({"content": [{"type": "text", "text": '```json\n[{"domain":"pemsrv.com","verdict":"ad","reason":"ExoClick 廣告"},'
+                                       '{"domain":"evil.com","verdict":"ad"}]\n```'}]}).encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(out))); self.end_headers(); self.wfile.write(out)
+_as = _hs2.ThreadingHTTPServer(("127.0.0.1", 0), _AiH)
+_th2.Thread(target=_as.serve_forever, daemon=True).start()
+_old = a.AI_API; a.AI_API = f"http://127.0.0.1:{_as.server_port}/v1/messages"
+_r = a.ai_classify("sk-x", "XVideos", ["pemsrv.com", "xvideos-cdn.com"])
+a.AI_API = _old; _as.shutdown()
+assert _seen["key"] == "sk-x" and _seen["body"]["model"] == a.AI_MODEL, "送給 AI 的格式不對"
+_txt = _seen["body"]["messages"][0]["content"]
+assert "pemsrv.com" in _txt and "XVideos" in _txt and "viewkey" not in _txt, "送給 AI 的內容不對"
+assert _r == {"pemsrv.com": {"verdict": "ad", "reason": "ExoClick 廣告"}}, f"AI 回答解析錯：{_r}"
 
 # 7. 剪貼簿裡有影片網址 → 出現提示列
 r.clipboard_clear(); r.clipboard_append("https://www.xvideos.com/video123/test"); r.update()
