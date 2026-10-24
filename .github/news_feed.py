@@ -26,7 +26,7 @@ TOPICS = [
     ("MissAV", "\"MissAV\"", None),
     ("Jable", "\"Jable\"", r"jable"),
     ("Hanime1", "\"hanime1\" OR \"hanime\"", None),
-    ("XNXX", "\"XNXX\"", None),
+    ("XNXX", "\"XNXX\"", r"xnxx"),                       # 很多垃圾網頁，標題要有才算
     ("xHamster", "\"xHamster\"", None),
     ("OnlyFans", "\"OnlyFans\"", r"onlyfans"),          # 新聞很多，標題要有才算，不然會洗版
     ("Aylo", "\"Aylo\"", r"aylo|pornhub"),              # Pornhub 的母公司
@@ -38,6 +38,7 @@ TOPICS = [
 EDITIONS = [("zh-TW", "TW", "TW:zh-Hant"), ("en-US", "US", "US:en")]
 MAX_AGE_DAYS = 7            # 太舊的不貼
 MAX_PER_RUN = 10            # 一次最多貼幾則（避免洗版）
+MAX_PER_TOPIC = 2           # 每個網站一次最多貼幾則（OnlyFans 這種新聞很多的才不會洗版）
 FIRST_RUN_POST = 3          # 第一次執行：每個網站只貼最新的幾則，其他的記成看過
 SEEN_MAX = 3000
 UA = "Mozilla/5.0 (compatible; VideoHelper-NewsBot/1.0)"
@@ -51,7 +52,8 @@ BAD_LINK = re.compile(r"data:|base64|krpano|javascript:|%3cscript|<script|xml=|\
                       re.I)
 # 3. 廣告業配、SEO 垃圾文常見的標題（「XX 推薦」「實測排名」「免費替代」）
 BAD_TITLE = re.compile(r"\b(tested|ranked|ranking|best|top ?\d+|alternatives?|free|apps?|generators?|"
-                       r"chat|sites like|reviews?|coupon|discount|promo)\b|推薦|排行|替代|免費看|優惠", re.I)
+                       r"chat|sites like|reviews?|coupon|discount|promo|viral|bokep|terbaru|nonton|download|"
+                       r"full video|leaked?|link video|watch online|indo|desi|mms)\b|推薦|排行|替代|免費看|優惠|外流|完整版", re.I)
 
 
 def host_of(u):
@@ -157,7 +159,7 @@ def post(hook, n):
     return False
 
 
-def main(path, dry=False):
+def main(path, dry=False, mark_only=False):
     try:
         state = json.load(open(path, encoding="utf-8"))
     except Exception:
@@ -176,12 +178,16 @@ def main(path, dry=False):
                 per[n["topic"]] = per.get(n["topic"], 0) + 1
         to_post = picked
     else:
-        to_post = new[:MAX_PER_RUN]
+        to_post, per = [], {}
+        for n in new:
+            if per.get(n["topic"], 0) < MAX_PER_TOPIC and len(to_post) < MAX_PER_RUN:
+                to_post.append(n)
+                per[n["topic"]] = per.get(n["topic"], 0) + 1
     hook = os.environ.get("DISCORD_NEWS_WEBHOOK", "").strip()
     posted = 0
     for n in reversed(to_post):                          # 舊的先貼，頻道裡由舊到新
         print(f"[{n['topic']}] {n['title']} ({n['source']})")
-        if dry or not hook:
+        if dry or not hook or mark_only:
             continue
         if post(hook, n):
             posted += 1
@@ -200,4 +206,4 @@ def main(path, dry=False):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], dry="--dry" in sys.argv)
+    main(sys.argv[1], dry="--dry" in sys.argv, mark_only="--mark-only" in sys.argv)

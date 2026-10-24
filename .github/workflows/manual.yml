@@ -35,6 +35,7 @@ jobs:
           [ -f .github/discord_manual_ids.json ] || exit 0
           git add .github/discord_manual_ids.json
           git diff --cached --quiet && exit 0
-          git -c user.name="github-actions[bot]" -c user.email="41898+github-actions[bot]@users.noreply.github.com" \
-            commit -m "記住 Discord 使用手冊的訊息編號"
-          git pull --rebase -q origin main && git push -q origin HEAD:main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          git commit -m "記住 Discord 使用手冊的訊息編號"
+          for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 5; done
