@@ -9,6 +9,7 @@ on:
       - '.github/workflows/build.yml'
       - '.github/ci_smoke.py'
       - '.github/ffmpeg/**'
+      - '.github/discord_notify.py'
       - 'CHANGELOG.md'
   workflow_dispatch:
 
@@ -149,3 +150,11 @@ jobs:
           name: Video Helper v${{ steps.ver.outputs.v }}
           body_path: release_notes.md
           files: dist/VideoHelper.exe
+
+      - name: Post the update to Discord
+        if: steps.chk.outputs.exists != '1'
+        shell: bash
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          PYTHONIOENCODING: utf-8
+        run: python .github/discord_notify.py "🖥 電腦版 v${{ steps.ver.outputs.v }} 更新了" release_notes.md "https://github.com/${{ github.repository }}/releases/tag/v${{ steps.ver.outputs.v }}"

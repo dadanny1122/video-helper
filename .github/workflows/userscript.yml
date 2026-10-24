@@ -1,0 +1,45 @@
+name: Userscript update notice
+
+# 腳本的 @version 改了並上傳 → 把這次的更新內容貼到 Discord
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'video-helper.user.js'
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Did the version change?
+        id: ver
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          now=$(grep -m1 '@version' video-helper.user.js | awk '{print $3}')
+          old=$(git show "$BEFORE":video-helper.user.js 2>/dev/null | grep -m1 '@version' | awk '{print $3}' || true)
+          echo "now=$now old=$old"
+          echo "v=$now" >> $GITHUB_OUTPUT
+          if [ "$now" != "$old" ]; then echo "changed=1" >> $GITHUB_OUTPUT; fi
+
+      - name: Write the notes from this push's commits
+        if: steps.ver.outputs.changed == '1'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          {
+            git log --format='- %s' "$BEFORE..HEAD" -- video-helper.user.js 2>/dev/null || git log -1 --format='- %s'
+            echo
+            echo "暴力猴每天會自動更新；想馬上更新：暴力猴管理頁 → Video Helper 按 🔄"
+          } > notes.md
+          cat notes.md
+
+      - name: Post to Discord
+        if: steps.ver.outputs.changed == '1'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: python3 .github/discord_notify.py "🧩 腳本 v${{ steps.ver.outputs.v }} 更新了" notes.md "https://greasyfork.org/zh-TW/scripts/601901-video-helper"
