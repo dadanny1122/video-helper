@@ -1,0 +1,35 @@
+name: News to Discord
+
+# 每 3 小時抓一次這幾個網站的相關新聞（台灣時間 0、3、6、9…點的 23 分左右），新的才貼到 Discord 新聞頻道
+on:
+  schedule:
+    - cron: '23 */3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: news-discord
+  cancel-in-progress: false
+
+jobs:
+  news:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch news and post new ones
+        env:
+          DISCORD_NEWS_WEBHOOK: ${{ secrets.DISCORD_NEWS_WEBHOOK }}
+          PYTHONIOENCODING: utf-8
+        run: python3 .github/news_feed.py .github/news_seen.json
+
+      - name: Remember what was posted
+        run: |
+          [ -f .github/news_seen.json ] || exit 0
+          git add .github/news_seen.json
+          git diff --cached --quiet && exit 0
+          git -c user.name="github-actions[bot]" -c user.email="41898+github-actions[bot]@users.noreply.github.com" \
+            commit -m "記住已貼過的新聞"
+          git pull --rebase -q origin main && git push -q origin HEAD:main
