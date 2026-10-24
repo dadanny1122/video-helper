@@ -17,6 +17,17 @@ from datetime import datetime, timedelta, timezone
 PAGE = "https://theporndude.com/zh/top-porn-tube-sites"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 TOP = 20
+# 第二個來源：Tranco（學術單位維護的全球網站排名，每天合併多家流量資料；可免費下載，論文常用）
+TRANCO_ZIP = "https://tranco-list.eu/top-1m.csv.zip"
+TRANCO_API = "https://tranco-list.eu/api/lists/date/latest"
+# 排行榜上的名稱 → 網域（找不到的用「名稱.com」猜）
+DOMAINS = {"pornhub": "pornhub.com", "xvideos": "xvideos.com", "xhamster": "xhamster.com", "xnxx": "xnxx.com",
+           "hqporner": "hqporner.com", "beeg": "beeg.com", "yourporn": "sxyprn.com", "spankbang": "spankbang.com",
+           "xmoviesforyou": "xmoviesforyou.com", "porntrex": "porntrex.com", "youjizz": "youjizz.com",
+           "redtube": "redtube.com", "youporn": "youporn.com", "pornone": "pornone.com", "3movs": "3movs.com",
+           "tube8": "tube8.com", "porndig": "porndig.com", "cumlouder": "cumlouder.com", "txxx": "txxx.com",
+           "porndoe": "porndoe.com", "eporner": "eporner.com", "missav": "missav.ws", "jable": "jable.tv",
+           "hanime1": "hanime1.me"}
 # 交叉比對用：Similarweb 依「實際流量」排的成人網站排行（只附連結，不抓內容）
 CROSS = "https://www.similarweb.com/top-websites/adult/"
 
@@ -50,25 +61,83 @@ def parse(html):
     return []
 
 
+def key(name):
+    return re.sub(r"\s*\(.*\)$", "", name).strip().lower()
+
+
+def domain(name):
+    k = key(name)
+    return DOMAINS.get(k) or re.sub(r"[^a-z0-9.-]", "", k) + ".com"
+
+
+def tranco(names):
+    """回傳 ({名稱: 全球名次}, 這份清單的連結)；讀不到就回傳 (None, 連結)"""
+    import io
+    import zipfile
+    link = "https://tranco-list.eu/"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(TRANCO_API, headers={"User-Agent": UA}), timeout=20) as r:
+            lid = json.loads(r.read()).get("list_id")
+            if lid:
+                link = f"https://tranco-list.eu/list/{lid}"
+    except Exception as e:
+        print(f"Tranco 清單編號讀不到：{e}")
+    try:
+        with urllib.request.urlopen(urllib.request.Request(TRANCO_ZIP, headers={"User-Agent": UA}), timeout=60) as r:
+            z = zipfile.ZipFile(io.BytesIO(r.read(60_000_000)))
+        want = {domain(n): n for n in names}
+        out = {}
+        for line in z.read(z.namelist()[0]).decode("utf-8", "ignore").splitlines():
+            rank, _, d = line.strip().partition(",")
+            if d in want:
+                out[want[d]] = int(rank)
+        return out, link
+    except Exception as e:
+        print(f"::warning title=Tranco::流量排名讀不到：{e}")
+        return None, link
+
+
 def mark(name):
-    k = re.sub(r"\s*\(.*\)$", "", name).strip().lower()
+    k = key(name)
     return "✅" if k in FULL else "🛡" if k in ADBLOCK else "　"
 
 
-def embed_for(rows, now_tw):
+def embed_for(rows, now_tw, tr=None, tr_link="https://tranco-list.eu/"):
     tag = {"✅": "　**⬇ 可下載**", "🛡": "　只擋廣告", "　": "　（沒支援）"}
-    lines = [f"`{p:>2}.` {mark(n)} [{n}]({u}){tag[mark(n)]}" for p, n, u in rows[:TOP]]
-    can = [n for _, n, _ in rows[:TOP] if mark(n) == "✅"]
+    top = rows[:TOP]
+    # 流量名次：這 20 個網站照 Tranco 全球名次重新排，得到「20 個裡第幾」
+    order = {}
+    if tr:
+        for i, n in enumerate(sorted((n for _, n, _ in top if n in tr), key=lambda n: tr[n]), 1):
+            order[n] = i
+
+    def flow(n):
+        if tr is None:
+            return ""
+        if n not in order:
+            return "｜流量：不在前 100 萬"
+        return f"｜流量第 {order[n]}（全球 #{tr[n]:,}）"
+    lines = [f"`{p:>2}.` {mark(n)} [{n}]({u}){tag[mark(n)]}{flow(n)}" for p, n, u in top]
+    can = [n for _, n, _ in top if mark(n) == "✅"]
+    gap = ""
+    if order:
+        p_of = {n: p for p, n, _ in top}
+        big = sorted(order, key=lambda n: -abs(p_of[n] - order[n]))[:3]
+        gap = "\n**🔍 兩邊差最多：**" + "、".join(f"{n}（評分第 {p_of[n]}／流量第 {order[n]}）" for n in big
+                                                   if p_of[n] != order[n]) + "\n"
     return {
-        "title": "🏆 影片網站排行 Top 20（ThePornDude）",
+        "title": "🏆 影片網站排行 Top 20（評分 vs 流量）",
         "url": PAGE,
         "color": 0xF9A825,
-        "description": "\n".join(lines) + f"\n\n**⬇ 可以下載的（{len(can)} 個）：**{'、'.join(can)}\n"
+        "description": "左邊名次＝ThePornDude 評分；「流量第幾」＝同這 20 個網站照 Tranco 全球流量排名重排\n\n"
+                       + "\n".join(lines) + "\n" + gap + f"\n**⬇ 可以下載的（{len(can)} 個）：**{'、'.join(can)}\n"
                        "其他網站只擋廣告、預估時間，不提供下載。\n"
                        f"🕒 最後檢查：{now_tw}（每天晚上 8 點更新）\n\n"
                        f"📎 **資料來源：**[ThePornDude 影片網站排行]({PAGE})\n"
-                       "⚠ 這是**單一網站**的排行（站長自己評分，可能有廣告合作），僅供參考；\n"
-                       f"想看依實際流量的排名，可以對照 [Similarweb 成人網站流量排行]({CROSS})",
+                       "　⚠ 單一網站的排行（站長自己評分，可能有廣告合作），僅供參考\n"
+                       f"📎 **流量來源：**[Tranco 全球網站排名]({tr_link})（學術單位維護，合併多家流量資料）"
+                       + ("" if tr is not None else "　⚠ 今天讀不到") + "\n"
+                       f"📎 也可以對照：[Similarweb 成人網站流量排行]({CROSS})",
     }
 
 
@@ -117,13 +186,19 @@ def main(path):
     unsupported = [n for _, n, _ in rows[:TOP] if mark(n) == "　"]
     print(f"::notice title=排行榜::前 {TOP} 名：" + "、".join(n for _, n, _ in rows[:TOP]))
     print(f"::notice title=還沒支援::" + ("、".join(unsupported) or "（全部都支援了）"))
+    tr, tr_link = tranco([n for _, n, _ in rows[:TOP]])
+    print("::notice title=Tranco::" + ("讀不到" if tr is None else
+          "、".join(f"{n}={tr.get(n, '無')}" for _, n, _ in rows[:TOP])))
     hook = os.environ.get("DISCORD_RANK_WEBHOOK", "").strip()
+    if os.environ.get("PREVIEW") == "true":
+        print("::notice title=預覽::" + json.dumps(embed_for(rows, "預覽", tr, tr_link), ensure_ascii=False)[:3500])
+        return
     if not hook:
         print("沒有設定 DISCORD_RANK_WEBHOOK，只預覽")
         return
     base = hook.split("?")[0]
     now_tw = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
-    e = embed_for(rows, now_tw)
+    e = embed_for(rows, now_tw, tr, tr_link)
     mid = state.get("message_id")
     done = False
     if mid and os.environ.get("REPOST") == "true":    # 手動要求「重新貼一份新的」：刪掉舊的那則

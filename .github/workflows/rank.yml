@@ -11,6 +11,10 @@ on:
         description: '刪掉舊的排行榜訊息，重新貼一份新的'
         type: boolean
         default: false
+      preview:
+        description: '只預覽（印在 Actions 頁面），不發到 Discord'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -26,9 +30,11 @@ jobs:
           DISCORD_RANK_WEBHOOK: ${{ secrets.DISCORD_RANK_WEBHOOK }}
           PYTHONIOENCODING: utf-8
           REPOST: ${{ inputs.repost }}
+          PREVIEW: ${{ inputs.preview }}
         run: python3 .github/rank_feed.py .github/rank_state.json
 
       - name: Remember the ranking
+        if: ${{ inputs.preview != true }}
         run: |
           [ -f .github/rank_state.json ] || exit 0
           git add .github/rank_state.json
