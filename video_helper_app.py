@@ -6,7 +6,7 @@ Video Helper 電腦版
 分頁 ⑤「統計」：每次下載的預估和實際結果（只存數字和網站名稱），並用來校正之後的預估
 分頁 ④「設定」：下載資料夾、預設畫質、檔名格式、關閉視窗的行為、備份匯出／匯入、檢查更新、錯誤日誌
 系統匣：關掉視窗時可以縮到右下角繼續下載，下載完成會跳通知
-瀏覽器連動：配對後，瀏覽器腳本可以把 Pornhub／XVideos 影片直接送進下載佇列（只聽本機 127.0.0.1）
+瀏覽器連動：配對後，瀏覽器腳本可以把支援網站的影片直接送進下載佇列（只聽本機 127.0.0.1）
 
 執行前先安裝：
     pip install yt-dlp imageio-ffmpeg pystray pillow
@@ -79,7 +79,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.14.0"
+VERSION = "1.15.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -524,13 +524,14 @@ log = setup_log()
 #   3. 拒絕一般網頁送來的請求（Origin 是 http/https 開頭的一律拒絕），只收擴充功能（暴力猴）的
 #   4. 一定要先配對：電腦版顯示 6 位數配對碼（5 分鐘內有效、猜錯 5 次就作廢），
 #      配對成功給一組長密碼；之後每次請求都要帶密碼。電腦裡只存密碼的雜湊值
-#   5. 只接受 Pornhub、XVideos 的網址；只做「加入下載佇列」；每分鐘最多 30 次
+#   5. 只接受支援下載的網站（Pornhub、XVideos、XNXX、YouPorn、RedTube）的網址；只做「加入下載佇列」；每分鐘最多 30 次
 # ======================================================================
 
 BRIDGE_PORTS = list(range(47321, 47326))
-BRIDGE_HOSTS = ("pornhub.com", "xvideos.com")
+BRIDGE_HOSTS = ("pornhub.com", "xvideos.com", "xnxx.com", "youporn.com", "redtube.com")
 # 瀏覽器送來的「影片真正的位址」只接受這兩個網站自己的影片伺服器
-BRIDGE_MEDIA_HOSTS = ("phncdn.com", "pornhub.com", "xvideos-cdn.com", "xvideos.com")
+BRIDGE_MEDIA_HOSTS = ("phncdn.com", "pornhub.com", "xvideos-cdn.com", "xvideos.com", "xnxx-cdn.com", "xnxx.com",
+                      "ypncdn.com", "youporn.com", "rdtcdn.com", "redtube.com")
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
 PAIR_SECONDS = 300
@@ -854,7 +855,7 @@ class Bridge:
                         return self.send(401, {"error": "需要重新配對"})
                     url = data.get("url", "")
                     if not bridge_url_allowed(url):
-                        return self.send(400, {"error": "只接受 Pornhub、XVideos 的影片網址"})
+                        return self.send(400, {"error": "只接受 Pornhub、XVideos、XNXX、YouPorn、RedTube 的影片網址"})
                     if not bridge.rate_ok():
                         return self.send(429, {"error": "太頻繁了，等一分鐘再試"})
                     h = data.get("height")
@@ -1329,7 +1330,8 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
                 raw = ydl.extract_info(media["url"], download=False, process=False)
                 if media.get("title"):
                     raw["title"] = media["title"]
-                raw["extractor_key"] = {"pornhub.com": "PornHub", "xvideos.com": "XVideos"}.get(
+                raw["extractor_key"] = {"pornhub.com": "PornHub", "xvideos.com": "XVideos", "xnxx.com": "XNXX",
+                                        "youporn.com": "YouPorn", "redtube.com": "RedTube"}.get(
                     site_of(url), site_of(url))         # 「網站 - 標題」的檔名格式要用
                 if fmt.get("height"):                   # 影片伺服器沒寫高度 → 檔名一樣加上 [1080p]
                     for fm in raw.get("formats") or [raw]:

@@ -22,7 +22,7 @@
 - 設定：點暴力猴圖示，可以個別開關每個功能
 
 ## 支援網站
-- Pornhub、XVideos：全部功能
+- Pornhub、XVideos、XNXX、YouPorn、RedTube：全部功能
 - MissAV、Jable、Hanime1：全部功能（不含下載）
 
 ## 安裝

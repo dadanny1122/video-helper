@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.6.0
+// @version      3.7.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -9,6 +9,9 @@
 // @supportURL   https://github.com/dadanny1122/video-helper/issues
 // @match        *://*.pornhub.com/*
 // @match        *://*.xvideos.com/*
+// @match        *://*.xnxx.com/*
+// @match        *://*.youporn.com/*
+// @match        *://*.redtube.com/*
 // @match        *://*.jable.tv/*
 // @match        *://*.hanime1.me/*
 // @include      /^https?:\/\/([^\/]*\.)?missav[^\/]*\//
@@ -599,6 +602,35 @@
       findSources: findXvSources,
       limits: ['720p 以上是切片，在瀏覽器裡下載完要轉 MP4，大檔建議用「🖥 送到電腦版」'],
     },
+    {
+      name: 'XNXX',
+      match: /(^|\.)xnxx\.com$/,
+      features: ALL,
+      // 跟 XVideos 同一家公司，播放器寫法一樣
+      ownDomains: ['xnxx-cdn.com', 'xvideos-cdn.com'],
+      rules: { blockListeners: [{ type: 'click', match: /ShouldShow/ }] },
+      isVideoPage: () => /setVideo(UrlHigh|UrlLow|HLS)/.test(document.documentElement.innerHTML),
+      findSources: findXvSources,
+      limits: ['剛加入；跟 XVideos 用同一套方法，有問題請回報'],
+    },
+    {
+      name: 'YouPorn',
+      match: /(^|\.)youporn\.com$/,
+      features: ALL,
+      ownDomains: ['ypncdn.com'],
+      isVideoPage: () => /mediaDefinition/.test(document.documentElement.innerHTML),
+      findSources: findAyloSources,
+      limits: ['剛加入；跟 Pornhub 同一家公司，有問題請回報'],
+    },
+    {
+      name: 'RedTube',
+      match: /(^|\.)redtube\.com$/,
+      features: ALL,
+      ownDomains: ['rdtcdn.com'],
+      isVideoPage: () => /mediaDefinition/.test(document.documentElement.innerHTML),
+      findSources: findAyloSources,
+      limits: ['剛加入；跟 Pornhub 同一家公司，有問題請回報'],
+    },
     // 盜版轉貼站：只開防護和隱藏廣告
     // 不開下載：內容多為片商作品的轉載
     { name: 'Jable', match: /(^|\.)jable\.tv$/,
@@ -641,6 +673,52 @@
     if (high) list.push({ label: '高畫質（約 360～480p）', height: 480, kind: 'mp4', url: high });
     if (low) list.push({ label: '低畫質（約 240p）', height: 240, kind: 'mp4', url: low });
 
+    list.sort((a, b) => b.height - a.height);
+    return { title, list };
+  }
+
+  // ---- YouPorn、RedTube（跟 Pornhub 同一家 Aylo）：影片清單寫在網頁裡的 mediaDefinition(s) ----
+  // 從網頁原始碼找出 "mediaDefinitions": [ … ] 這一段，括號配對後當 JSON 讀
+  function readJsonArrayAfter(html, keyRe) {
+    const m = keyRe.exec(html);
+    if (!m) return null;
+    let i = html.indexOf('[', m.index + m[0].length - 1), depth = 0, inStr = false, esc = false;
+    if (i < 0) return null;
+    for (let j = i; j < html.length && j < i + 200000; j++) {
+      const c = html[j];
+      if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true;
+      else if (c === '[') depth++;
+      else if (c === ']' && --depth === 0) {
+        try { return JSON.parse(html.slice(i, j + 1)); } catch (e) { return null; }
+      }
+    }
+    return null;
+  }
+
+  async function findAyloSources() {
+    const html = document.documentElement.innerHTML;
+    const og = document.querySelector('meta[property="og:title"]');
+    const title = (og && og.content) || document.title;
+    const defs = readJsonArrayAfter(html, /["']?mediaDefinitions?["']?\s*[:=]\s*/g) || [];
+    const list = [];
+    // MP4：清單裡的網址要再問一次，才拿到各畫質（跟 Pornhub 一樣）
+    for (const d of defs.filter(d => d && d.format === 'mp4' && d.videoUrl)) {
+      try {
+        const arr = JSON.parse(await getData(new URL(d.videoUrl, location.href).href, 'text'));
+        for (const x of Array.isArray(arr) ? arr : []) {
+          const h = +x.quality;
+          if (x.videoUrl && h && !list.some(y => y.height === h)) list.push({ label: h + 'p', height: h, kind: 'mp4', url: x.videoUrl });
+        }
+      } catch (e) {}
+      break;
+    }
+    for (const d of defs) {
+      if (!d || d.format !== 'hls' || !d.videoUrl) continue;
+      const h = +(Array.isArray(d.quality) ? d.quality[0] : d.quality);
+      if (!h || list.some(x => x.height === h)) continue;
+      list.push({ label: h + 'p', height: h, kind: 'hls', url: new URL(d.videoUrl, location.href).href });
+    }
     list.sort((a, b) => b.height - a.height);
     return { title, list };
   }
