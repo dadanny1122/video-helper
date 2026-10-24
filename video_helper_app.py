@@ -79,7 +79,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.13.0"
+VERSION = "1.14.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -609,6 +609,82 @@ def ai_classify(key, site, domains, timeout=40):
     return out
 
 
+# ----------------------------------------------------------------------
+# 公開廣告清單（免費）：StevenBlack/hosts（MIT 授權），整理自多個社群維護的廣告、惡意網站清單
+# 存在設定資料夾，7 天更新一次；查的時候只在自己電腦比對，不會送資料出去
+# ----------------------------------------------------------------------
+
+BLOCKLIST_URL = "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+BLOCKLIST_DAYS = 7
+
+
+class BlockList:
+    def __init__(self, path=None, url=BLOCKLIST_URL):
+        self.path = path or os.path.join(data_dir(), "blocklist.txt")
+        self.url = url
+        self.hosts = None
+        self.lock = threading.Lock()
+        self.error = ""
+
+    def age_days(self):
+        try:
+            return (time.time() - os.path.getmtime(self.path)) / 86400
+        except OSError:
+            return None
+
+    def download(self, timeout=60):
+        """下載新的清單；失敗就保留舊的"""
+        req = urllib.request.Request(self.url, headers={"User-Agent": f"VideoHelper/{VERSION}"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = r.read(20_000_000)
+        if data.count(b"\n0.0.0.0 ") < 1000:
+            raise IOError("下載到的清單不對")
+        tmp = self.path + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, self.path)
+        with self.lock:
+            self.hosts = None                       # 下次查的時候重新讀
+        log.info("廣告清單已更新（%.1f MB）", len(data) / 1e6)
+
+    def load(self):
+        """需要時才讀進記憶體；太舊或沒有就先下載"""
+        age = self.age_days()
+        if age is None or age > BLOCKLIST_DAYS:
+            try:
+                self.download()
+                self.error = ""
+            except Exception as e:
+                self.error = f"清單下載失敗（{e}）"
+                log.warning("廣告清單下載失敗：%s", e)
+                if age is None:
+                    return set()
+        with self.lock:
+            if self.hosts is None:
+                hs = set()
+                with open(self.path, encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        if line.startswith("0.0.0.0 "):
+                            h = line[8:].split("#", 1)[0].strip().lower()
+                            if h and h != "0.0.0.0":
+                                hs.add(h)
+                self.hosts = hs
+            return self.hosts
+
+    def count(self):
+        return len(self.hosts) if self.hosts is not None else 0
+
+    def match(self, host):
+        """這個網址（或它的上層網域）在清單裡 → 回傳清單裡的那一筆，不在回傳 None"""
+        hs = self.load()
+        parts = host.lower().split(".")
+        for i in range(len(parts) - 1):
+            cand = ".".join(parts[i:])
+            if cand in hs:
+                return cand
+        return None
+
+
 def hash_token(t):
     return hashlib.sha256(t.encode("utf-8")).hexdigest()
 
@@ -809,8 +885,15 @@ class Bridge:
                     if not bridge.rate_ok():
                         return self.send(429, {"error": "太頻繁了，等一分鐘再試"})
                     site = str(data.get("site") or "")[:40]
+                    # 每個網域實際連到的完整網址（例如 pemsrv.com → s.pemsrv.com），拿來比對清單
+                    raw = data.get("hosts") if isinstance(data.get("hosts"), dict) else {}
+                    hosts = {}
+                    for d in doms:
+                        hl = raw.get(d) if isinstance(raw.get(d), list) else []
+                        hl = [str(h).lower().strip() for h in hl][:20]
+                        hosts[d] = [h for h in dict.fromkeys(hl) if DOMAIN_RE.match(h) and (h == d or h.endswith("." + d))]
                     try:
-                        return self.send(200, {"results": bridge.on_classify(site, doms)})
+                        return self.send(200, {"results": bridge.on_classify(site, doms, hosts)})
                     except RuntimeError as e:
                         return self.send(503, {"error": str(e)})
                 self.send(404, {"error": "not found"})
@@ -1354,6 +1437,7 @@ class App:
                              get_status=self.remote_status,
                              on_classify=self.classify_domains)
         self.ai_fn = ai_classify
+        self.blocklist = BlockList()
 
         root.title(f"Video Helper v{VERSION}")
         root.geometry("800x700")
@@ -1934,38 +2018,52 @@ class App:
             return {"status": t["status"], "progress": round(t["progress"]), "title": t["title"]}
         return {k: rec.get(k) for k in ("status", "progress", "title", "error")}
 
-    def classify_domains(self, site, domains):
+    def classify_domains(self, site, domains, hosts=None):
         """
-        連線服務的執行緒呼叫：先查記憶，沒問過的才問 AI。
-        回傳 {網域: {"verdict", "label", "reason", "block", "cached"}}
+        連線服務的執行緒呼叫。先查免費的公開廣告清單；清單沒有的，有設定 AI 金鑰才問 AI。
+        回傳 {網域: {"verdict", "label", "reason", "block", "source"}}
         """
-        cache = dict(self.settings["ai_cache"] or {})
-        now = time.time()
-        out, ask = {}, []
+        hosts = hosts or {}
+        out, rest = {}, []
         for d in domains:
-            c = cache.get(d)
-            if c and now - c.get("t", 0) < AI_CACHE_DAYS * 86400:
-                out[d] = dict(c, cached=True)
+            hit = None
+            for h in [*hosts.get(d, []), d]:
+                hit = self.blocklist.match(h)
+                if hit:
+                    break
+            if hit:
+                out[d] = {"verdict": "ad", "reason": f"在公開廣告清單裡（{hit}）", "source": "list"}
             else:
-                ask.append(d)
-        if ask:
-            key = (self.settings["ai_key"] or "").strip()
-            if not key:
-                raise RuntimeError("還沒設定 AI 金鑰：電腦版「③ 設定」→「⚙ 進階設定…」→「AI」")
-            got = self.ai_fn(key, site, ask)
-            for d in ask:
-                r = got.get(d, {"verdict": "unknown", "reason": "AI 沒有回答這個"})
-                out[d] = dict(r, t=now, cached=False)
-                cache[d] = {"verdict": r["verdict"], "reason": r["reason"], "t": now}
-            if len(cache) > AI_CACHE_MAX:              # 太多就忘掉最舊的
-                cache = dict(sorted(cache.items(), key=lambda kv: kv[1].get("t", 0))[-AI_CACHE_MAX:])
-            self.settings["ai_cache"] = cache
-            self.settings.save()
-            log.info("AI 判斷 %d 個網域（%d 個用記憶）", len(ask), len(domains) - len(ask))
-        for d, r in out.items():
-            r["label"] = AI_VERDICTS.get(r["verdict"], "不確定")
+                rest.append(d)
+        key = (self.settings["ai_key"] or "").strip()
+        if rest and key:
+            cache = dict(self.settings["ai_cache"] or {})
+            now = time.time()
+            ask = []
+            for d in rest:
+                c = cache.get(d)
+                if c and now - c.get("t", 0) < AI_CACHE_DAYS * 86400:
+                    out[d] = {"verdict": c["verdict"], "reason": c["reason"], "source": "ai"}
+                else:
+                    ask.append(d)
+            if ask:
+                got = self.ai_fn(key, site, ask)
+                for d in ask:
+                    r = got.get(d, {"verdict": "unknown", "reason": "AI 沒有回答這個"})
+                    out[d] = {"verdict": r["verdict"], "reason": r["reason"], "source": "ai"}
+                    cache[d] = {"verdict": r["verdict"], "reason": r["reason"], "t": now}
+                if len(cache) > AI_CACHE_MAX:              # 太多就忘掉最舊的
+                    cache = dict(sorted(cache.items(), key=lambda kv: kv[1].get("t", 0))[-AI_CACHE_MAX:])
+                self.settings["ai_cache"] = cache
+                self.settings.save()
+                log.info("AI 判斷 %d 個網域", len(ask))
+        else:
+            why = self.blocklist.error or "公開廣告清單裡沒有"
+            for d in rest:
+                out[d] = {"verdict": "unknown", "reason": why, "source": "list"}
+        for r in out.values():
+            r["label"] = "已知廣告" if r["source"] == "list" and r["verdict"] == "ad" else AI_VERDICTS.get(r["verdict"], "不確定")
             r["block"] = r["verdict"] in AI_BLOCK
-            r.pop("t", None)
         return out
 
     def remote_register(self, ticket, url, h, media=None):
@@ -2376,7 +2474,7 @@ class App:
         nb.pack(fill="both", expand=True)
         pages = {}
         for key, text in (("prog", "檔名與程式"), ("link", "瀏覽器連動"), ("backup", "備份與更新"),
-                          ("debug", "問題排查"), ("ai", "AI"), ("stats", "統計")):
+                          ("debug", "問題排查"), ("ai", "廣告判斷"), ("stats", "統計")):
             pages[key] = ttk.Frame(nb, padding=(12, 10))
             nb.add(pages[key], text=f"  {text}  ")
 
@@ -2446,15 +2544,24 @@ class App:
         ttk.Button(row, text="清除網速紀錄", command=self.reset_speed).pack(side="left")
         ttk.Label(t, text=f"設定資料夾：{data_dir()}", foreground="#888").pack(anchor="w", pady=(10, 0))
 
-        # --- AI ---
+        # --- 廣告判斷 ---
         x = pages["ai"]
         ttk.Label(x, justify="left", wraplength=700, text=(
-            "在影片網頁點左下角 🛡 →「🤖 問 AI」，AI 會判斷「這頁連到的其他網站」哪些是廣告、哪些是網站自己的。\n"
-            "只送網域名稱（例如 pemsrv.com）和網站名稱，不送影片標題、網址、觀看紀錄。\n"
-            "問過的網域會記住 30 天，不會重複花錢。AI 只給建議，要不要封鎖還是你決定。")).pack(anchor="w")
+            "在影片網頁點左下角 🛡 →「🔍 檢查」，會判斷「這頁連到的其他網站」哪些是廣告。紅字＝建議封鎖，要不要封鎖還是你決定。")).pack(anchor="w")
+        ttk.Label(x, text="① 公開廣告清單（免費，預設就會用）", font=("", 10, "bold")).pack(anchor="w", pady=(10, 0))
         ttk.Label(x, justify="left", foreground="#555", wraplength=700, text=(
-            "需要 Anthropic 的 API 金鑰：到 console.anthropic.com 註冊 → API Keys → Create Key，複製貼到下面。\n"
-            "依用量收費；判斷一頁的網域通常不到新台幣 1 角。金鑰只存在這台電腦，不會被匯出。")).pack(anchor="w", pady=(8, 4))
+            "使用 StevenBlack/hosts 整理的公開清單（MIT 授權），約 7 萬個已知廣告、追蹤、惡意網址。\n"
+            "存在這台電腦、7 天自動更新一次；比對只在你的電腦做，不會送任何資料出去。")).pack(anchor="w")
+        row = ttk.Frame(x)
+        row.pack(anchor="w", pady=4)
+        ttk.Button(row, text="立即更新清單", command=self.update_blocklist).pack(side="left")
+        self.bl_lbl = ttk.Label(row, text="", foreground="#555")
+        self.bl_lbl.pack(side="left", padx=8)
+
+        ttk.Label(x, text="② AI（選用，要付費；不設定也完全沒關係）", font=("", 10, "bold")).pack(anchor="w", pady=(14, 0))
+        ttk.Label(x, justify="left", foreground="#555", wraplength=700, text=(
+            "清單裡查不到的網域，有設定金鑰才會再問 AI。只送網域名稱和網站名稱，不送影片標題、網址。\n"
+            "金鑰到 console.anthropic.com 申請（要先儲值）；只存在這台電腦，不會被匯出。問過的網域記住 30 天。")).pack(anchor="w")
         row = ttk.Frame(x)
         row.pack(anchor="w", fill="x", pady=4)
         ttk.Label(row, text="API 金鑰：").pack(side="left")
@@ -2464,12 +2571,11 @@ class App:
         row = ttk.Frame(x)
         row.pack(anchor="w", pady=4)
         ttk.Button(row, text="測試", command=self.test_ai).pack(side="left")
-        ttk.Button(row, text="取得金鑰（打開網頁）",
-                   command=lambda: webbrowser.open("https://console.anthropic.com/settings/keys")).pack(side="left", padx=6)
-        ttk.Button(row, text="清除 AI 記憶", command=self.clear_ai_cache).pack(side="left")
+        ttk.Button(row, text="清除 AI 記憶", command=self.clear_ai_cache).pack(side="left", padx=6)
         self.ai_lbl = ttk.Label(x, text="", foreground="#555", wraplength=700, justify="left")
         self.ai_lbl.pack(anchor="w", pady=6)
         self.refresh_ai_label()
+        self.refresh_bl_label()
 
         # --- 統計 ---
         self.build_stats(pages["stats"])
@@ -2477,7 +2583,7 @@ class App:
     def refresh_ai_label(self, extra=""):
         n = len(self.settings["ai_cache"] or {})
         has = bool((self.settings["ai_key"] or "").strip())
-        self.ai_lbl.config(text=("✅ 已設定金鑰" if has else "還沒設定金鑰") + f"｜記住 {n} 個網域" +
+        self.ai_lbl.config(text=("✅ 已設定金鑰" if has else "沒有設定金鑰（只用免費清單）") + f"｜AI 記住 {n} 個網域" +
                            (f"\n{extra}" if extra else ""))
 
     def save_ai_key(self):
@@ -2500,6 +2606,31 @@ class App:
                 txt = f"❌ 測試失敗：{e}"
             self.q.put(("ai_test", txt))
         threading.Thread(target=work, daemon=True).start()
+
+    def refresh_bl_label(self, extra=""):
+        age = self.blocklist.age_days()
+        if age is None:
+            t = "還沒下載（第一次按「🔍 檢查」時會自動下載，約 2 MB）"
+        else:
+            n = self.blocklist.count()
+            t = (f"{n:,} 筆｜" if n else "") + ("今天更新" if age < 1 else f"{int(age)} 天前更新")
+        self.bl_lbl.config(text=t + (f"｜{extra}" if extra else ""))
+
+    def update_blocklist(self):
+        self.refresh_bl_label("更新中…")
+
+        def work():
+            try:
+                self.blocklist.download()
+                self.blocklist.load()
+                msg = "✅ 已更新"
+            except Exception as e:
+                msg = f"❌ 更新失敗：{e}"
+            self.q.put(("bl_updated", msg))
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_bl_updated(self, msg):
+        self.refresh_bl_label(msg)
 
     def on_ai_test(self, txt):
         self.refresh_ai_label(txt)

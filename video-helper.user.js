@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.4.0
+// @version      3.5.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -347,14 +347,15 @@
         let h; try { h = new URL(e.name).hostname; } catch (err) { continue; }
         const b = baseOf(h);
         if (b === HOME) continue;
-        stat[b] = stat[b] || { n: 0, blocked: 0, how: {} };
+        stat[b] = stat[b] || { n: 0, blocked: 0, how: {}, hosts: {} };
         stat[b].n++;
+        stat[b].hosts[h] = 1;                              // 完整網址（例如 s.pemsrv.com），拿來比對廣告清單
         const how = { img: '圖片', script: '程式', xmlhttprequest: '資料', fetch: '資料', beacon: '追蹤',
           iframe: '框框', video: '影片', audio: '聲音', css: 'CSS', link: '預先載入', other: '其他' }[e.initiatorType] || e.initiatorType;
         stat[b].how[how] = 1;
       }
       for (const [b, n] of Object.entries(this.blockedHosts)) {
-        stat[b] = stat[b] || { n: 0, blocked: 0, how: {} };
+        stat[b] = stat[b] || { n: 0, blocked: 0, how: {}, hosts: {} };
         stat[b].blocked += n;
       }
       const rows = Object.entries(stat).sort((a, b) => (b[1].n + b[1].blocked) - (a[1].n + a[1].blocked));
@@ -412,26 +413,28 @@
         const aiBar = document.createElement('div');
         aiBar.style.cssText = 'margin-top:6px;font-size:12px;';
         const aiBtn = document.createElement('span');
-        aiBtn.textContent = `🤖 問 AI 這 ${unknown.length} 個是什麼`;
-        aiBtn.title = '只送網域名稱給 AI（透過電腦版），不送影片標題和網址；AI 只給建議，封不封鎖你決定';
+        aiBtn.textContent = `🔍 檢查這 ${unknown.length} 個是不是廣告`;
+        aiBtn.title = '用電腦版裡的公開廣告清單比對（免費）；有設定 AI 金鑰才會再問 AI。只給建議，封不封鎖你決定';
         aiBtn.style.cssText = 'cursor:pointer;background:#6a1b9a;padding:3px 10px;border-radius:4px;';
         const aiMsg = document.createElement('span');
         aiMsg.style.cssText = 'margin-left:8px;opacity:.8;';
         aiBtn.addEventListener('click', async () => {
           if (aiBtn.dataset.busy) return;
           aiBtn.dataset.busy = '1';
-          aiMsg.textContent = '問 AI 中…';
+          aiMsg.textContent = '檢查中…（第一次要下載清單，約幾秒）';
           try {
-            const res = await askAi(unknown);
+            const hostMap = {};
+            for (const d of unknown) hostMap[d] = Object.keys(stat[d].hosts || {}).slice(0, 20);
+            const res = await askAi(unknown, hostMap);
             let n = 0;
             for (const [d, r] of Object.entries(res)) {
               const tag = aiTags[d];
               if (!tag) continue;
-              tag.textContent = (r.block ? '⚠ ' : '✓ ') + r.label + (r.reason ? '：' + r.reason : '');
-              tag.style.color = r.block ? '#ff8a80' : '#a5d6a7';
+              tag.textContent = (r.block ? '⚠ ' : r.label === '不確定' ? '？ ' : '✓ ') + r.label + (r.reason ? '：' + r.reason : '');
+              tag.style.color = r.block ? '#ff8a80' : r.label === '不確定' ? '#bbb' : '#a5d6a7';
               if (r.block) n++;
             }
-            aiMsg.textContent = n ? `AI 建議封鎖 ${n} 個（紅字），確認後按「封鎖」` : 'AI 覺得都不用封鎖';
+            aiMsg.textContent = n ? `建議封鎖 ${n} 個（紅字），確認後按「封鎖」` : '沒有找到已知的廣告';
           } catch (err) {
             aiMsg.textContent = '❌ ' + err.message;
           }
@@ -1669,11 +1672,12 @@
     return r;
   }
 
-  // AI 判斷網域：只送網域名稱和網站名稱。回傳 {網域: {label, reason, block}}
-  async function askAi(domains) {
+  // 判斷網域是不是廣告（電腦版先查免費的公開廣告清單，有設定金鑰才再問 AI）
+  // 只送網域名稱和網站名稱。hosts：每個網域實際連到的完整網址。回傳 {網域: {label, reason, block}}
+  async function askAi(domains, hosts) {
     const port = await findBridge();
-    if (!port) throw new Error('要先打開電腦版（AI 是透過電腦版問的，金鑰只存在你的電腦）');
-    const r = await bridgeCall(port, '/classify', { site: site ? site.name : HOST, domains });
+    if (!port) throw new Error('要先打開電腦版（廣告清單在電腦版裡）');
+    const r = await bridgeCall(port, '/classify', { site: site ? site.name : HOST, domains, hosts });
     if (r.status !== 200) throw new Error(r.data.error || `電腦版回應錯誤（${r.status}）`);
     return r.data.results || {};
   }

@@ -167,27 +167,40 @@ assert st == 400, "不是網站影片伺服器的位址應該被拒絕"
 app.refresh_bridge_label(); r.update()
 assert "執行中" in app.bridge_lbl.cget("text"), "設定頁沒有顯示連動狀態"
 
-# 6b. AI 判斷網域：沒金鑰要說清楚；問過的記住；不合格的網域不送
+# 6b. 廣告判斷：先查免費的公開清單（用假的本機清單，不連網）；沒金鑰就只用清單；有金鑰才問 AI
+_bl = os.path.join(tempfile.mkdtemp(), "blocklist.txt")
+with open(_bl, "w", encoding="utf-8") as f:
+    f.write("# test\n" + "".join(f"0.0.0.0 filler{i}.example\n" for i in range(1200)) +
+            "0.0.0.0 s.pemsrv.com\n0.0.0.0 tracker.example.org\n")
+app.blocklist = a.BlockList(path=_bl, url="http://127.0.0.1:9/none")
+assert app.blocklist.match("s.pemsrv.com") == "s.pemsrv.com" and app.blocklist.match("x.tracker.example.org")
+assert not app.blocklist.match("pemsrv.com") and not app.blocklist.match("phncdn.com")
 ai_calls = []
 def fake_ai(key, site, domains):
     ai_calls.append((key, site, list(domains)))
     return {d: {"verdict": "ad" if "ads" in d else "cdn", "reason": "測試"} for d in domains}
 app.ai_fn = fake_ai
 app.settings["ai_key"] = ""
-st, dd = call("POST", "/classify", {"site": "XVideos", "domains": ["ads.example.com"]}, tok)
-assert st == 503 and "金鑰" in dd.get("error", ""), f"沒金鑰應該提示設定：{st} {dd}"
-app.settings["ai_key"] = "sk-test"
-st, dd = call("POST", "/classify", {"site": "XVideos", "domains": ["ads.example.com", "img.example-cdn.com",
-                                                                     "<script>", "x" * 300]}, tok)
-assert st == 200, f"AI 判斷失敗：{st} {dd}"
+st, dd = call("POST", "/classify", {"site": "XVideos", "domains": ["pemsrv.com", "phncdn.com", "<script>", "x" * 300],
+                                   "hosts": {"pemsrv.com": ["s.pemsrv.com", "evil.com"], "phncdn.com": ["ev.phncdn.com"]}}, tok)
+assert st == 200, f"沒金鑰也要能用清單：{st} {dd}"
 res = dd["results"]
-assert set(res) == {"ads.example.com", "img.example-cdn.com"}, f"不合格的網域不該送：{res}"
+assert set(res) == {"pemsrv.com", "phncdn.com"}, f"不合格的網域不該處理：{res}"
+assert res["pemsrv.com"]["block"] and res["pemsrv.com"]["label"] == "已知廣告", f"清單裡的子網址要找得到：{res}"
+assert not res["phncdn.com"]["block"] and res["phncdn.com"]["label"] == "不確定", f"清單沒有的應該是不確定：{res}"
+assert not ai_calls, "沒金鑰不該問 AI"
+app.settings["ai_key"] = "sk-test"
+st, dd = call("POST", "/classify", {"site": "XVideos", "domains": ["pemsrv.com", "ads.example.com", "img.example-cdn.com"],
+                                   "hosts": {"pemsrv.com": ["s.pemsrv.com"]}}, tok)
+assert st == 200, f"判斷失敗：{st} {dd}"
+res = dd["results"]
+assert ai_calls[-1][2] == ["ads.example.com", "img.example-cdn.com"] and ai_calls[-1][1] == "XVideos", "清單查得到的不該再問 AI"
 assert res["ads.example.com"]["block"] and not res["img.example-cdn.com"]["block"], "建議封鎖判斷錯"
-assert ai_calls[-1][2] == ["ads.example.com", "img.example-cdn.com"] and ai_calls[-1][1] == "XVideos"
 n = len(ai_calls)
 st, dd = call("POST", "/classify", {"site": "XVideos", "domains": ["ads.example.com"]}, tok)
-assert st == 200 and len(ai_calls) == n and dd["results"]["ads.example.com"]["cached"], "問過的應該用記憶"
-assert call("POST", "/classify", {"domains": ["ads.example.com"]})[0] == 401, "沒配對不能用 AI"
+assert st == 200 and len(ai_calls) == n, "問過 AI 的應該用記憶"
+assert call("POST", "/classify", {"domains": ["ads.example.com"]})[0] == 401, "沒配對不能用"
+app.settings["ai_key"] = ""
 _bk = os.path.join(tempfile.mkdtemp(), "b.json"); a.export_backup(_bk, app.settings)
 assert "ai_key" not in json.load(open(_bk, encoding="utf-8"))["settings"], "金鑰不該被匯出"
 # 真的 ai_classify：接一個假的 AI 伺服器，看送出去的內容和解析

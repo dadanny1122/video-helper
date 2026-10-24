@@ -14,7 +14,7 @@
 - 列表頁顯示預估載入時間
 - 🩺 狀態檢查：點盾牌 →「🩺 狀態檢查」，看腳本每個部分是否正常、這個網站開了哪些功能和已知限制
 - 廣告收集器：點左下角盾牌，列出這頁連到的其他網站，一鍵加入個人黑名單
-- 🤖 問 AI（選用）：透過電腦版問 AI 這些網域是不是廣告；只送網域名稱，金鑰只存在自己電腦，AI 只給建議
+- 🔍 檢查是不是廣告：盾牌清單一鍵比對免費的公開廣告清單（[StevenBlack/hosts](https://github.com/StevenBlack/hosts)，透過電腦版，在自己電腦比對）；可選用 AI 進一步判斷
 - 攔截原因：盾牌清單最上面列出最近擋了什麼、為什麼擋；擋錯了可以「這是誤擋？」一鍵回報，或「⏸ 這個分頁先暫停擋廣告」（關掉分頁就恢復）
 - 隱藏廣告：隱藏別的網站放進來的廣告框框、透明點擊層
 - 一鍵下載：選擇畫質、顯示檔案大小與預估時間後再下載，切片影片自動轉成 MP4（不支援加密影片）
@@ -60,4 +60,5 @@
 - 部分網站規則參考 [uBlock Origin 規則庫（uBlockOrigin/uAssets）](https://github.com/uBlockOrigin/uAssets)，以本專案自己的程式碼重新實作
 - 切片轉 MP4 使用 [mux.js](https://github.com/videojs/mux.js)
 - 電腦版下載使用 [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- 廣告網域清單使用 [StevenBlack/hosts](https://github.com/StevenBlack/hosts)（MIT）
 - 合併與轉 MP4 使用 [FFmpeg](https://ffmpeg.org/)（LGPL）
