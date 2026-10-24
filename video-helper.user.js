@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.5.0
+// @version      3.5.1
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -408,7 +408,8 @@
 
       // 🤖 問 AI：判斷還沒被內建規則擋的網域
       const aiTags = {};                                   // 網域 → 顯示 AI 結果的那一格
-      const unknown = rows.map(([b]) => b).filter(b => !AD_RE.test(b)).slice(0, 30);
+      const OWN = new Set((site && site.ownDomains) || []);
+      const unknown = rows.map(([b]) => b).filter(b => !AD_RE.test(b) && !OWN.has(b)).slice(0, 30);
       if (unknown.length) {
         const aiBar = document.createElement('div');
         aiBar.style.cssText = 'margin-top:6px;font-size:12px;';
@@ -450,13 +451,19 @@
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:6px;padding:4px 8px;background:#333;border-radius:6px;';
         const name = document.createElement('div');
-        name.style.cssText = 'flex:1;word-break:break-all;';
-        name.textContent = b;
-        const tag = aiTags[b] = document.createElement('div');   // AI 的判斷會填在這裡
+        name.style.cssText = 'flex:1;min-width:0;';
+        const dom = document.createElement('div');
+        dom.style.cssText = 'font-weight:bold;word-break:break-all;';
+        dom.textContent = b;
+        const tag = aiTags[b] = document.createElement('div');   // 「🔍 檢查」的結果會填在這裡
         tag.style.cssText = 'font-size:11px;';
-        name.appendChild(tag);
+        if (OWN.has(b)) {
+          tag.textContent = '✓ 網站自己的影片／圖片伺服器（封鎖了影片會播不了）';
+          tag.style.color = '#a5d6a7';
+        }
         const info = document.createElement('div');
-        info.style.cssText = 'font-size:11px;opacity:.75;white-space:nowrap;';
+        info.style.cssText = 'font-size:11px;opacity:.6;';
+        name.append(dom, tag, info);
         const hows = Object.keys(st.how).join('、');
         info.textContent = (st.blocked ? `擋 ${st.blocked}` : '') + (st.blocked && st.n ? '｜' : '') +
           (st.n ? `載入 ${st.n}${hows ? '（' + hows + '）' : ''}` : '');
@@ -468,15 +475,17 @@
           btn.style.cursor = 'default';
         } else {
           btn.textContent = mine ? '解除封鎖' : '封鎖';
-          btn.style.background = mine ? '#555' : '#c62828';
+          btn.style.background = mine ? '#555' : OWN.has(b) ? '#555' : '#c62828';
           btn.addEventListener('click', () => {
+            if (!userBlock.has(b) && OWN.has(b) &&
+                !confirm(`${b} 是這個網站自己的影片／圖片伺服器，封鎖後影片可能播不了。\n確定要封鎖嗎？`)) return;
             if (userBlock.has(b)) userBlock.delete(b); else userBlock.add(b);
             store.set('userBlock', [...userBlock]);
             btn.textContent = userBlock.has(b) ? '解除封鎖' : '封鎖';
             btn.style.background = userBlock.has(b) ? '#555' : '#c62828';
           });
         }
-        row.append(name, info, btn);
+        row.append(name, btn);
         p.appendChild(row);
       }
 
@@ -548,6 +557,8 @@
       features: ALL,
       // 影片前廣告清單、側邊廣告都是跟 Pornhub 自己的 /_xa/ads… 要的
       adPath: /^\/_xa\/ads/,
+      // 網站自己的影片、圖片伺服器：封鎖了網站就壞掉
+      ownDomains: ['phncdn.com'],
       // 以下參考 uBlock Origin 的規則庫（uBlockOrigin/uAssets），用自己的程式碼重新實作
       rules: {
         // uBlock：pornhub.*##.watchpageAd 等 → 藏起廣告區塊
@@ -576,6 +587,7 @@
       features: ALL,
       // uBlock：||xvideos.com/lvcsm/abck-banners/
       adPath: /^\/lvcsm\/abck-banners\//,
+      ownDomains: ['xvideos-cdn.com'],
       rules: {
         // uBlock：xvideos.com##a[href*="/go.php?"][href*="&ad="]
         hide: ['a[href*="/go.php?"][href*="&ad="]'],
