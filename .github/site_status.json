@@ -6,5 +6,17 @@
  "XVideos": {
   "status": "ok",
   "why": ""
+ },
+ "XNXX": {
+  "status": "broken",
+  "why": "首頁找不到影片連結"
+ },
+ "YouPorn": {
+  "status": "ok",
+  "why": "有：['mediaDefinitions', 'mediaDefinition', 'playervars', 'videoUrl']｜伺服器：ypncdn.com"
+ },
+ "RedTube": {
+  "status": "ok",
+  "why": "有：['mediaDefinitions', 'mediaDefinition', 'playervars', 'videoUrl']｜伺服器：rdtcdn.com"
  }
 }
