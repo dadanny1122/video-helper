@@ -61,6 +61,43 @@ BAD_TITLE = re.compile(r"\b(tested|ranked|ranking|best|top ?\d+|alternatives?|fr
                        r"full video|leaked?|link video|watch online|indo|desi|mms)\b|推薦|排行|替代|免費看|優惠|外流|完整版", re.I)
 
 
+# 4. 只收「認識的新聞媒體」：Google 新聞裡很多是假裝成新聞的垃圾、釣魚網頁，不認識的一律不貼
+TRUSTED = {
+    # 國際
+    "reuters.com", "apnews.com", "bbc.com", "bbc.co.uk", "theguardian.com", "nytimes.com", "washingtonpost.com",
+    "cnn.com", "nbcnews.com", "cbsnews.com", "abcnews.go.com", "npr.org", "bloomberg.com", "ft.com", "wsj.com",
+    "economist.com", "axios.com", "politico.com", "politico.eu", "thehill.com", "usatoday.com", "latimes.com",
+    "independent.co.uk", "telegraph.co.uk", "sky.com", "news.sky.com", "cnbc.com", "forbes.com", "businessinsider.com",
+    "time.com", "newsweek.com", "theatlantic.com", "vox.com", "nymag.com", "rollingstone.com", "variety.com",
+    "lemonde.fr", "france24.com", "rfi.fr", "dw.com", "euronews.com", "spiegel.de", "lefigaro.fr",
+    "japantimes.co.jp", "nikkei.com", "asia.nikkei.com", "scmp.com", "straitstimes.com", "channelnewsasia.com",
+    "abc.net.au", "smh.com.au", "theage.com.au", "cbc.ca", "theglobeandmail.com", "nzherald.co.nz", "aljazeera.com",
+    # 科技
+    "theverge.com", "wired.com", "arstechnica.com", "techcrunch.com", "engadget.com", "404media.co", "vice.com",
+    "theregister.com", "cnet.com", "zdnet.com", "gizmodo.com", "mashable.com", "techradar.com", "tomsguide.com",
+    "pcmag.com", "bleepingcomputer.com", "therecord.media", "techspot.com", "9to5mac.com", "androidauthority.com",
+    "restofworld.org", "eff.org", "theinformation.com", "fastcompany.com", "digitaltrends.com", "lifehacker.com",
+    # 成人產業媒體（產業、法規新聞）
+    "xbiz.com", "avn.com",
+    # 台灣、港澳、中文
+    "ltn.com.tw", "udn.com", "chinatimes.com", "ettoday.net", "setn.com", "tvbs.com.tw", "cna.com.tw", "storm.mg",
+    "nownews.com", "ctwant.com", "mirrormedia.mg", "businesstoday.com.tw", "bnext.com.tw", "technews.tw",
+    "inside.com.tw", "ithome.com.tw", "tw.news.yahoo.com", "news.yahoo.co.jp", "cw.com.tw", "newtalk.tw",
+    "ftvnews.com.tw", "ttv.com.tw", "ctee.com.tw", "news.pts.org.tw", "pts.org.tw", "rti.org.tw", "taiwannews.com.tw",
+    "taipeitimes.com", "focustaiwan.tw", "hk01.com", "mingpao.com", "rthk.hk", "news.rthk.hk", "hket.com",
+    "on.cc", "zaobao.com.sg", "zaobao.com", "8world.com", "thenewslens.com", "twreporter.org", "gvm.com.tw",
+    "managertoday.com.tw", "kocpc.com.tw", "4gamers.com.tw", "gamebase.com.tw", "yahoo.com",
+    # 日本、韓國
+    "nhk.or.jp", "asahi.com", "mainichi.jp", "yomiuri.co.jp", "itmedia.co.jp", "gigazine.net", "koreaherald.com",
+    "koreatimes.co.kr", "yna.co.kr",
+}
+
+
+def trusted(host):
+    host = host.lower().removeprefix("www.")
+    return any(host == d or host.endswith("." + d) for d in TRUSTED)
+
+
 def host_of(u):
     try:
         return (urllib.parse.urlparse(u).hostname or "").lower()
@@ -70,6 +107,9 @@ def host_of(u):
 
 def is_junk(n):
     """回傳擋掉的原因；正常新聞回傳空字串"""
+    src_host = host_of(n.get("source_url", ""))
+    if not src_host or not trusted(src_host):
+        return f"不是認識的新聞媒體（{src_host or '沒有來源'}）"
     for u in (n["link"], n.get("source_url", "")):
         h = host_of(u)
         if h and h != "news.google.com" and BAD_SOURCE.search(h):
