@@ -25,7 +25,7 @@
   - 專屬規則（`rules`）：`hide`（藏元素）、`blockInlineScript`、`blockTimeout`、`blockListeners`、`renameKeys`、`setGlobals`；參考 uBlock Origin 規則庫用自己的程式重寫
   - `adPath`：網站自己網域上的廣告路徑；`ownDomains`：網站自己的影片伺服器（不要封鎖）
 - `MODULES`：功能本體（security、saveData、hideAds、autoSkip、videoStatus、estimator、listLabels、download）
-- 找影片：`findPhSources`（Pornhub：flashvars）、`findXvSources`（XVideos／XNXX：setVideoHLS）、`findAyloSources`（YouPorn／RedTube：mediaDefinitions）、`findXhSources`（xHamster：window.initials）
+- 找影片：`findPhSources`（Pornhub：flashvars）、`findXvSources`（XVideos／XNXX：setVideoHLS）、`findAyloSources`（YouPorn／RedTube：mediaDefinitions）、`findXhSources`（xHamster：window.initials；網址被加密成 16 進位字，`xhDecodeHex` 解開＝第 1 位元組選算法 1～7、第 2～5 位元組是 seed、其餘 XOR，跟 yt-dlp 同法；網站換新算法時解不出來 → 退回「交給電腦版」）
 - 「🖥 送到電腦版」：`sendToDesktop` → 電腦版 `127.0.0.1:47321～47325`，要先 6 位數配對；會一起送影片真正的位址（網站會擋程式開網頁，例如 Pornhub 回 410）
 
 ## 支援的網站
@@ -79,6 +79,7 @@
 
 ## 還沒做的事
 
-- xHamster 下載還沒在真網站上測（等使用者回報）
+- xHamster：真網站測過「交給電腦版」可下載（v3.11.0）；v3.12.0 起瀏覽器自己解密、可選畫質，待使用者確認
+- xHamster 影片前廣告會閃約 0.7 秒才被跳過（使用者說先不處理；要擋再請他貼 Console 紀錄）
 - 新加的「只擋廣告」網站都還沒有專屬規則（有人回報再加）
 - 手機版（Android 的 Firefox／Kiwi 可以裝暴力猴；iPhone 要另外的 App）

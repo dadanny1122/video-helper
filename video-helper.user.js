@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.11.0
+// @version      3.12.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -641,7 +641,7 @@
       ownDomains: ['xhcdn.com'],
       isVideoPage: () => /\/videos\//.test(location.pathname) || !!(PW.initials && PW.initials.xplayerSettings),
       findSources: findXhSources,
-      limits: ['剛加入下載；網址被加密時只能「交給電腦版」下載'],
+      limits: ['加密的網址會自動解開；網站換新加密法時改成「交給電腦版」下載'],
     },
     {
       name: 'YouPorn',
@@ -771,29 +771,72 @@
   }
 
   // ---- xHamster：影片資訊在網頁的 window.initials 裡（xplayerSettings.sources）----
-  // 網址有時會被網站加密；瀏覽器讀不出來時，就給一行「交給電腦版找畫質」（電腦版的 yt-dlp 會處理）
+  // 網址被網站加密成一串 16 進位字（例如 "050dc4c6…"）：
+  //   第 1 個位元組＝用哪一種算法（1～7），第 2～5 個＝起始數字（seed），後面＝密文
+  //   用算法產生一串「鑰匙」位元組，跟密文逐個 XOR 就還原成網址（跟 yt-dlp 的解法一樣）
+  // 還是解不出來時，就給一行「交給電腦版找畫質」（電腦版的 yt-dlp 會處理）
+  function xhDecodeHex(hex) {
+    if (!/^[0-9a-f]{12,}$/i.test(hex)) return null;
+    const b = hex.match(/../g).map(x => parseInt(x, 16));
+    let s = b[1] | (b[2] << 8) | (b[3] << 16) | (b[4] << 24);
+    const M = Math.imul;                             // 32 位元乘法（跟網站的算法一樣會溢位）
+    const ALGO = {
+      1: () => (s = (M(s, 1664525) + 1013904223) | 0),
+      2: () => { let t = s ^ (s << 13); t ^= t >>> 17; return (s = t ^ (t << 5)); },
+      3: () => { s = (s + 0x9e3779b9) | 0; let t = s ^ (s >>> 16); t = M(t, 0x85ebca77); t ^= t >>> 13; t = M(t, 0xc2b2ae3d); return t ^ (t >>> 16); },
+      4: () => { s = (s + 0x6d2b79f5) | 0; let t = (s << 7) | (s >>> 25); t = (t + 0x9e3779b9) | 0; t ^= t >>> 11; return M(t, 0x27d4eb2d); },
+      5: () => { let t = s ^ (s << 7); t ^= t >>> 9; t ^= t << 8; return (s = (t + 0xa5a5a5a5) | 0); },
+      6: () => { s = (M(s, 0x2c9277b5) + 0xac564b05) | 0; const t = s ^ (s >>> 18); return t >>> ((s >>> 27) & 31); },
+      7: () => { s = (s + 0x9e3779b9) | 0; let t = s ^ (s << 5); t = M(t, 0x7feb352d); t ^= t >>> 15; return M(t, 0x846ca68b); },
+    };
+    const next = ALGO[b[0]];
+    if (!next) return null;                          // 網站換了新算法 → 交給電腦版
+    let out = '';
+    for (let i = 5; i < b.length; i++) out += String.fromCharCode(b[i] ^ (next() & 0xff));
+    return out;
+  }
+  // 網址可能是：一般網址、整串都是密文、或只有路徑第一段是密文
+  function xhUrl(raw) {
+    if (typeof raw !== 'string' || !raw) return null;
+    let u = /^[0-9a-f]+$/i.test(raw) ? xhDecodeHex(raw) : raw;
+    if (!u || !/^(https?:)?\/\//.test(u)) return null;
+    try {
+      const p = new URL(u, location.href);
+      const m = p.pathname.match(/^\/([0-9a-f]{12,})([/,].+)$/i);
+      if (m) { const d = xhDecodeHex(m[1]); if (!d) return null; p.pathname = '/' + d + m[2]; }
+      return p.href;
+    } catch (e) { return null; }
+  }
   async function findXhSources() {
     const ini = PW.initials || {};
     const vm = ini.videoModel || {};
     const title = vm.title || (document.querySelector('meta[property="og:title"]') || {}).content || document.title;
     const srcs = (ini.xplayerSettings && ini.xplayerSettings.sources) || {};
-    const isUrl = u => typeof u === 'string' && /^(https?:)?\/\//.test(u);
     const list = [];
-    const hls = srcs.hls && (srcs.hls.h264 || srcs.hls);
-    const hlsUrl = hls && (hls.url || hls.fallback);
-    if (isUrl(hlsUrl)) {
-      try {
-        const u = new URL(hlsUrl, location.href).href;
-        for (const v of parseMaster(await getData(u, 'text'), u)) {
-          if (v.height && !list.some(x => x.height === v.height)) list.push({ label: v.height + 'p', height: v.height, kind: 'hls', url: v.url, bw: v.bw });
-        }
-      } catch (e) {}
+    const add = item => { if (item.height && !list.some(x => x.height === item.height)) list.push(item); };
+    // 先試 h264（Windows 內建播放器都能播），都失敗才用 av1
+    const cands = [];
+    for (const codec of ['h264', 'av1', 'mp4']) {
+      const h = srcs.hls && srcs.hls[codec];
+      if (h) cands.push(h.url, h.fallback);
+      const std = srcs.standard && srcs.standard[codec];
+      for (const x of Array.isArray(std) ? std : []) cands.push({ q: x.quality || x.label, u: x.url }, { q: x.quality || x.label, u: x.fallback });
     }
-    const std = (srcs.standard && (srcs.standard.h264 || srcs.standard.mp4)) || [];
-    for (const x of Array.isArray(std) ? std : []) {
-      const h = parseInt(x.quality || x.label, 10);
-      const u = x.url || x.fallback;
-      if (h && isUrl(u) && !list.some(y => y.height === h)) list.push({ label: h + 'p', height: h, kind: 'mp4', url: new URL(u, location.href).href });
+    if (srcs.hls && !srcs.hls.h264) cands.push(srcs.hls.url, srcs.hls.fallback);
+    const tried = new Set();
+    for (const c of cands) {
+      const u = xhUrl(c && typeof c === 'object' ? c.u : c);
+      if (!u || tried.has(u)) continue;
+      tried.add(u);
+      if (/\.m3u8(\?|$)/.test(u)) {
+        if (list.length) continue;                   // 已經有一份畫質清單就夠了（備用網址不用再抓）
+        try {
+          for (const v of parseMaster(await getData(u, 'text'), u)) add({ label: v.height + 'p', height: v.height, kind: 'hls', url: v.url, bw: v.bw });
+        } catch (e) {}
+      } else {
+        const h = parseInt(c && c.q, 10);
+        if (h) add({ label: h + 'p', height: h, kind: 'mp4', url: u });
+      }
     }
     list.sort((a, b) => b.height - a.height);
     if (!list.length && (vm.id || ini.xplayerSettings)) {
