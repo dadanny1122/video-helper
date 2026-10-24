@@ -53,7 +53,7 @@
 | `manual.yml` | 說明書改了 | 更新 #使用手冊（修改原本的訊息） | `DISCORD_MANUAL_WEBHOOK` |
 | `site-check.yml` | 每天 9:17 | 檢查網站改版，狀態變了才通知 #進度 | `DISCORD_WEBHOOK` |
 | `news.yml` | 每 3 小時 | 中英日新聞 → 新聞頻道（只收安全名單裡的媒體、確認原文日期、標題附中文翻譯） | `DISCORD_NEWS_WEBHOOK` |
-| `rank.yml` | 每天 20:00（cron 設 19:55） | ThePornDude 前 20 名 → 排行榜頻道（修改同一則），標「可下載／只擋廣告」；每天另發一則跟昨天比的名次變動；附來源連結＋Similarweb 交叉比對連結；手動 Run workflow 勾 repost 會刪舊訊息重貼 | `DISCORD_RANK_WEBHOOK` |
+| `rank.yml` | 每天 20:00（cron 設 19:55） | ThePornDude 前 20 名 → 排行榜頻道（修改同一則），標「可下載／只擋廣告」；每天另發一則跟昨天比的名次變動；並排 Tranco 全球流量排名（`tranco()` 下載 top-1m，`DOMAINS` 對照名稱→網域）、列出兩邊差最多的；附來源連結＋Similarweb 連結；勾 preview 只印在 annotations 不發 Discord；手動 Run workflow 勾 repost 會刪舊訊息重貼 | `DISCORD_RANK_WEBHOOK` |
 
 其他：腳本也發布在 Greasy Fork（https://greasyfork.org/zh-TW/scripts/601901-video-helper），從 GitHub 自動同步。
 
