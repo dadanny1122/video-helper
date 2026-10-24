@@ -4,16 +4,16 @@
   "why": ""
  },
  "XVideos": {
-  "status": "ok",
-  "why": ""
+  "status": "blocked",
+  "why": "影片頁找不到 setVideoHLS（腳本靠它找影片）"
  },
  "XNXX": {
-  "status": "broken",
-  "why": "首頁找不到影片連結（109260 字，連結例：['/', '/account/', '/account/create', '/account/uploads/new', '/apple-touch-icon.png', '/best', '/favicon-16x16.png', '/favicon-32x32.png', '/history', '/hits', '/manifest.json', '/pornstars']）"
+  "status": "blocked",
+  "why": "首頁找不到影片連結（130611 字，連結例：[]）"
  },
  "YouPorn": {
-  "status": "ok",
-  "why": "有：['mediaDefinitions', 'mediaDefinition', 'playervars', 'videoUrl']｜伺服器：ypncdn.com"
+  "status": "blocked",
+  "why": "網站回應 403"
  },
  "RedTube": {
   "status": "ok",
