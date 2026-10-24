@@ -35,6 +35,37 @@ FIRST_RUN_POST = 3          # 第一次執行：每個網站只貼最新的幾�
 SEEN_MAX = 3000
 UA = "Mozilla/5.0 (compatible; VideoHelper-NewsBot/1.0)"
 
+# ---- 擋掉垃圾、釣魚「新聞」----
+# 1. 被駭的政府、學校網站：正常不會出現成人網站的新聞（例如 town.xxx.lg.jp 被塞了廣告頁）
+BAD_SOURCE = re.compile(r"(\.|^)(gov|edu|mil|lg\.jp|go\.jp|ac\.[a-z]{2}|gov\.[a-z]{2}|edu\.[a-z]{2}|"
+                        r"go\.[a-z]{2}|or\.jp|ed\.jp)$", re.I)
+# 2. 網址裡藏了程式碼或跳轉（data:、base64、krpano 漏洞、javascript:）
+BAD_LINK = re.compile(r"data:|base64|krpano|javascript:|%3cscript|<script|xml=|\.xml\b|[?&](url|redirect|goto)=http",
+                      re.I)
+# 3. 廣告業配、SEO 垃圾文常見的標題（「XX 推薦」「實測排名」「免費替代」）
+BAD_TITLE = re.compile(r"\b(tested|ranked|ranking|best|top ?\d+|alternatives?|free|apps?|generators?|"
+                       r"chat|sites like|reviews?|coupon|discount|promo)\b|推薦|排行|替代|免費看|優惠", re.I)
+
+
+def host_of(u):
+    try:
+        return (urllib.parse.urlparse(u).hostname or "").lower()
+    except Exception:
+        return ""
+
+
+def is_junk(n):
+    """回傳擋掉的原因；正常新聞回傳空字串"""
+    for u in (n["link"], n.get("source_url", "")):
+        h = host_of(u)
+        if h and h != "news.google.com" and BAD_SOURCE.search(h):
+            return f"來源是政府／學校網站（{h}），可能被駭"
+        if BAD_LINK.search(urllib.parse.unquote(u)):
+            return "網址裡藏了程式碼或跳轉"
+    if BAD_TITLE.search(n["title"]):
+        return "像是業配或 SEO 垃圾文"
+    return ""
+
 
 def fetch(topic_q, hl, gl, ceid):
     q = urllib.parse.quote(topic_q + " when:7d")
@@ -46,7 +77,9 @@ def fetch(topic_q, hl, gl, ceid):
     for it in root.iter("item"):
         title = (it.findtext("title") or "").strip()
         link = (it.findtext("link") or "").strip()
-        src = (it.findtext("source") or "").strip()
+        src_el = it.find("source")
+        src = (src_el.text or "").strip() if src_el is not None else ""
+        src_url = src_el.get("url", "") if src_el is not None else ""
         pub = it.findtext("pubDate") or ""
         try:
             when = email.utils.parsedate_to_datetime(pub)
@@ -54,7 +87,7 @@ def fetch(topic_q, hl, gl, ceid):
             when = None
         if src and title.endswith(" - " + src):          # Google 會把來源接在標題後面
             title = title[: -len(src) - 3]
-        out.append({"title": title, "link": link, "source": src, "when": when,
+        out.append({"title": title, "link": link, "source": src, "source_url": src_url, "when": when,
                     "id": (it.findtext("guid") or link)[:300]})
     return out
 
@@ -76,6 +109,10 @@ def collect():
                     if must and not re.search(must, n["title"], re.I):
                         continue
                     if n["when"] and now - n["when"] > timedelta(days=MAX_AGE_DAYS):
+                        continue
+                    junk = is_junk(n)
+                    if junk:
+                        print(f"擋掉：{n['title'][:60]}｜{n['source_url'] or n['link'][:80]}｜{junk}")
                         continue
                     n["topic"] = name
                     items.append(n)
