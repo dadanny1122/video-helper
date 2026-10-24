@@ -1,0 +1,25 @@
+name: Ranking to Discord
+
+on:
+  schedule:
+    - cron: '41 2 * * 1'     # 每週一台灣時間 10:41
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: '只看網頁長怎樣（測試用）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  rank:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ranking
+        env:
+          DISCORD_RANK_WEBHOOK: ${{ secrets.DISCORD_RANK_WEBHOOK }}
+          PYTHONIOENCODING: utf-8
+        run: python3 .github/rank_feed.py .github/rank_state.json ${{ inputs.probe && '--probe' || '' }}
