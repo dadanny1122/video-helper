@@ -54,12 +54,15 @@ def mark(name):
 
 
 def embed_for(rows, now_tw):
-    lines = [f"`{p:>2}.` {mark(n)} [{n}]({u})" for p, n, u in rows[:TOP]]
+    tag = {"✅": "　**⬇ 可下載**", "🛡": "　只擋廣告", "　": "　（沒支援）"}
+    lines = [f"`{p:>2}.` {mark(n)} [{n}]({u}){tag[mark(n)]}" for p, n, u in rows[:TOP]]
+    can = [n for _, n, _ in rows[:TOP] if mark(n) == "✅"]
     return {
         "title": "🏆 影片網站排行 Top 20（ThePornDude）",
         "url": PAGE,
         "color": 0xF9A825,
-        "description": "\n".join(lines) + "\n\n✅ Video Helper 擋廣告＋下載　🛡 只擋廣告　空白＝沒支援\n"
+        "description": "\n".join(lines) + f"\n\n**⬇ 可以下載的（{len(can)} 個）：**{'、'.join(can)}\n"
+                       "其他網站只擋廣告、預估時間，不提供下載。\n"
                        f"🕒 最後檢查：{now_tw}（每週一更新）",
     }
 
