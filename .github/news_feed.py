@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 IMPACT = (r"(ban|bans|banned|block|blocked|law|laws|bill|court|lawsuit|sue|sued|fine|fined|regulat|"
           r"age.?verif|age check|shut|outage|hack|breach|leak of|data|policy|investigat|"
           r"封鎖|禁|法|訴|罰|驗證|關閉|外洩|駭|調查|政策|"
-          r"逮捕|摘発|規制|禁止|閉鎖|年齢確認|流出|送検|罰金|削除|停止|警察|起訴|判決|違法|捜索|捜査|容疑")
+          r"逮捕|摘発|規制|禁止|閉鎖|年齢確認|流出|送検|罰金|削除|停止|警察|起訴|判決|違法|捜索|捜査|容疑)")
 
 # 要追的網站：名稱、搜尋字、標題裡一定要出現的字
 #   名字很特別的（Pornhub、XVideos…）：內文提到就算，不限標題（中文新聞標題常常不寫網站名）
