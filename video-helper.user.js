@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.10.0
+// @version      3.11.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -635,6 +635,15 @@
       limits: ['剛加入；跟 XVideos 用同一套方法，有問題請回報'],
     },
     {
+      name: 'xHamster',
+      match: /(^|\.)xhamster\d*\.(com|desi|one)$/,
+      features: ALL,
+      ownDomains: ['xhcdn.com'],
+      isVideoPage: () => /\/videos\//.test(location.pathname) || !!(PW.initials && PW.initials.xplayerSettings),
+      findSources: findXhSources,
+      limits: ['剛加入下載；網址被加密時只能「交給電腦版」下載'],
+    },
+    {
       name: 'YouPorn',
       match: /(^|\.)youporn\.com$/,
       features: ALL,
@@ -664,7 +673,6 @@
       limits: ['不提供下載（內容多為片商作品的轉載）', 'MissAV 常換網址；換到不是 missav 開頭的網址時腳本不會啟動'] },
     // 其他影片網站（參考 ThePornDude 的影片網站排行）：只開擋廣告、預估時間，不開下載
     //   這些網站很多影片是片商作品的轉載；xHamster 之後測試穩定再考慮加下載
-    { name: 'xHamster', match: /(^|\.)xhamster\d*\.(com|desi|one)$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
     { name: 'Eporner', match: /(^|\.)eporner\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
     { name: 'HQporner', match: /(^|\.)hqporner\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
     { name: 'Beeg', match: /(^|\.)beeg\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
@@ -759,6 +767,38 @@
       list.push({ label: h + 'p', height: h, kind: 'hls', url: new URL(d.videoUrl, location.href).href });
     }
     list.sort((a, b) => b.height - a.height);
+    return { title, list };
+  }
+
+  // ---- xHamster：影片資訊在網頁的 window.initials 裡（xplayerSettings.sources）----
+  // 網址有時會被網站加密；瀏覽器讀不出來時，就給一行「交給電腦版找畫質」（電腦版的 yt-dlp 會處理）
+  async function findXhSources() {
+    const ini = PW.initials || {};
+    const vm = ini.videoModel || {};
+    const title = vm.title || (document.querySelector('meta[property="og:title"]') || {}).content || document.title;
+    const srcs = (ini.xplayerSettings && ini.xplayerSettings.sources) || {};
+    const isUrl = u => typeof u === 'string' && /^(https?:)?\/\//.test(u);
+    const list = [];
+    const hls = srcs.hls && (srcs.hls.h264 || srcs.hls);
+    const hlsUrl = hls && (hls.url || hls.fallback);
+    if (isUrl(hlsUrl)) {
+      try {
+        const u = new URL(hlsUrl, location.href).href;
+        for (const v of parseMaster(await getData(u, 'text'), u)) {
+          if (v.height && !list.some(x => x.height === v.height)) list.push({ label: v.height + 'p', height: v.height, kind: 'hls', url: v.url, bw: v.bw });
+        }
+      } catch (e) {}
+    }
+    const std = (srcs.standard && (srcs.standard.h264 || srcs.standard.mp4)) || [];
+    for (const x of Array.isArray(std) ? std : []) {
+      const h = parseInt(x.quality || x.label, 10);
+      const u = x.url || x.fallback;
+      if (h && isUrl(u) && !list.some(y => y.height === h)) list.push({ label: h + 'p', height: h, kind: 'mp4', url: new URL(u, location.href).href });
+    }
+    list.sort((a, b) => b.height - a.height);
+    if (!list.length && (vm.id || ini.xplayerSettings)) {
+      list.push({ label: '交給電腦版找畫質', height: 0, kind: 'page', url: '' });
+    }
     return { title, list };
   }
 
@@ -1471,6 +1511,7 @@
   }
 
   async function estimateSize(s) {
+    if (s.kind === 'page') return { bytes: 0, exact: false };
     if (s.kind === 'mp4') return { bytes: await getSize(s.url), exact: true };
     try {
       s.media = await resolveMedia(s.url, s.bw || 0);
@@ -1822,7 +1863,7 @@
   //    （有些網站會擋不是瀏覽器的程式開網頁，例如 Pornhub 回 410）
   async function sendToDesktop(s, title) {
     const url = location.href.split('#')[0];
-    const height = s.height;
+    const height = s.height || null;                 // 0（交給電腦版找畫質）→ 用電腦版的預設畫質
     const port = await findBridge();
     if (!port) {
       try { GM_setClipboard(url); } catch (e) {}
@@ -1893,7 +1934,7 @@
         const { bytes, exact } = results[i];
         const sizeText = bytes ? (exact ? '' : '約 ') + fmtSize(bytes) : '大小未知';
         const timeText = bytes && mbps ? '約 ' + fmt(bytes * 8 / (mbps * 1e6)) : '時間未知';
-        const typeText = s.kind === 'hls' ? '切片' : 'MP4';
+        const typeText = s.kind === 'hls' ? '切片' : s.kind === 'page' ? '電腦版會自動選最高畫質' : 'MP4';
 
         const row = document.createElement('div');
         row.style.cssText = 'margin-top:6px;padding:6px 8px;background:#333;border-radius:6px;cursor:pointer;';
@@ -1915,6 +1956,7 @@
         });
         row.prepend(toPc);
         row.addEventListener('click', () => {
+          if (s.kind === 'page') { toPc.click(); return; }   // 這行只能交給電腦版
           const big = bytes > 2e9 ? '\n\n⚠ 檔案很大，下載完成前請不要關閉這個分頁' : '';
           if (!confirm(`確定要下載嗎？\n\n${s.label}（${typeText}）\n${sizeText}｜${timeText}${big}`)) return;
           startDownload(s, bytes);
