@@ -78,7 +78,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.11.0"
+VERSION = "1.12.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -152,6 +152,7 @@ DEFAULT_SETTINGS = {
     "bridge_enabled": False,          # 瀏覽器連動（配對後才會打開）
     "bridge_tokens": [],              # 已配對的瀏覽器（只存雜湊值，不存原本的密碼）
     "mbps": 0,                   # 上次量到的網速
+    "setup_seen": False,         # 看過「安裝擋廣告」了（第一次打開才自動切過去）
 }
 
 
@@ -1277,16 +1278,20 @@ class App:
         self.nb = ttk.Notebook(root)
         self.nb.pack(fill="both", expand=True)
         tabs = {}
-        for key, text in (("setup", "① 安裝擋廣告（第一次用）"), ("dl", "② 下載影片"),
-                          ("hist", "③ 下載紀錄"), ("set", "④ 設定"), ("stats", "⑤ 統計")):
+        for key, text in (("dl", "① 下載影片"), ("hist", "② 下載紀錄"), ("set", "③ 設定"),
+                          ("setup", "④ 安裝擋廣告")):
             tabs[key] = ttk.Frame(self.nb)
             self.nb.add(tabs[key], text=f"  {text}  ")
-        self.tab_dl = tabs["dl"]
+        self.tab_dl, self.tab_setup = tabs["dl"], tabs["setup"]
         self.build_setup(tabs["setup"])
         self.build_download(tabs["dl"])
         self.build_history(tabs["hist"])
         self.build_settings(tabs["set"])
-        self.build_stats(tabs["stats"])
+        self.build_advanced()                 # 進階設定（另一個視窗，平常藏起來）
+        if not self.settings["setup_seen"]:   # 第一次打開：先帶去裝擋廣告
+            self.nb.select(self.tab_setup)
+            self.settings["setup_seen"] = True
+            self.settings.save()
 
         if self.settings["bridge_enabled"]:
             self.bridge.start()
@@ -1423,13 +1428,12 @@ class App:
         mid.pack(fill="x", **pad)
         self.speed_lbl = ttk.Label(mid, text=f"網速：{self.mbps:.1f} Mbps（上次實測）" if self.mbps else "網速：尚未量測")
         self.speed_lbl.pack(side="left")
-        ttk.Button(mid, text="打開下載資料夾", command=lambda: open_path(self.settings.download_dir)).pack(side="right")
         self.btn_dl = ttk.Button(mid, text="⬇ 加入下載", command=self.download, state="disabled")
-        self.btn_dl.pack(side="right", padx=6)
+        self.btn_dl.pack(side="right")
 
         # 佇列
         ttk.Separator(dl).pack(fill="x", padx=10, pady=(6, 2))
-        self.qhead = ttk.Label(dl, text="下載佇列（依序下載）", font=("", 10, "bold"))
+        self.qhead = ttk.Label(dl, text="下載佇列（依序下載；按右鍵有更多選項）", font=("", 10, "bold"))
         self.qhead.pack(anchor="w", padx=10)
         qcols = ("title", "quality", "status")
         self.qtree = ttk.Treeview(dl, columns=qcols, show="headings", height=5, selectmode="browse")
@@ -1443,10 +1447,12 @@ class App:
         qbar.pack(fill="x", **pad)
         self.btn_cancel = ttk.Button(qbar, text="■ 取消目前下載", command=self.cancel, state="disabled")
         self.btn_cancel.pack(side="left")
+        # 有失敗的才出現
         self.btn_retry = ttk.Button(qbar, text="↻ 重試失敗的", command=self.retry, state="disabled")
-        self.btn_retry.pack(side="left", padx=6)
-        ttk.Button(qbar, text="移除選取", command=self.queue_remove).pack(side="left")
-        ttk.Button(qbar, text="清除已結束", command=self.queue_clear).pack(side="right")
+        # 不常用的放右鍵選單
+        self.add_menu(self.qtree, [("移除這一筆", self.queue_remove), ("清除已結束的", self.queue_clear), None,
+                                   ("↻ 重試失敗的", self.retry),
+                                   ("📂 打開下載資料夾", lambda: open_path(self.settings.download_dir))])
 
         self.prog = ttk.Progressbar(dl, maximum=100)
         self.prog.pack(fill="x", **pad)
@@ -1459,7 +1465,34 @@ class App:
         self.btn_batch.config(state="disabled" if self.batch_running else "normal")
         self.btn_dl.config(state="normal" if (self.formats and not self.analyzing) else "disabled")
         self.btn_cancel.config(state="normal" if self.cancel_event else "disabled")
-        self.btn_retry.config(state="normal" if self.queue.count(FAILED) else "disabled")
+        failed = self.queue.count(FAILED)
+        self.btn_retry.config(state="normal" if failed else "disabled")
+        if failed and not self.btn_retry.winfo_manager():
+            self.btn_retry.pack(side="left", padx=6)
+        elif not failed and self.btn_retry.winfo_manager():
+            self.btn_retry.pack_forget()
+
+    def add_menu(self, tree, items):
+        """右鍵選單：先選到按的那一行，再跳出選單。items 裡的 None 是分隔線"""
+        menu = tk.Menu(tree, tearoff=0)
+        for it in items:
+            if it is None:
+                menu.add_separator()
+            else:
+                menu.add_command(label=it[0], command=it[1])
+
+        def popup(e):
+            row = tree.identify_row(e.y)
+            if row:
+                tree.selection_set(row)
+                tree.focus(row)
+            try:
+                menu.tk_popup(e.x_root, e.y_root)
+            finally:
+                menu.grab_release()
+        tree.bind("<Button-3>", popup)
+        tree.bind("<Button-2>", popup)            # Mac 的觸控板
+        return menu
 
     # ----- 讀取單一網址 -----
 
@@ -1527,7 +1560,7 @@ class App:
 
     def on_analyze_error(self, msg):
         self.analyzing = False
-        self.title_lbl.config(text="❌ " + msg[:200] + "　（詳細原因在「④ 設定」→ 打開錯誤日誌）")
+        self.title_lbl.config(text="❌ " + msg[:200] + "　（詳細原因在「③ 設定」→ 進階設定 → 問題排查 → 打開錯誤日誌）")
         self.set_buttons()
 
     def download(self):
@@ -1627,7 +1660,7 @@ class App:
         ok, fail = data
         self.batch_running = False
         self.set_buttons()
-        msg = f"已加入 {ok} 部" + (f"，{fail} 部讀取失敗（原因在「③ 下載紀錄」）" if fail else "")
+        msg = f"已加入 {ok} 部" + (f"，{fail} 部讀取失敗（原因在「② 下載紀錄」）" if fail else "")
         # 不跳視窗打斷使用者，寫在佇列標題旁邊
         self.refresh_queue()
         self.qhead.config(text=self.qhead.cget("text") + f"　｜　批次：{msg}")
@@ -2073,17 +2106,19 @@ class App:
             self.htree.column(c, width=w, anchor=anchor)
         self.htree.pack(fill="both", expand=True, **pad)
         self.htree.bind("<<TreeviewSelect>>", lambda e: self.show_history_detail())
-        self.htree.bind("<Double-1>", lambda e: self.history_redownload())
+        self.htree.bind("<Double-1>", lambda e: self.history_double())
+        self.add_menu(self.htree, [("▶ 播放", self.history_play), ("📂 打開檔案位置", self.history_open),
+                                   ("↻ 重新下載", self.history_redownload), None,
+                                   ("刪除這筆紀錄", self.history_delete), ("清除全部紀錄", self.history_clear)])
 
         self.hdetail = ttk.Label(parent, text="", foreground="#555", wraplength=680, justify="left")
         self.hdetail.pack(fill="x", **pad)
 
         bar = ttk.Frame(parent)
         bar.pack(fill="x", **pad)
-        ttk.Button(bar, text="↻ 重新下載", command=self.history_redownload).pack(side="left")
-        ttk.Button(bar, text="📂 打開檔案位置", command=self.history_open).pack(side="left", padx=6)
-        ttk.Button(bar, text="刪除這筆", command=self.history_delete).pack(side="left")
-        ttk.Button(bar, text="清除全部", command=self.history_clear).pack(side="right")
+        ttk.Button(bar, text="📂 打開檔案位置", command=self.history_open).pack(side="left")
+        ttk.Button(bar, text="打開下載資料夾", command=lambda: open_path(self.settings.download_dir)).pack(side="left", padx=6)
+        ttk.Label(bar, text="雙擊播放；按右鍵有更多選項", foreground="#888").pack(side="right")
         self.refresh_history()
 
     def refresh_history(self):
@@ -2093,7 +2128,7 @@ class App:
             self.htree.insert("", "end", iid=str(i), values=(
                 r.get("time", ""), r.get("title", ""), quality_label(r.get("height")), icon.get(r.get("status"), r.get("status", ""))))
         if not self.history.items:
-            self.hdetail.config(text="還沒有紀錄。" if self.settings["keep_history"] else "已關閉下載紀錄（可在「④ 設定」打開）。")
+            self.hdetail.config(text="還沒有紀錄。" if self.settings["keep_history"] else "已關閉下載紀錄（可在「③ 設定」→ 進階設定打開）。")
 
     def selected_history(self):
         sel = self.htree.selection()
@@ -2129,6 +2164,35 @@ class App:
         else:
             messagebox.showinfo("找不到檔案", "這筆紀錄的檔案已經不存在（可能被移動或刪除了）。")
 
+    def history_play(self):
+        """用電腦預設的播放器打開影片"""
+        _, r = self.selected_history()
+        if not r:
+            return
+        f = r.get("file")
+        if not (f and os.path.exists(f)):
+            messagebox.showinfo("找不到檔案", "這筆紀錄的檔案已經不存在（可能被移動或刪除了）。")
+            return
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(f)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", f])
+            else:
+                subprocess.Popen(["xdg-open", f])
+        except Exception:
+            log.exception("播放失敗：%s", f)
+
+    def history_double(self):
+        """雙擊：完成的就播放，失敗／取消的就重新下載"""
+        _, r = self.selected_history()
+        if not r:
+            return
+        if r.get("file") and os.path.exists(r["file"]):
+            self.history_play()
+        else:
+            self.history_redownload()
+
     def history_delete(self):
         i, r = self.selected_history()
         if r is not None:
@@ -2146,87 +2210,135 @@ class App:
     # ------------------------------------------------------------------
 
     def build_settings(self, parent):
+        """平常會用的三樣放這裡；其他收進「⚙ 進階設定…」"""
         outer = ttk.Frame(parent, padding=(12, 8))
         outer.pack(fill="both", expand=True)
-        box = lambda title: ttk.LabelFrame(outer, text=f" {title} ", padding=(10, 4))
+        box = lambda title: ttk.LabelFrame(outer, text=f" {title} ", padding=(10, 6))
 
         # --- 下載 ---
         f = box("下載")
         f.pack(fill="x", pady=4)
         f.columnconfigure(1, weight=1)
-        ttk.Label(f, text="下載資料夾：").grid(row=0, column=0, sticky="w", pady=3)
+        ttk.Label(f, text="下載資料夾：").grid(row=0, column=0, sticky="w", pady=4)
         self.dir_var = tk.StringVar(value=self.settings.download_dir)
         ttk.Entry(f, textvariable=self.dir_var).grid(row=0, column=1, sticky="ew", padx=6)
         ttk.Button(f, text="瀏覽…", command=self.choose_dir).grid(row=0, column=2)
 
-        ttk.Label(f, text="預設畫質：").grid(row=1, column=0, sticky="w", pady=3)
+        ttk.Label(f, text="預設畫質：").grid(row=1, column=0, sticky="w", pady=4)
         self.q_var = tk.StringVar(value=self.settings["default_quality"])
         ttk.Combobox(f, textvariable=self.q_var, values=QUALITY_CHOICES, state="readonly", width=10).grid(
             row=1, column=1, sticky="w", padx=6)
         ttk.Label(f, text="（沒有這個畫質時，選比它低的最高畫質）", foreground="#555").grid(
             row=1, column=1, sticky="w", padx=(110, 0))
+        ttk.Button(f, text="💾 儲存", command=self.save_settings).grid(row=1, column=2)
 
-        ttk.Label(f, text="檔名格式：").grid(row=2, column=0, sticky="w", pady=3)
+        # --- 瀏覽器連動 ---
+        c = box("瀏覽器連動（在影片網頁按「🖥 送到電腦版」）")
+        c.pack(fill="x", pady=4)
+        self.bridge_lbl = ttk.Label(c, text="")
+        self.bridge_lbl.pack(side="left", pady=3)
+        ttk.Button(c, text="🔗 配對瀏覽器…", command=self.pair_browser).pack(side="right")
+        self.refresh_bridge_label()
+
+        ttk.Button(outer, text="⚙ 進階設定…", command=self.show_advanced).pack(anchor="w", pady=(14, 2))
+        ttk.Label(outer, foreground="#888", justify="left",
+                  text="檔名格式、關閉視窗的行為、備份、檢查更新、錯誤日誌、統計都在這裡。\n平常用不到，出問題或換電腦時再打開。").pack(anchor="w")
+        self.ver_lbl = ttk.Label(outer, text=f"目前版本：v{VERSION}", foreground="#888")
+        self.ver_lbl.pack(side="bottom", anchor="w")
+
+    def build_advanced(self):
+        """進階設定視窗：一開始就建好但藏起來（按鈕、選項才都在），按「⚙ 進階設定…」才顯示"""
+        win = self.adv = tk.Toplevel(self.root)
+        win.title("進階設定")
+        win.geometry("760x560")
+        win.withdraw()
+        win.protocol("WM_DELETE_WINDOW", win.withdraw)
+        nb = self.adv_nb = ttk.Notebook(win)
+        nb.pack(fill="both", expand=True)
+        pages = {}
+        for key, text in (("prog", "檔名與程式"), ("link", "瀏覽器連動"), ("backup", "備份與更新"),
+                          ("debug", "問題排查"), ("stats", "統計")):
+            pages[key] = ttk.Frame(nb, padding=(12, 10))
+            nb.add(pages[key], text=f"  {text}  ")
+
+        # --- 檔名與程式 ---
+        g = pages["prog"]
+        g.columnconfigure(1, weight=1)
+        ttk.Label(g, text="檔名格式：").grid(row=0, column=0, sticky="w", pady=4)
         tpl = self.settings["filename_template"]
         self.tpl_var = tk.StringVar(value=tpl if tpl in FILENAME_TEMPLATES else DEFAULT_TEMPLATE)
-        cb = ttk.Combobox(f, textvariable=self.tpl_var, values=list(FILENAME_TEMPLATES), state="readonly", width=28)
-        cb.grid(row=2, column=1, sticky="w", padx=6)
-        self.tpl_preview = ttk.Label(f, text="", foreground="#555")
-        self.tpl_preview.grid(row=3, column=1, columnspan=2, sticky="w", padx=6)
+        cb = ttk.Combobox(g, textvariable=self.tpl_var, values=list(FILENAME_TEMPLATES), state="readonly", width=28)
+        cb.grid(row=0, column=1, sticky="w", padx=6)
+        self.tpl_preview = ttk.Label(g, text="", foreground="#555")
+        self.tpl_preview.grid(row=1, column=1, sticky="w", padx=6)
         cb.bind("<<ComboboxSelected>>", lambda e: self.update_tpl_preview())
         self.update_tpl_preview()
 
-        # --- 程式 ---
-        g = box("程式")
-        g.pack(fill="x", pady=4)
-        self.keep_var = tk.BooleanVar(value=bool(self.settings["keep_history"]))
-        ttk.Checkbutton(g, text="保存下載紀錄", variable=self.keep_var).grid(row=0, column=0, columnspan=2, sticky="w", pady=3)
-        self.keep_stats_var = tk.BooleanVar(value=bool(self.settings["keep_stats"]))
-        ttk.Checkbutton(g, text="記錄下載統計（用來校正預估；只存數字和網站名稱）", variable=self.keep_stats_var).grid(
-            row=0, column=2, sticky="w", pady=3)
-        ttk.Label(g, text="關閉視窗時：").grid(row=1, column=0, sticky="w", pady=3)
+        ttk.Label(g, text="關閉視窗時：").grid(row=2, column=0, sticky="w", pady=(12, 4))
         ca = self.settings["close_action"]
         self.close_var = tk.StringVar(value=ca if ca in CLOSE_CHOICES else CLOSE_CHOICES[0])
         choices = CLOSE_CHOICES if pystray else [c for c in CLOSE_CHOICES if "系統匣" not in c]
         ttk.Combobox(g, textvariable=self.close_var, values=choices, state="readonly", width=16).grid(
-            row=1, column=1, sticky="w", padx=6)
+            row=2, column=1, sticky="w", padx=6, pady=(12, 4))
         ttk.Label(g, text=("縮到系統匣＝縮到右下角繼續下載，完成會跳通知" if pystray else "（這台電腦不支援系統匣）"),
-                  foreground="#555").grid(row=1, column=2, sticky="w", padx=6)
+                  foreground="#555").grid(row=3, column=1, sticky="w", padx=6)
 
-        ttk.Button(outer, text="💾 儲存設定", command=self.save_settings).pack(anchor="w", pady=(4, 6))
+        self.keep_var = tk.BooleanVar(value=bool(self.settings["keep_history"]))
+        ttk.Checkbutton(g, text="保存下載紀錄", variable=self.keep_var).grid(
+            row=4, column=0, columnspan=2, sticky="w", pady=(12, 2))
+        self.keep_stats_var = tk.BooleanVar(value=bool(self.settings["keep_stats"]))
+        ttk.Checkbutton(g, text="記錄下載統計（用來校正預估；只存數字和網站名稱）", variable=self.keep_stats_var).grid(
+            row=5, column=0, columnspan=2, sticky="w", pady=2)
+        ttk.Button(g, text="💾 儲存設定", command=self.save_settings).grid(row=6, column=0, sticky="w", pady=(14, 0))
 
         # --- 瀏覽器連動 ---
-        c = box("瀏覽器連動（在影片網頁按一下，就送進電腦版下載）")
-        c.pack(fill="x", pady=4)
-        self.bridge_lbl = ttk.Label(c, text="")
-        self.bridge_lbl.pack(side="left", pady=3)
-        ttk.Button(c, text="關閉服務", command=self.stop_bridge).pack(side="right")
-        ttk.Button(c, text="取消所有配對", command=self.unpair_browsers).pack(side="right", padx=6)
-        ttk.Button(c, text="🔗 配對瀏覽器…", command=self.pair_browser).pack(side="right")
-        self.refresh_bridge_label()
+        c = pages["link"]
+        ttk.Label(c, justify="left", foreground="#555", wraplength=700,
+                  text="取消所有配對：所有配對過的瀏覽器都要重新配對（借別人用過電腦時可以按）。\n"
+                       "關閉服務：電腦版不再接收瀏覽器送來的影片，下次按「配對瀏覽器…」會再打開。").pack(anchor="w")
+        row = ttk.Frame(c)
+        row.pack(anchor="w", pady=10)
+        ttk.Button(row, text="取消所有配對", command=self.unpair_browsers).pack(side="left")
+        ttk.Button(row, text="關閉服務", command=self.stop_bridge).pack(side="left", padx=8)
 
-        # --- 備份 ---
-        b = box("備份")
-        b.pack(fill="x", pady=4)
-        ttk.Button(b, text="⬆ 匯出設定和紀錄…", command=self.export_settings).pack(side="left", pady=3)
-        ttk.Button(b, text="⬇ 匯入…", command=self.import_settings).pack(side="left", padx=6)
-        ttk.Button(b, text="📂 自動備份資料夾", command=self.open_backups).pack(side="left")
-        ttk.Label(b, text="換電腦、重灌時用；更新版本時也會自動備份", foreground="#555").pack(side="left", padx=8)
-
-        # --- 版本 ---
-        v = box("版本")
-        v.pack(fill="x", pady=4)
-        ttk.Label(v, text=f"目前版本：v{VERSION}").pack(side="left", pady=3)
-        ttk.Button(v, text="檢查更新", command=self.manual_update_check).pack(side="left", padx=8)
-        ttk.Button(v, text="查看更新內容", command=lambda: webbrowser.open(f"https://github.com/{REPO}/releases")).pack(side="left")
+        # --- 備份與更新 ---
+        b = pages["backup"]
+        ttk.Label(b, text="換電腦、重灌時用；更新版本時也會自動備份一份", foreground="#555").pack(anchor="w")
+        row = ttk.Frame(b)
+        row.pack(anchor="w", pady=(6, 16))
+        ttk.Button(row, text="⬆ 匯出設定和紀錄…", command=self.export_settings).pack(side="left")
+        ttk.Button(row, text="⬇ 匯入…", command=self.import_settings).pack(side="left", padx=6)
+        ttk.Button(row, text="📂 自動備份資料夾", command=self.open_backups).pack(side="left")
+        ttk.Label(b, text=f"目前版本：v{VERSION}").pack(anchor="w")
+        row = ttk.Frame(b)
+        row.pack(anchor="w", pady=6)
+        ttk.Button(row, text="檢查更新", command=self.manual_update_check).pack(side="left")
+        ttk.Button(row, text="查看更新內容",
+                   command=lambda: webbrowser.open(f"https://github.com/{REPO}/releases")).pack(side="left", padx=6)
 
         # --- 問題排查 ---
-        t = box("問題排查")
-        t.pack(fill="x", pady=4)
-        ttk.Button(t, text="📄 打開錯誤日誌", command=self.open_log).pack(side="left", pady=3)
-        ttk.Button(t, text="📂 打開設定資料夾", command=lambda: open_path(data_dir())).pack(side="left", padx=6)
-        ttk.Button(t, text="清除網速紀錄", command=self.reset_speed).pack(side="left")
-        ttk.Label(outer, text=f"設定資料夾：{data_dir()}", foreground="#888").pack(anchor="w", pady=(6, 0))
+        t = pages["debug"]
+        ttk.Label(t, text="出錯時打開錯誤日誌，把內容傳給作者；換了網路、預估變很不準時清除網速紀錄。",
+                  foreground="#555", wraplength=700).pack(anchor="w")
+        row = ttk.Frame(t)
+        row.pack(anchor="w", pady=6)
+        ttk.Button(row, text="📄 打開錯誤日誌", command=self.open_log).pack(side="left")
+        ttk.Button(row, text="📂 打開設定資料夾", command=lambda: open_path(data_dir())).pack(side="left", padx=6)
+        ttk.Button(row, text="清除網速紀錄", command=self.reset_speed).pack(side="left")
+        ttk.Label(t, text=f"設定資料夾：{data_dir()}", foreground="#888").pack(anchor="w", pady=(10, 0))
+
+        # --- 統計 ---
+        self.build_stats(pages["stats"])
+
+    def show_advanced(self, page=None):
+        self.adv.deiconify()
+        self.adv.lift()
+        if page is not None:
+            self.adv_nb.select(page)
+        try:
+            self.adv.focus_force()
+        except Exception:
+            pass
 
     def apply_settings_to_ui(self):
         """設定被匯入後，讓畫面上的選項跟著改"""
@@ -2298,7 +2410,7 @@ class App:
         self.stree.pack(fill="both", expand=True, **pad)
         ttk.Label(parent, foreground="#555", wraplength=740, justify="left",
                   text="誤差＝原本的預估跟實際差多少（中位數）。同一個網站下載 3 次以上，之後的預估會自動用這些結果校正。\n"
-                       "只記錄網站名稱和數字（大小、秒數、畫質），不記錄影片標題和網址。可以在「④ 設定」關掉。").pack(fill="x", **pad)
+                       "只記錄網站名稱和數字（大小、秒數、畫質），不記錄影片標題和網址。可以在「檔名與程式」關掉。").pack(fill="x", **pad)
         bar = ttk.Frame(parent)
         bar.pack(fill="x", **pad)
         ttk.Button(bar, text="清除統計", command=self.clear_stats).pack(side="right")

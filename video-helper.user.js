@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.3.0
+// @version      3.3.1
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @match        *://*.pornhub.com/*
@@ -1624,14 +1624,14 @@
     const port = await findBridge();
     if (!port) {
       try { GM_setClipboard(url); } catch (e) {}
-      throw new Error('找不到電腦版。請先打開 Video Helper 電腦版，並在「④ 設定」按「🔗 配對瀏覽器…」。\n（網址已經幫你複製，切到電腦版也會自動偵測）');
+      throw new Error('找不到電腦版。請先打開 Video Helper 電腦版，並在「③ 設定」按「🔗 配對瀏覽器…」。\n（網址已經幫你複製，切到電腦版也會自動偵測）');
     }
     const media = s.url ? new URL(s.url, location.href).href : '';
     const enqueue = () => bridgeReq('POST', port, '/enqueue',
       { url, height, media, kind: s.kind, title: String(title || '').slice(0, 300) }, store.get('bridgeToken', ''));
     let r = await enqueue();
     if (r.status === 401) {
-      const code = prompt('第一次使用，請輸入電腦版顯示的 6 位數配對碼：\n（電腦版 →「④ 設定」→「🔗 配對瀏覽器…」）');
+      const code = prompt('第一次使用，請輸入電腦版顯示的 6 位數配對碼：\n（電腦版 →「③ 設定」→「🔗 配對瀏覽器…」）');
       if (!code) throw new Error('已取消配對');
       const p = await bridgeReq('POST', port, '/pair', { code: code.replace(/\s/g, '') });
       if (p.status !== 200 || !p.data.token) throw new Error(p.data.error || '配對失敗');
@@ -1653,7 +1653,7 @@
         if (++misses <= 5) { el.textContent = '🖥 電腦版：已送出，等電腦版回應…'; setTimeout(tick, 2000); return; }
         el.textContent = r.status === 0 ? '🖥 電腦版：連不上了（可能已關閉）'
           : r.status === 401 ? '🖥 電腦版：需要重新配對'
-          : '🖥 電腦版：已送出，請到電腦版「② 下載影片」看進度';
+          : '🖥 電腦版：已送出，請到電腦版「① 下載影片」看進度';
         return;
       }
       misses = 0;

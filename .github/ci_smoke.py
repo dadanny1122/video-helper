@@ -32,12 +32,21 @@ info = subprocess.run([probe, "-v", "error", "-show_entries", "stream=codec_type
 assert sorted(info) == ["audio", "video"], f"轉出來的 MP4 內容不對：{info}"
 print("FFMPEG_OK", a.FFMPEG)
 
-# 2. 視窗：4 個分頁、安裝精靈 3 步
+# 2. 視窗：4 個分頁、安裝精靈 3 步、進階設定
 r = tk.Tk()
 app = a.App(r)
 r.update()
-assert len(app.nb.tabs()) == 5, "分頁數量不對"
+assert len(app.nb.tabs()) == 4, "分頁數量不對"
 assert len(app.step_marks) == 3, "安裝精靈步驟數量不對"
+assert app.nb.select() == str(app.tab_setup), "第一次打開應該先到「安裝擋廣告」"
+assert app.settings["setup_seen"], "看過安裝頁應該記下來"
+# 進階設定：一開始藏著，按了才出現，關掉又藏起來
+assert app.adv.state() == "withdrawn", "進階設定一開始應該藏起來"
+app.show_advanced(); r.update()
+assert app.adv.state() == "normal" and len(app.adv_nb.tabs()) == 5, "進階設定打不開"
+app.adv.withdraw(); r.update()
+assert not app.btn_retry.winfo_manager(), "沒有失敗的時候不該出現「重試」"
+app.nb.select(app.tab_dl); r.update()
 
 # 3. 換成假的讀取／下載函式，走一遍佇列
 import time
@@ -82,6 +91,7 @@ app.cancel_event.set()
 wait(lambda: t_slow["status"] == a.CANCELLED)
 assert [t["status"] for t in (t_ok, t_fail, t_slow)] == [a.DONE, a.FAILED, a.CANCELLED], "佇列狀態不對"
 assert str(app.btn_retry["state"]) == "normal", "有失敗的應該可以重試"
+assert app.btn_retry.winfo_manager() == "pack", "有失敗的應該出現「重試」按鈕"
 assert [x["status"] for x in app.history.items] == ["取消", "失敗", "完成"], "下載紀錄不對"
 assert len(app.qtree.get_children()) == 3 and len(app.htree.get_children()) == 3, "表格沒有顯示"
 
@@ -163,7 +173,7 @@ app.check_clipboard(); r.update()
 assert app.clip_bar.winfo_manager() == "pack" and "xvideos.com" in app.clip_lbl.cget("text"), "剪貼簿提示列沒有放上去"
 app.nb.select(app.tab_dl); r.update()
 assert app.clip_bar.winfo_ismapped(), "切到「② 下載影片」時看不到剪貼簿提示列"
-app.nb.select(app.nb.tabs()[-1]); r.update()                 # 換到最後一個分頁（統計）
+app.nb.select(app.nb.tabs()[-1]); r.update()                 # 換到最後一個分頁（安裝擋廣告）
 assert app.clip_bar.winfo_ismapped(), "在別的分頁也要看得到剪貼簿提示列"
 app.nb.select(app.tab_dl); r.update()
 app.check_clipboard(); r.update()
