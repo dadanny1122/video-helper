@@ -4,12 +4,12 @@
   "why": ""
  },
  "XVideos": {
-  "status": "blocked",
-  "why": "影片頁找不到 setVideoHLS（腳本靠它找影片）"
+  "status": "ok",
+  "why": ""
  },
  "XNXX": {
-  "status": "blocked",
-  "why": "首頁找不到影片連結（130611 字，連結例：[]）"
+  "status": "broken",
+  "why": "首頁找不到影片連結（108793 字，連結例：[]）"
  },
  "YouPorn": {
   "status": "blocked",
