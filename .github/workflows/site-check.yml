@@ -5,6 +5,11 @@ on:
   schedule:
     - cron: '17 1 * * *'
   workflow_dispatch:
+    inputs:
+      probe:
+        description: '診斷模式（例如 xnxx）：只印出網頁結構，不通知、不存狀態'
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -19,6 +24,7 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           PYTHONIOENCODING: utf-8
+          PROBE: ${{ inputs.probe }}
         run: python3 .github/site_check.py .github/site_status.json
 
       # 記住今天的狀態，明天才知道有沒有「變」（不會觸發其他自動流程）

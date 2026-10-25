@@ -116,7 +116,31 @@ def notify(text):
         print(f"::warning title=Discord 通知失敗::{e}")
 
 
+def probe_xnxx():
+    """診斷模式：印出 XNXX 首頁的結構（標題、連結長相、有沒有用 JSON 放影片清單），不通知、不存狀態"""
+    req = urllib.request.Request("https://www.xnxx.com/", headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.8"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        final, home = r.geturl(), r.read(3_000_000).decode("utf-8", "ignore")
+    t = re.search(r"<title[^>]*>(.*?)</title>", home, re.S | re.I)
+    hrefs = re.findall(r'href=["\']?([^"\' >]+)', home)
+    shapes = {}
+    for h in hrefs:                                   # 把數字、長字換掉，只看「連結長怎樣」
+        k = re.sub(r"[0-9]+", "9", re.sub(r"/[^/?#]{25,}", "/…", h))[:60]
+        shapes[k] = shapes.get(k, 0) + 1
+    top = sorted(shapes.items(), key=lambda x: -x[1])[:25]
+    print(f"::notice title=XNXX 首頁::網址 {final}｜{len(home)} 字｜標題 {t.group(1).strip()[:80] if t else '無'}｜連結 {len(hrefs)} 個")
+    print("::notice title=XNXX 連結長相::" + "  ".join(f"{k}×{n}" for k, n in top))
+    marks = {k: home.count(k) for k in ("thumb-block", "data-id", "data-eid", "/video-", "/video", "xv.", "__NEXT_DATA__",
+                                        "application/json", "window.", "cf-chl", "captcha", "<noscript")}
+    print("::notice title=XNXX 關鍵字::" + json.dumps(marks, ensure_ascii=False))
+    i = home.find("thumb")
+    print("::notice title=XNXX 片段::" + re.sub(r"\s+", " ", home[max(i - 200, 0):i + 600] if i >= 0 else home[:800]))
+
+
 def main(state_path):
+    if os.environ.get("PROBE") == "xnxx":
+        probe_xnxx()
+        sys.exit(1)                                   # 故意失敗：後面「記住狀態」就不會跑
     try:
         old = json.load(open(state_path, encoding="utf-8"))
     except Exception:
