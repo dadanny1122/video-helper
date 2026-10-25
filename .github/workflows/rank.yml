@@ -5,6 +5,9 @@ name: Ranking to Discord
 on:
   schedule:
     - cron: '55 11 * * *'   # UTC 11:55 = 台灣 19:55
+    # GitHub 忙的時候排程會被延後或直接跳過 → 多兩個備用時間；今天已經貼過就自動跳過
+    - cron: '25 12 * * *'   # 台灣 20:25
+    - cron: '55 12 * * *'   # 台灣 20:55
   workflow_dispatch:
     inputs:
       repost:
@@ -31,6 +34,7 @@ jobs:
           PYTHONIOENCODING: utf-8
           REPOST: ${{ inputs.repost }}
           PREVIEW: ${{ inputs.preview }}
+          EVENT: ${{ github.event_name }}
         run: python3 .github/rank_feed.py .github/rank_state.json
 
       - name: Remember the ranking

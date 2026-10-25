@@ -179,6 +179,10 @@ def main(path):
         state = json.load(open(path, encoding="utf-8"))
     except Exception:
         state = {}
+    today = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
+    if os.environ.get("EVENT") == "schedule" and state.get("last_day") == today:
+        print(f"::notice title=排行榜::今天（{today}）已經更新過，這次備用排程跳過")
+        return
     rows = parse(fetch())
     if len(rows) < 10:
         print(f"::warning title=排行榜::讀不到排行（只讀到 {len(rows)} 筆），網頁可能改版了")
@@ -225,6 +229,7 @@ def main(path):
                             "embeds": [{"title": f"📊 今日排名變動（{now_tw[:10]}，跟昨天比）", "url": PAGE,
                                         "color": 0xF9A825, "description": body + f"\n\n📎 來源：[ThePornDude]({PAGE})（單一網站，僅供參考）"}]})
     state["rows"] = [list(x) for x in rows[:TOP]]
+    state["last_day"] = today
     json.dump(state, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(f"::notice title=排行榜::已更新；變動 {len(diff)} 筆")
 
