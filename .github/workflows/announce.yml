@@ -1,0 +1,19 @@
+name: Announce to Discord
+
+# 改了 .github/announce.md（更新總結）就貼到 Discord #進度；也可以手動按 Run workflow 再貼一次
+on:
+  push:
+    branches: [main]
+    paths: ['.github/announce.md']
+  workflow_dispatch:
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Post the summary
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          PYTHONIOENCODING: utf-8
+        run: python3 .github/discord_notify.py "📢 Video Helper 更新總結（$(TZ=Asia/Taipei date +%m/%d)）" .github/announce.md "https://github.com/${{ github.repository }}"
