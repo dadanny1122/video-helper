@@ -8,8 +8,8 @@
   "why": ""
  },
  "XNXX": {
-  "status": "broken",
-  "why": "首頁找不到影片連結（108793 字，連結例：[]）"
+  "status": "ok",
+  "why": "伺服器：xnxx-cdn.com"
  },
  "YouPorn": {
   "status": "blocked",
