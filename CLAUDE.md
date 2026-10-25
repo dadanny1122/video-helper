@@ -82,5 +82,6 @@
 - xHamster：v3.12.0 真網站確認可選畫質（瀏覽器自己解密）；「交給電腦版」也可下載
 - xHamster 影片前廣告會閃約 0.7 秒才被跳過（使用者說先不處理；要擋再請他貼 Console 紀錄）
 - XNXX 首頁 2026-10 改成分類頁（沒影片連結），site_check 改去 /best、/hits 找；site-check.yml 可用 probe=xnxx 診斷
+- YouPorn／RedTube 影片前廣告：v3.13.0 加了跟 Pornhub 一樣的 adPath /_xa/(ads|fla) + renameKeys adRollGlobalConfig，待使用者確認
 - 新加的「只擋廣告」網站都還沒有專屬規則（有人回報再加）
 - 手機版（Android 的 Firefox／Kiwi 可以裝暴力猴；iPhone 要另外的 App）

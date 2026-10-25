@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.12.0
+// @version      3.13.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -647,7 +647,10 @@
       name: 'YouPorn',
       match: /(^|\.)youporn\.com$/,
       features: ALL,
+      // 跟 Pornhub 同一套廣告系統：影片前廣告向網站自己的 /_xa/ads… 要、看完回報到 /_xa/fla/log
+      adPath: /^\/_xa\/(ads|fla)/,
       ownDomains: ['ypncdn.com'],
+      rules: { renameKeys: ['adRollGlobalConfig'] },   // 影片前廣告的設定，改名後播放器就找不到
       isVideoPage: () => /mediaDefinition/.test(document.documentElement.innerHTML),
       findSources: findAyloSources,
       limits: ['剛加入；跟 Pornhub 同一家公司，有問題請回報'],
@@ -656,7 +659,10 @@
       name: 'RedTube',
       match: /(^|\.)redtube\.com$/,
       features: ALL,
+      // 跟 Pornhub 同一套廣告系統：影片前廣告向網站自己的 /_xa/ads… 要、看完回報到 /_xa/fla/log
+      adPath: /^\/_xa\/(ads|fla)/,
       ownDomains: ['rdtcdn.com'],
+      rules: { renameKeys: ['adRollGlobalConfig'] },   // 影片前廣告的設定，改名後播放器就找不到
       isVideoPage: () => /mediaDefinition/.test(document.documentElement.innerHTML),
       findSources: findAyloSources,
       limits: ['剛加入；跟 Pornhub 同一家公司，有問題請回報'],
