@@ -22,7 +22,7 @@
 - `AD_DOMAINS`：已知的廣告網路（所有網站共用）
 - `SITES`：每個網站一筆 → 名稱、`match`（網域）、`features`（開哪些功能）、專屬規則、找影片的函式
   - `ALL`＝全部功能含下載；`ADBLOCK_ONLY`＝只擋廣告（沒有下載）
-  - 專屬規則（`rules`）：`hide`（藏元素）、`blockInlineScript`、`blockTimeout`、`blockListeners`、`renameKeys`、`setGlobals`；參考 uBlock Origin 規則庫用自己的程式重寫
+  - 專屬規則（`rules`）：`hide`（藏元素）、`blockInlineScript`、`blockTimeout`、`blockListeners`、`renameKeys`、`setGlobals`、`pruneCallArgs`（網站呼叫播放器函式時刪掉設定裡的廣告清單，例：YouJizz 的 fluidPlayer vastOptions）；參考 uBlock Origin 規則庫用自己的程式重寫
   - `adPath`：網站自己網域上的廣告路徑；`ownDomains`：網站自己的影片伺服器（不要封鎖）
 - `MODULES`：功能本體（security、saveData、hideAds、autoSkip、videoStatus、estimator、listLabels、download）
 - 找影片：`findPhSources`（Pornhub：flashvars）、`findXvSources`（XVideos／XNXX：setVideoHLS）、`findAyloSources`（YouPorn／RedTube：mediaDefinitions）、`findYjSources`（YouJizz：dataEncodings）、`findSbSources`（SpankBang：stream_data，讀不到 → 交給電腦版）、Tube8 用 `findAyloSources`、`findXhSources`（xHamster：window.initials；網址被加密成 16 進位字，`xhDecodeHex` 解開＝第 1 位元組選算法 1～7、第 2～5 位元組是 seed、其餘 XOR，跟 yt-dlp 同法；網站換新算法時解不出來 → 退回「交給電腦版」）

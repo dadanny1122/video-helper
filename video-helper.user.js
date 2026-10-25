@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.15.0
+// @version      3.16.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -692,7 +692,9 @@
     // YouJizz：使用者上傳為主 → 開下載。影片位址在網頁的 dataEncodings 裡（各畫質的 MP4）
     { name: 'YouJizz', match: /(^|\.)youjizz\.com$/, features: [...ALL, 'hideAds'],
       // 播放器（Fluid Player）的影片前廣告：蓋在影片上的透明「點了就開廣告」層、廣告的按鈕
-      rules: { hide: ['.vast_clickthrough_layer', '[id^="vast_clickthrough_layer"]', '.fluid_ad_cta'] },
+      rules: { hide: ['.vast_clickthrough_layer', '[id^="vast_clickthrough_layer"]', '.fluid_ad_cta'],
+               // 全螢幕時會重新播廣告：網站呼叫 fluidPlayer(…, { vastOptions: 廣告清單 }) → 把清單拿掉
+               pruneCallArgs: [{ fn: 'fluidPlayer', keys: ['vastOptions'] }] },
       isVideoPage: () => /\/videos\//.test(location.pathname), findSources: findYjSources,
       limits: ['剛加入下載，還沒有這個網站專屬的擋廣告規則'] },
     { name: 'PornOne', match: /(^|\.)(pornone|vporn)\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
@@ -1043,6 +1045,28 @@
         // 2. 設定固定值（網站之後改不掉）
         for (const [k, v] of Object.entries(R.setGlobals || {})) {
           try { Object.defineProperty(PW, k, { get: () => v, set: () => {}, configurable: true }); } catch (e) {}
+        }
+
+        // 2b. 網站呼叫播放器時，把設定裡的廣告清單拿掉（例如 Fluid Player 的 vastOptions）
+        //     概念同 uBlock 的 json-prune：播放器根本拿不到廣告，全螢幕、重播都不會再跳
+        for (const p of R.pruneCallArgs || []) {
+          const wrap = f => {
+            if (typeof f !== 'function' || f.__vhWrapped) return f;
+            const w = function (...args) {
+              for (const a of args) {
+                if (!a || typeof a !== 'object') continue;
+                for (const k of p.keys) if (k in a) { try { delete a[k]; ui.blockedHosts['影片前廣告設定'] = 1; } catch (e) {} }
+              }
+              return f.apply(this, args);
+            };
+            Object.assign(w, f);
+            w.__vhWrapped = true;
+            return w;
+          };
+          try {
+            let cur = wrap(PW[p.fn]);
+            Object.defineProperty(PW, p.fn, { get: () => cur, set: v => { cur = wrap(v); }, configurable: true });
+          } catch (e) {}
         }
 
         // 3. 取消特定的計時器
