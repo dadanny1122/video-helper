@@ -147,7 +147,46 @@ def probe_xnxx():
             print(f"::notice title=XNXX {path}::{e}")
 
 
+PROBE_SITES = {   # 診斷用：網站 → (首頁, 影片連結的樣子)
+    "tube8": ("https://www.tube8.com/", r'href="((?:https://www\.tube8\.com)?/porn-video/\d+[^"]*)"'),
+    "spankbang": ("https://spankbang.com/", r'href="(/[a-z0-9]+/video/[^"]+)"'),
+    "youjizz": ("https://www.youjizz.com/", r'href="(/videos/[^"]+\.html)"'),
+}
+
+
+def probe_site(name):
+    """診斷模式：看某個網站的影片頁用什麼方式放影片位址（給加下載功能用）"""
+    base, link_re = PROBE_SITES[name]
+    try:
+        home = get(base, "age_verified=1")
+    except Exception as e:
+        print(f"::notice title={name} 首頁::{e}")
+        return
+    m = re.search(link_re, home)
+    print(f"::notice title={name} 首頁::{len(home)} 字｜影片連結：{m.group(1)[:80] if m else '找不到'}｜擋住：{bool(BLOCKED_HINTS.search(home))}")
+    if not m:
+        return
+    url = m.group(1) if m.group(1).startswith("http") else base.rstrip("/") + m.group(1)
+    try:
+        page = get(url, "age_verified=1")
+    except Exception as e:
+        print(f"::notice title={name} 影片頁::{e}")
+        return
+    marks = {k: page.count(k) for k in ("mediaDefinition", "stream_data", "dataEncodings", "flashvars", ".m3u8", ".mp4",
+                                        "videoUrl", "source src", "playerConfig", "__NUXT__", "__NEXT_DATA__")}
+    print(f"::notice title={name} 影片頁::{len(page)} 字｜{json.dumps(marks)}｜伺服器：" + ",".join(media_hosts(page)))
+    for k in ("mediaDefinition", "stream_data", "dataEncodings"):
+        i = page.find(k)
+        if i >= 0:
+            snip = re.sub(r"https?:[^\"' ]+", "<網址>", page[i:i + 500])
+            print(f"::notice title={name} {k}::" + re.sub(r"\s+", " ", snip))
+
+
 def main(state_path):
+    if os.environ.get("PROBE") in PROBE_SITES:
+        for n in PROBE_SITES:
+            probe_site(n)
+        sys.exit(1)
     if os.environ.get("PROBE") == "xnxx":
         probe_xnxx()
         sys.exit(1)                                   # 故意失敗：後面「記住狀態」就不會跑
