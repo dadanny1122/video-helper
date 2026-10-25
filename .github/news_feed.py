@@ -43,6 +43,10 @@ TOPICS = [
     ("Fantia", "\"Fantia\" OR \"ファンティア\"", r"fantia|ファンティア"),
     # 日本 2022 年的 AV 新法（AV 出演被害防止・救済法）
     ("AV新法", "\"AV新法\" OR \"AV出演被害防止\"", r"av新法|av出演被害"),
+    # 整個成人網站產業的法規、封鎖、資安新聞（不限特定網站；標題要有「影響類」的字）
+    ("成人網站動態", "\"porn sites\" OR \"porn site\" OR \"adult websites\" OR \"adult sites\" OR 成人網站 OR アダルトサイト",
+     r"(porn|adult|成人|アダルト).*" + IMPACT + "|" + IMPACT + ".*(porn|adult|成人|アダルト)"),
+    ("Online Safety Act", "\"Online Safety Act\" porn OR Ofcom pornography", r"online safety|ofcom"),
     # 年齡驗證法規：最常讓成人網站在某些地區被封鎖的原因
     ("年齡驗證法規", "\"age verification\" porn OR 年齡驗證 成人網站",
      r"age.?verif|年齡驗證|年龄验证|age check"),
