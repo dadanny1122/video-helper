@@ -79,7 +79,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.16.0"
+VERSION = "1.17.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -524,15 +524,17 @@ log = setup_log()
 #   3. 拒絕一般網頁送來的請求（Origin 是 http/https 開頭的一律拒絕），只收擴充功能（暴力猴）的
 #   4. 一定要先配對：電腦版顯示 6 位數配對碼（5 分鐘內有效、猜錯 5 次就作廢），
 #      配對成功給一組長密碼；之後每次請求都要帶密碼。電腦裡只存密碼的雜湊值
-#   5. 只接受支援下載的網站（Pornhub、XVideos、XNXX、YouPorn、RedTube）的網址；只做「加入下載佇列」；每分鐘最多 30 次
+#   5. 只接受支援下載的網站（Pornhub、XVideos、XNXX、YouPorn、RedTube、xHamster、Tube8、YouJizz、SpankBang）的網址；只做「加入下載佇列」；每分鐘最多 30 次
 # ======================================================================
 
 BRIDGE_PORTS = list(range(47321, 47326))
 BRIDGE_HOSTS = ("pornhub.com", "xvideos.com", "xnxx.com", "youporn.com", "redtube.com",
-                "xhamster.com", "xhamster.desi", "xhamster2.com", "xhamster3.com", "xhamster.one")
-# 瀏覽器送來的「影片真正的位址」只接受這兩個網站自己的影片伺服器
+                "xhamster.com", "xhamster.desi", "xhamster2.com", "xhamster3.com", "xhamster.one",
+                "tube8.com", "youjizz.com", "spankbang.com")
+# 瀏覽器送來的「影片真正的位址」只接受這些網站自己的影片伺服器
 BRIDGE_MEDIA_HOSTS = ("phncdn.com", "pornhub.com", "xvideos-cdn.com", "xvideos.com", "xnxx-cdn.com", "xnxx.com",
-                      "ypncdn.com", "youporn.com", "rdtcdn.com", "redtube.com", "xhcdn.com", "xhamster.com")
+                      "ypncdn.com", "youporn.com", "rdtcdn.com", "redtube.com", "xhcdn.com", "xhamster.com",
+                      "t8cdn.com", "tube8.com", "youjizz.com", "sb-cd.com", "spankbang.com")
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
 PAIR_SECONDS = 300
@@ -856,7 +858,7 @@ class Bridge:
                         return self.send(401, {"error": "需要重新配對"})
                     url = data.get("url", "")
                     if not bridge_url_allowed(url):
-                        return self.send(400, {"error": "只接受 Pornhub、XVideos、XNXX、YouPorn、RedTube、xHamster 的影片網址"})
+                        return self.send(400, {"error": "只接受 Pornhub、XVideos、XNXX、YouPorn、RedTube、xHamster、Tube8、YouJizz、SpankBang 的影片網址"})
                     if not bridge.rate_ok():
                         return self.send(429, {"error": "太頻繁了，等一分鐘再試"})
                     h = data.get("height")
@@ -1332,7 +1334,8 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
                 if media.get("title"):
                     raw["title"] = media["title"]
                 raw["extractor_key"] = {"pornhub.com": "PornHub", "xvideos.com": "XVideos", "xnxx.com": "XNXX",
-                                        "youporn.com": "YouPorn", "redtube.com": "RedTube", "xhamster.com": "xHamster"}.get(
+                                        "youporn.com": "YouPorn", "redtube.com": "RedTube", "xhamster.com": "xHamster",
+                                        "tube8.com": "Tube8", "youjizz.com": "YouJizz", "spankbang.com": "SpankBang"}.get(
                     site_of(url), site_of(url))         # 「網站 - 標題」的檔名格式要用
                 if fmt.get("height"):                   # 影片伺服器沒寫高度 → 檔名一樣加上 [1080p]
                     for fm in raw.get("formats") or [raw]:

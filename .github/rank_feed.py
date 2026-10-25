@@ -32,9 +32,9 @@ DOMAINS = {"pornhub": "pornhub.com", "xvideos": "xvideos.com", "xhamster": "xham
 CROSS = "https://www.similarweb.com/top-websites/adult/"
 
 # Video Helper 對每個網站的支援程度（名稱用排行榜上的寫法，比對時不分大小寫）
-FULL = {"pornhub", "xvideos", "xnxx", "redtube", "youporn", "xhamster"}                      # 擋廣告＋下載
-ADBLOCK = {"eporner", "hqporner", "beeg", "yourporn", "spankbang", "xmoviesforyou", "porntrex",
-           "youjizz", "pornone", "3movs", "tube8", "porndig", "cumlouder", "txxx", "porndoe",
+FULL = {"pornhub", "xvideos", "xnxx", "redtube", "youporn", "xhamster", "tube8", "youjizz", "spankbang"}                      # 擋廣告＋下載
+ADBLOCK = {"eporner", "hqporner", "beeg", "yourporn", "xmoviesforyou", "porntrex",
+           "pornone", "3movs", "porndig", "cumlouder", "txxx", "porndoe",
            "missav", "jable", "hanime1"}   # 只擋廣告
 
 
@@ -131,7 +131,11 @@ def embed_for(rows, now_tw, tr=None, tr_link="https://tranco-list.eu/"):
         "color": 0xF9A825,
         "description": "左邊名次＝ThePornDude 評分；「流量第幾」＝同這 20 個網站照 Tranco 全球流量排名重排\n\n"
                        + "\n".join(lines) + "\n" + gap + f"\n**⬇ 可以下載的（{len(can)} 個）：**{'、'.join(can)}\n"
-                       "其他網站只擋廣告、預估時間，不提供下載。\n"
+                       "\n**各網站能用的功能：**\n"
+                       "✅ **可下載**＝擋廣告＋預估載入時間＋選畫質一鍵下載（使用者上傳為主的平台）\n"
+                       "🛡 **只擋廣告**＝擋廣告＋預估載入時間，**不提供下載**：內容多為片商作品的轉載，"
+                       "或是片商自己的網站（下載等於拿走創作者的收入）\n"
+                       "📖 安裝方法：https://dadanny1122.github.io/video-helper/manual/\n"
                        f"🕒 最後檢查：{now_tw}（每天晚上 8 點更新）\n\n"
                        f"📎 **資料來源：**[ThePornDude 影片網站排行]({PAGE})\n"
                        "　⚠ 單一網站的排行（站長自己評分，可能有廣告合作），僅供參考\n"

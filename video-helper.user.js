@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.13.0
+// @version      3.14.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -683,13 +683,23 @@
     { name: 'HQporner', match: /(^|\.)hqporner\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
     { name: 'Beeg', match: /(^|\.)beeg\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
     { name: 'YourPorn', match: /(^|\.)sxyprn\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
-    { name: 'SpankBang', match: /(^|\.)spankbang\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    // SpankBang：使用者上傳為主 → 開下載。影片位址在網頁的 stream_data 裡（跟 yt-dlp 讀的地方一樣）
+    { name: 'SpankBang', match: /(^|\.)spankbang\.com$/, features: [...ALL, 'hideAds'], ownDomains: ['sb-cd.com'],
+      isVideoPage: () => /\/video\//.test(location.pathname), findSources: findSbSources,
+      limits: ['剛加入下載，還沒在真網站測過；讀不到畫質時會「交給電腦版」'] },
     { name: 'XMoviesForYou', match: /(^|\.)xmoviesforyou\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
     { name: 'PornTrex', match: /(^|\.)porntrex\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
-    { name: 'YouJizz', match: /(^|\.)youjizz\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    // YouJizz：使用者上傳為主 → 開下載。影片位址在網頁的 dataEncodings 裡（各畫質的 MP4）
+    { name: 'YouJizz', match: /(^|\.)youjizz\.com$/, features: [...ALL, 'hideAds'],
+      isVideoPage: () => /\/videos\//.test(location.pathname), findSources: findYjSources,
+      limits: ['剛加入下載，還沒有這個網站專屬的擋廣告規則'] },
     { name: 'PornOne', match: /(^|\.)(pornone|vporn)\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
     { name: '3Movs', match: /(^|\.)3movs\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
-    { name: 'Tube8', match: /(^|\.)tube8\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
+    // Tube8：跟 YouPorn、RedTube 同一家（Aylo），影片清單一樣叫 mediaDefinition
+    { name: 'Tube8', match: /(^|\.)tube8\.com$/, features: [...ALL, 'hideAds'], ownDomains: ['t8cdn.com'],
+      adPath: /^\/_xa\/(ads|fla)/, rules: { renameKeys: ['adRollGlobalConfig'] },
+      isVideoPage: () => /mediaDefinition/.test(document.documentElement.innerHTML), findSources: findAyloSources,
+      limits: ['剛加入下載；跟 YouPorn 同一家公司，有問題請回報'] },
     { name: 'PornDig', match: /(^|\.)porndig\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
     { name: 'CumLouder', match: /(^|\.)cumlouder\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
     { name: 'TXXX', match: /(^|\.)txxx\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
@@ -773,6 +783,52 @@
       list.push({ label: h + 'p', height: h, kind: 'hls', url: new URL(d.videoUrl, location.href).href });
     }
     list.sort((a, b) => b.height - a.height);
+    return { title, list };
+  }
+
+  // ---- YouJizz：dataEncodings = [{ quality: "720", filename: "//…h264.mp4?…" }, …]（也有 .m3u8 的）----
+  async function findYjSources() {
+    const og = document.querySelector('meta[property="og:title"]');
+    const title = (og && og.content) || document.title;
+    const encs = (Array.isArray(PW.dataEncodings) && PW.dataEncodings)
+      || readJsonArrayAfter(document.documentElement.innerHTML, /dataEncodings\s*=\s*/g) || [];
+    const list = [];
+    for (const e of encs) {                          // 先收 MP4（下載最快、不用接片段）
+      const h = parseInt(e && e.quality, 10);
+      const f = e && e.filename;
+      if (!h || typeof f !== 'string' || /\.m3u8/.test(f) || list.some(x => x.height === h)) continue;
+      list.push({ label: h + 'p', height: h, kind: 'mp4', url: new URL(f, location.href).href });
+    }
+    for (const e of encs) {                          // MP4 沒有的畫質才用 HLS
+      const h = parseInt(e && e.quality, 10);
+      const f = e && e.filename;
+      if (!h || typeof f !== 'string' || !/\.m3u8/.test(f) || list.some(x => x.height === h)) continue;
+      list.push({ label: h + 'p', height: h, kind: 'hls', url: new URL(f, location.href).href });
+    }
+    list.sort((a, b) => b.height - a.height);
+    if (!list.length) list.push({ label: '交給電腦版找畫質', height: 0, kind: 'page', url: '' });
+    return { title, list };
+  }
+
+  // ---- SpankBang：stream_data = { '240p': ['網址'], '720p': [...], 'm3u8': [...] } ----
+  async function findSbSources() {
+    const og = document.querySelector('meta[property="og:title"]');
+    const title = (og && og.content) || document.title;
+    let sd = PW.stream_data;
+    if (!sd || typeof sd !== 'object') {             // 不是全域變數時，從網頁原始碼裡撈
+      sd = {};
+      const m = document.documentElement.innerHTML.match(/stream_data\s*=\s*\{([\s\S]*?)\}\s*;/);
+      if (m) for (const x of m[1].matchAll(/['"]([\w]+)['"]\s*:\s*\[\s*['"]([^'"]+)['"]/g)) sd[x[1]] = [x[2]];
+    }
+    const list = [];
+    for (const [k, v] of Object.entries(sd)) {
+      const u = Array.isArray(v) ? v[0] : v;
+      const h = k === '4k' ? 2160 : parseInt(k, 10);
+      if (!h || typeof u !== 'string' || !/^(https?:)?\/\//.test(u) || list.some(x => x.height === h)) continue;
+      list.push({ label: h + 'p', height: h, kind: /\.m3u8/.test(u) || /^m3u8/.test(k) ? 'hls' : 'mp4', url: new URL(u, location.href).href });
+    }
+    list.sort((a, b) => b.height - a.height);
+    if (!list.length) list.push({ label: '交給電腦版找畫質', height: 0, kind: 'page', url: '' });
     return { title, list };
   }
 

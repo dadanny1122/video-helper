@@ -25,13 +25,13 @@
   - 專屬規則（`rules`）：`hide`（藏元素）、`blockInlineScript`、`blockTimeout`、`blockListeners`、`renameKeys`、`setGlobals`；參考 uBlock Origin 規則庫用自己的程式重寫
   - `adPath`：網站自己網域上的廣告路徑；`ownDomains`：網站自己的影片伺服器（不要封鎖）
 - `MODULES`：功能本體（security、saveData、hideAds、autoSkip、videoStatus、estimator、listLabels、download）
-- 找影片：`findPhSources`（Pornhub：flashvars）、`findXvSources`（XVideos／XNXX：setVideoHLS）、`findAyloSources`（YouPorn／RedTube：mediaDefinitions）、`findXhSources`（xHamster：window.initials；網址被加密成 16 進位字，`xhDecodeHex` 解開＝第 1 位元組選算法 1～7、第 2～5 位元組是 seed、其餘 XOR，跟 yt-dlp 同法；網站換新算法時解不出來 → 退回「交給電腦版」）
+- 找影片：`findPhSources`（Pornhub：flashvars）、`findXvSources`（XVideos／XNXX：setVideoHLS）、`findAyloSources`（YouPorn／RedTube：mediaDefinitions）、`findYjSources`（YouJizz：dataEncodings）、`findSbSources`（SpankBang：stream_data，讀不到 → 交給電腦版）、Tube8 用 `findAyloSources`、`findXhSources`（xHamster：window.initials；網址被加密成 16 進位字，`xhDecodeHex` 解開＝第 1 位元組選算法 1～7、第 2～5 位元組是 seed、其餘 XOR，跟 yt-dlp 同法；網站換新算法時解不出來 → 退回「交給電腦版」）
 - 「🖥 送到電腦版」：`sendToDesktop` → 電腦版 `127.0.0.1:47321～47325`，要先 6 位數配對；會一起送影片真正的位址（網站會擋程式開網頁，例如 Pornhub 回 410）
 
 ## 支援的網站
 
-- **全部功能（含下載）**：Pornhub、XVideos、XNXX、YouPorn、RedTube、xHamster
-- **只擋廣告**：MissAV、Jable、Hanime1，以及 ThePornDude 排行前 20 的其他影片網站（Eporner、HQporner、Beeg、YourPorn、SpankBang、XMoviesForYou、PornTrex、YouJizz、PornOne、3Movs、Tube8、PornDig、CumLouder、TXXX、PornDoe）
+- **全部功能（含下載）**：Pornhub、XVideos、XNXX、YouPorn、RedTube、xHamster、Tube8、YouJizz、SpankBang（標準：使用者上傳為主的平台；片商轉載站、片商自己的網站不開下載）
+- **只擋廣告**：MissAV、Jable、Hanime1，以及 ThePornDude 排行前 20 的其他影片網站（Eporner、HQporner、Beeg、YourPorn、XMoviesForYou、PornTrex、PornOne、3Movs、PornDig、CumLouder、TXXX、PornDoe）
 
 ## 一定要遵守的規則
 
@@ -81,7 +81,8 @@
 
 - xHamster：v3.12.0 真網站確認可選畫質（瀏覽器自己解密）；「交給電腦版」也可下載
 - xHamster 影片前廣告會閃約 0.7 秒才被跳過（使用者說先不處理；要擋再請他貼 Console 紀錄）
-- XNXX 首頁 2026-10 改成分類頁（沒影片連結），site_check 改去 /best、/hits 找；site-check.yml 可用 probe=xnxx 診斷
+- XNXX 首頁 2026-10 改成分類頁（沒影片連結），site_check 改去 /best、/hits 找；site-check.yml 可用 probe=xnxx 診斷；probe=tube8 會看 Tube8／SpankBang／YouJizz 影片頁結構
 - YouPorn／RedTube 影片前廣告：v3.13.0 加了跟 Pornhub 一樣的 adPath /_xa/(ads|fla) + renameKeys adRollGlobalConfig，真網站確認沒廣告
+- Tube8、YouJizz、SpankBang 下載 v3.14.0／電腦版 v1.17.0 加入，待真網站測試（SpankBang 擋 GitHub 主機，是照 yt-dlp 已知寫法盲寫的）
 - 新加的「只擋廣告」網站都還沒有專屬規則（有人回報再加）
 - 手機版（Android 的 Firefox／Kiwi 可以裝暴力猴；iPhone 要另外的 App）
