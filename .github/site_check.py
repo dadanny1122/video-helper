@@ -133,8 +133,14 @@ def probe_xnxx():
     marks = {k: home.count(k) for k in ("thumb-block", "data-id", "data-eid", "/video-", "/video", "xv.", "__NEXT_DATA__",
                                         "application/json", "window.", "cf-chl", "captcha", "<noscript")}
     print("::notice title=XNXX 關鍵字::" + json.dumps(marks, ensure_ascii=False))
-    i = home.find("thumb")
-    print("::notice title=XNXX 片段::" + re.sub(r"\s+", " ", home[max(i - 200, 0):i + 600] if i >= 0 else home[:800]))
+    i = home.find('class="thumb-block')
+    print("::notice title=XNXX 縮圖框::" + re.sub(r"\s+", " ", home[i:i + 900] if i >= 0 else "找不到"))
+    for path in ("/best", "/hits", "/search/hd"):
+        try:
+            pg = get("https://www.xnxx.com" + path)
+            print(f"::notice title=XNXX {path}::{len(pg)} 字｜/video- 連結 {len(re.findall(r'href=\"/video-', pg))} 個｜thumb-block {pg.count('thumb-block')}")
+        except Exception as e:
+            print(f"::notice title=XNXX {path}::{e}")
 
 
 def main(state_path):
