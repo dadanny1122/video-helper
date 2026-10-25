@@ -14,6 +14,10 @@ on:
         description: '只測試原文日期檢查（不貼、不記）'
         type: boolean
         default: false
+      diagnose:
+        description: '診斷：列出這週找到、擋掉的新聞來源（不貼、不記）'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -32,7 +36,7 @@ jobs:
         env:
           DISCORD_NEWS_WEBHOOK: ${{ secrets.DISCORD_NEWS_WEBHOOK }}
           PYTHONIOENCODING: utf-8
-        run: python3 .github/news_feed.py .github/news_seen.json ${{ inputs.mark_only && '--mark-only' || '' }} ${{ inputs.test_verify && '--test-verify' || '' }}
+        run: python3 .github/news_feed.py .github/news_seen.json ${{ inputs.mark_only && '--mark-only' || '' }} ${{ inputs.test_verify && '--test-verify' || '' }} ${{ inputs.diagnose && '--diagnose' || '' }}
 
       - name: Remember what was posted
         run: |

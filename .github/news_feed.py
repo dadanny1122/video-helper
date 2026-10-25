@@ -285,6 +285,9 @@ def norm_title(t):
     return re.sub(r"\W+", "", t.lower())[:80]
 
 
+BLOCKED = []   # 診斷用：(網站, 來源網域, 原因, 標題)
+
+
 def collect():
     now = datetime.now(timezone.utc)
     items, errors = [], []
@@ -302,6 +305,7 @@ def collect():
                     junk = is_junk(n)
                     if junk:
                         print(f"擋掉：{n['title'][:60]}｜{n['source_url'] or n['link'][:80]}｜{junk}")
+                        BLOCKED.append((name, host_of(n.get("source_url", "")) or "?", junk.split("（")[0], n["title"][:70]))
                         continue
                     n["topic"] = name
                     items.append(n)
@@ -412,8 +416,23 @@ def test_verify():
     print(f"::notice title=日期檢查結果::{ok}/{min(6, len(items))} 則換到原文網址")
 
 
+def diagnose():
+    """診斷：這一週找到哪些、擋掉哪些（依來源網域統計），不貼、不記"""
+    items, _ = collect()
+    print(f"::notice title=會貼的::{len(items)} 則｜" + "｜".join(f"{n['topic']}:{host_of(n['source_url'])}" for n in items)[:3000])
+    cnt = {}
+    for t, h, why, _ in BLOCKED:
+        cnt[(h, why)] = cnt.get((h, why), 0) + 1
+    top = sorted(cnt.items(), key=lambda x: -x[1])[:60]
+    print("::notice title=擋掉的來源::" + "｜".join(f"{h} {n}則（{w}）" for (h, w), n in top)[:3500])
+    good = [b for b in BLOCKED if b[2] != "不是認識的新聞媒體"]
+    print("::notice title=其他原因擋掉的標題::" + "｜".join(f"{t}:{x}（{w}）" for t, _, w, x in good[:25])[:3500])
+
+
 if __name__ == "__main__":
-    if "--test-verify" in sys.argv:
+    if "--diagnose" in sys.argv:
+        diagnose()
+    elif "--test-verify" in sys.argv:
         test_verify()
     else:
         main(sys.argv[1], dry="--dry" in sys.argv, mark_only="--mark-only" in sys.argv)
