@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.14.0
+// @version      3.15.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -691,6 +691,8 @@
     { name: 'PornTrex', match: /(^|\.)porntrex\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
     // YouJizz：使用者上傳為主 → 開下載。影片位址在網頁的 dataEncodings 裡（各畫質的 MP4）
     { name: 'YouJizz', match: /(^|\.)youjizz\.com$/, features: [...ALL, 'hideAds'],
+      // 播放器（Fluid Player）的影片前廣告：蓋在影片上的透明「點了就開廣告」層、廣告的按鈕
+      rules: { hide: ['.vast_clickthrough_layer', '[id^="vast_clickthrough_layer"]', '.fluid_ad_cta'] },
       isVideoPage: () => /\/videos\//.test(location.pathname), findSources: findYjSources,
       limits: ['剛加入下載，還沒有這個網站專屬的擋廣告規則'] },
     { name: 'PornOne', match: /(^|\.)(pornone|vporn)\.com$/, features: ADBLOCK_ONLY, limits: TUBE_LIMITS },
