@@ -83,6 +83,7 @@
 - xHamster 影片前廣告會閃約 0.7 秒才被跳過（使用者說先不處理；要擋再請他貼 Console 紀錄）
 - XNXX 首頁 2026-10 改成分類頁（沒影片連結），site_check 改去 /best、/hits 找；site-check.yml 可用 probe=xnxx 診斷；probe=tube8 會看 Tube8／SpankBang／YouJizz 影片頁結構
 - YouPorn／RedTube 影片前廣告：v3.13.0 加了跟 Pornhub 一樣的 adPath /_xa/(ads|fla) + renameKeys adRollGlobalConfig，真網站確認沒廣告
-- Tube8、YouJizz、SpankBang 下載 v3.14.0／電腦版 v1.17.0 加入，待真網站測試（SpankBang 擋 GitHub 主機，是照 yt-dlp 已知寫法盲寫的）
+- Tube8、YouJizz、SpankBang 下載 v3.14.0／電腦版 v1.17.0 加入，使用者說下載都沒問題
+- YouJizz 全螢幕時推薦影片的預覽會閃一下（網站自己的功能，使用者說不用理）
 - 新加的「只擋廣告」網站都還沒有專屬規則（有人回報再加）
 - 手機版（Android 的 Firefox／Kiwi 可以裝暴力猴；iPhone 要另外的 App）
