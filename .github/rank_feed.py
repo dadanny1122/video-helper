@@ -183,6 +183,13 @@ def main(path):
     if os.environ.get("EVENT") == "schedule" and state.get("last_day") == today:
         print(f"::notice title=排行榜::今天（{today}）已經更新過，這次備用排程跳過")
         return
+    if os.environ.get("EVENT") == "schedule":         # 提早啟動的：等到台灣時間 20:00 整再貼
+        tw = timezone(timedelta(hours=8))
+        now = datetime.now(tw)
+        target = now.replace(hour=20, minute=0, second=0, microsecond=0)
+        if now < target:
+            print(f"等到 20:00（還有 {int((target - now).total_seconds())} 秒）")
+            time.sleep((target - now).total_seconds())
     rows = parse(fetch())
     if len(rows) < 10:
         print(f"::warning title=排行榜::讀不到排行（只讀到 {len(rows)} 筆），網頁可能改版了")

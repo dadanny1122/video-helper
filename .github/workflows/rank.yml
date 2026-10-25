@@ -1,13 +1,13 @@
 name: Ranking to Discord
 
-# 每天台灣時間晚上 8 點檢查 ThePornDude 的影片網站排行，更新 Discord 排行榜頻道
-# （GitHub 排程常會晚幾分鐘，所以設 19:55 開始跑，大約 8 點貼出）
+# 每天台灣時間晚上 8 點整更新 Discord 排行榜頻道
+# GitHub 排程常常晚到、甚至跳過 → 18:31、19:13、19:47 提早啟動，程式等到 20:00 整才貼；
+# 當天已經貼過的就跳過（同一時間只會有一個在跑）
 on:
   schedule:
-    - cron: '55 11 * * *'   # UTC 11:55 = 台灣 19:55
-    # GitHub 忙的時候排程會被延後或直接跳過 → 多兩個備用時間；今天已經貼過就自動跳過
-    - cron: '25 12 * * *'   # 台灣 20:25
-    - cron: '55 12 * * *'   # 台灣 20:55
+    - cron: '31 10 * * *'   # 台灣 18:31
+    - cron: '13 11 * * *'   # 台灣 19:13
+    - cron: '47 11 * * *'   # 台灣 19:47
   workflow_dispatch:
     inputs:
       repost:
@@ -22,11 +22,17 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: rank
+  cancel-in-progress: false
+
 jobs:
   rank:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main   # 拿最新的狀態檔（才知道今天貼過了沒）
 
       - name: Update the ranking message
         env:
