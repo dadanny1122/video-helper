@@ -62,12 +62,16 @@ def media_hosts(page):
 
 
 def check_xnxx():
-    """XNXX 跟 XVideos 同一家，播放器寫法一樣（setVideoHLS）"""
-    home = get("https://www.xnxx.com/")
-    m = re.search(r'href="(/video-[a-z0-9]+/[^"]+)"', home)
+    """XNXX 跟 XVideos 同一家，播放器寫法一樣（setVideoHLS）
+    2026-10 起首頁變成「分類頁」（縮圖框是空的，靠 JS 填），沒有影片連結 → 改去 /best、/hits 找"""
+    for path in ("/", "/best", "/hits"):
+        home = get("https://www.xnxx.com" + path)
+        m = re.search(r'href="(/video-[a-z0-9]+/[^"]+)"', home)
+        if m:
+            break
     if not m:
         sample = sorted(set(re.findall(r'href=["\']?(/[^"\' >]*video[^"\' >]{0,30})', home, re.I)))[:8]
-        return "blocked" if BLOCKED_HINTS.search(home) else "broken", f"首頁找不到影片連結（{len(home)} 字，連結例：{sample}）"
+        return "blocked" if BLOCKED_HINTS.search(home) else "broken", f"首頁、/best、/hits 都找不到影片連結（{len(home)} 字，連結例：{sample}）"
     page = get("https://www.xnxx.com" + m.group(1))
     if not re.search(r"setVideo(UrlHigh|UrlLow|HLS)", page):
         return "blocked" if BLOCKED_HINTS.search(page) else "broken", "影片頁找不到 setVideoHLS"
