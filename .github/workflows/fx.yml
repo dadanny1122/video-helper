@@ -3,11 +3,15 @@ name: Exchange rates to Discord
 # 平日台灣時間 9:00～16:30（銀行營業時間）每 30 分鐘更新一次匯率表；大漲大跌另發提醒
 on:
   schedule:
-    - cron: '7,37 1-8 * * 1-5'   # UTC 1～8 點 = 台灣 9～16 點
+    - cron: '7,37 1-8 * * 1-5'   # UTC 1～8 點 = 台灣 9～16 點（16:37 那次會順便發「今日匯率總結」）
   workflow_dispatch:
     inputs:
       probe:
         description: '診斷：看台銀歷史資料的格式'
+        type: boolean
+        default: false
+      summary:
+        description: '馬上發一則「今日匯率總結」（含走勢圖）'
         type: boolean
         default: false
       preview:
@@ -29,11 +33,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
+      - name: Install chart library
+        run: pip install -q matplotlib
       - name: Update the rate table
         env:
           DISCORD_FX_WEBHOOK: ${{ secrets.DISCORD_FX_WEBHOOK }}
           PREVIEW: ${{ inputs.preview }}
           PROBE: ${{ inputs.probe }}
+          SUMMARY: ${{ inputs.summary }}
           PYTHONIOENCODING: utf-8
         run: python3 .github/fx_feed.py .github/fx_state.json
       - name: Remember the rates
