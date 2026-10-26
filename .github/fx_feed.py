@@ -337,8 +337,8 @@ def main(path):
 
 
 def probe():
-    for u in ("https://rate.bot.com.tw/xrt/flcsv/0/2023-01/USD", "https://rate.bot.com.tw/xrt/flcsv/0/2020-06/JPY",
-              "https://rate.bot.com.tw/xrt/flcsv/0/LTM/USD"):
+    for u in ("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXTAUS",
+              "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXJPUS"):
         try:
             with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": UA}), timeout=30) as r:
                 t = r.read().decode("utf-8-sig", "ignore").splitlines()
