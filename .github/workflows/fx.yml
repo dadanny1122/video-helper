@@ -6,6 +6,10 @@ on:
     - cron: '7,37 1-8 * * 1-5'   # UTC 1～8 點 = 台灣 9～16 點
   workflow_dispatch:
     inputs:
+      probe:
+        description: '診斷：看台銀歷史資料的格式'
+        type: boolean
+        default: false
       preview:
         description: '只預覽（印在 Actions 頁面），不發到 Discord'
         type: boolean
@@ -29,6 +33,7 @@ jobs:
         env:
           DISCORD_FX_WEBHOOK: ${{ secrets.DISCORD_FX_WEBHOOK }}
           PREVIEW: ${{ inputs.preview }}
+          PROBE: ${{ inputs.probe }}
           PYTHONIOENCODING: utf-8
         run: python3 .github/fx_feed.py .github/fx_state.json
       - name: Remember the rates

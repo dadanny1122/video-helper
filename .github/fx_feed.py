@@ -173,5 +173,18 @@ def main(path):
     print(f"::notice title=匯率::已更新；提醒 {len(alerts)} 則")
 
 
+def probe():
+    for u in ("https://rate.bot.com.tw/xrt/flcsv/0/L3M/USD", "https://rate.bot.com.tw/xrt/flcsv/0/L3M/JPY"):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": UA}), timeout=30) as r:
+                t = r.read().decode("utf-8-sig", "ignore").splitlines()
+            print(f"::notice title=歷史 {u[-3:]}::{len(t)} 行｜" + " ⏎ ".join(t[:3]) + " ⏎ … ⏎ " + t[-1])
+        except Exception as e:
+            print(f"::notice title=歷史 {u[-3:]}::{e}")
+
+
 if __name__ == "__main__":
+    if os.environ.get("PROBE") == "true":
+        probe()
+        sys.exit(1)
     main(sys.argv[1])
