@@ -221,6 +221,16 @@ def long_series(code, twd):
     return out
 
 
+def stats(prices):
+    """一串每日價格 → 每日報酬的標準差（log）"""
+    import math
+    rets = [math.log(b / a) for a, b in zip(prices, prices[1:]) if a and b]
+    if len(rets) < 10:
+        return None
+    mu = sum(rets) / len(rets)
+    return (sum((r - mu) ** 2 for r in rets) / (len(rets) - 1)) ** 0.5
+
+
 def vol_range(prices, m):
     """用最近 30 天每天晃動的幅度，推算未來 5 個營業日約 68% 機會落在的範圍"""
     import math
@@ -251,7 +261,10 @@ def analog(long, recent_prices):
             break
     outs = sorted(long[e + FC_DAYS] / long[e] - 1 for e in picked)
     up = sum(1 for o in outs if o > 0)
-    return {"n": len(outs), "up": up, "down": len(outs) - up, "median": outs[len(outs) // 2] * 100}
+    n = len(outs)
+    q = lambda f: outs[min(int(f * (n - 1) + 0.5), n - 1)] * 100
+    return {"n": n, "up": up, "down": n - up, "median": q(0.5), "mean": sum(outs) / n * 100,
+            "p25": q(0.25), "p75": q(0.75)}
 
 
 def forecasts(rates, hists):
@@ -267,6 +280,11 @@ def forecasts(rates, hists):
             continue
         prices = [x[1] for x in h] + [m]
         f = {"m": m, "range": vol_range(prices, m)}
+        sd = stats(prices)
+        if sd:
+            import math
+            k = sd * FC_DAYS ** 0.5
+            f["r95"] = (m * math.exp(-1.96 * k), m * math.exp(1.96 * k))
         if twd:
             try:
                 f["analog"] = analog(long_series(code, twd), prices)
@@ -341,42 +359,65 @@ def chart(rates, hists, path):
 
 def post_summary(base, rates, prev, hists, today, fcs=None, accuracy=""):
     """每日收盤總結：今天漲最多、跌最多、30 天最便宜／最貴的，附走勢圖"""
-    moves = []
-    for code, r in rates.items():
-        m, p = mid(r), prev.get(code)
-        if m and p:
-            moves.append(((m - p) / p * 100, code))
-    moves.sort()
-    lines = []
-    if moves:
-        up, dn = moves[-1], moves[0]
-        lines.append(f"🔺 漲最多：{WATCH[up[1]][1]} {WATCH[up[1]][0]} {up[0]:+.2f}%")
-        lines.append(f"🔻 跌最多：{WATCH[dn[1]][1]} {WATCH[dn[1]][0]} {dn[0]:+.2f}%")
-    pos = []
-    for code, r in rates.items():
-        m, h = mid(r), hists.get(code) or []
-        if m and h:
-            pos.append((position(m, h)[1], code))
-    cheap = [c for p, c in sorted(pos) if p <= 0.2]
-    dear = [c for p, c in sorted(pos, reverse=True) if p >= 0.8]
-    if cheap:
-        lines.append(f"🟢 {DAYS} 天內偏便宜：" + "、".join(f"{WATCH[c][1]}{WATCH[c][0]}" for c in cheap))
-    if dear:
-        lines.append(f"🔴 {DAYS} 天內偏貴：" + "、".join(f"{WATCH[c][1]}{WATCH[c][0]}" for c in dear))
+    def pad(x, w):
+        return str(x).rjust(w)
+    # ── 表 1：行情（全部貨幣）──
+    rows = [f"{'CCY':<4}{pad('Mid', 9)}{pad('1D%', 7)}{pad('30D Lo', 9)}{pad('30D Hi', 9)}{pad('Pctl', 6)}{pad('Vol%', 6)}"]
+    moves, pos = [], []
+    for code in WATCH:
+        r = rates.get(code)
+        m = mid(r) if r else None
+        if not m:
+            continue
+        h = hists.get(code) or []
+        p = prev.get(code)
+        d1 = (m - p) / p * 100 if p else None
+        if d1 is not None:
+            moves.append((d1, code))
+        vals = [x[1] for x in h] + [m]
+        pct = position(m, h)[1] * 100 if h else None
+        if pct is not None:
+            pos.append((pct, code))
+        sd = stats(vals)
+        vol = sd * 252 ** 0.5 * 100 if sd else None
+        rows.append(f"{code:<4}{pad(fmt(m), 9)}{pad('—' if d1 is None else f'{d1:+.2f}', 7)}"
+                    f"{pad(fmt(min(vals)), 9)}{pad(fmt(max(vals)), 9)}"
+                    f"{pad('—' if pct is None else f'{pct:.0f}', 6)}{pad('—' if vol is None else f'{vol:.1f}', 6)}")
+    lines = [f"**📋 行情**（1 外幣 = 台幣；台銀即期中間價）", "```", *rows, "```",
+             f"Mid＝即期買賣中間價｜1D%＝跟前一營業日比｜30D Lo/Hi＝近 {DAYS} 天最低／最高｜"
+             f"Pctl＝現價在近 {DAYS} 天的百分位（0＝最低、100＝最高）｜Vol%＝近 {DAYS} 天年化波動率"]
+    # ── 表 2：預報 ──
     if fcs:
-        lines.append(f"\n**🔮 未來 {FC_DAYS} 個營業日預報**（升＝外幣變貴、台幣變薄）")
+        fr = [f"{'CCY':<4}{pad('68% range', 17)}{pad('95% range', 17)}"]
+        ar = [f"{'CCY':<4}{pad('Up/N', 7)}{pad('Mean%', 7)}{pad('Med%', 7)}{pad('P25%', 7)}{pad('P75%', 7)}"]
         for code, f in fcs.items():
-            zh, flag = WATCH[code][0], WATCH[code][1]
-            parts = []
-            if f.get("range"):
-                parts.append(f"68% 機會在 {fmt(f['range'][0])}～{fmt(f['range'][1])}")
+            r68, r95 = f.get("range"), f.get("r95")
+            fr.append(f"{code:<4}{pad(f'{fmt(r68[0])}-{fmt(r68[1])}' if r68 else '—', 17)}"
+                      f"{pad(f'{fmt(r95[0])}-{fmt(r95[1])}' if r95 else '—', 17)}")
             a = f.get("analog")
             if a:
-                parts.append(f"過去 {LONG_YEARS} 年最像的 {a['n']} 段：之後 {a['up']} 次升、{a['down']} 次貶（中間值 {a['median']:+.2f}%）")
-            lines.append(f"{flag} {zh}：" + "｜".join(parts))
-        lines.append("\n範圍＝用最近 30 天每天晃動的幅度推算；相似走勢＝拿最近 10 天的形狀去比對過去（FRED 資料）\n"
-                     "歷史不一定會重演，所以每次預報都會在 5 個營業日後對答案、公開準度\n" + accuracy)
-    lines.append(f"\n📎 資料來源：[臺灣銀行牌告匯率]({PAGE})、[FRED 美國聯準會匯率](https://fred.stlouisfed.org/categories/94)｜只是整理數字，不是買賣建議")
+                ar.append(f"{code:<4}{pad(f'{a['up']}/{a['n']}', 7)}{pad(f'{a['mean']:+.2f}', 7)}"
+                          f"{pad(f'{a['median']:+.2f}', 7)}{pad(f'{a['p25']:+.2f}', 7)}{pad(f'{a['p75']:+.2f}', 7)}")
+        lines += ["", f"**📐 {FC_DAYS} 個營業日價格區間**（依近 {DAYS} 天波動率）", "```", *fr, "```"]
+        if len(ar) > 1:
+            lines += [f"**🔁 歷史相似走勢**（近 {W} 日形狀 vs 過去 {LONG_YEARS} 年，取最像 {K} 段，之後 {FC_DAYS} 日報酬）",
+                      "```", *ar, "```",
+                      "Up/N＝之後上漲的段數／總段數｜Mean/Med＝平均／中位數報酬｜P25/P75＝四分位（一半的結果落在這之間）"]
+        lines.append(accuracy)
+    # ── 解讀（另外放，跟數據分開）──
+    notes = []
+    if len(moves) >= 2:
+        moves.sort()
+        notes.append(f"漲最多 {moves[-1][1]} {moves[-1][0]:+.2f}%｜跌最多 {moves[0][1]} {moves[0][0]:+.2f}%")
+    hi_ = [c for p_, c in sorted(pos, reverse=True) if p_ >= 80]
+    lo_ = [c for p_, c in sorted(pos) if p_ <= 20]
+    if hi_:
+        notes.append(f"處於近 {DAYS} 天高檔（Pctl≥80）：" + "、".join(hi_))
+    if lo_:
+        notes.append(f"處於近 {DAYS} 天低檔（Pctl≤20）：" + "、".join(lo_))
+    if notes:
+        lines += ["", "**💬 簡短解讀**", *notes]
+    lines.append(f"\n📎 資料：[臺灣銀行牌告匯率]({PAGE})、[FRED](https://fred.stlouisfed.org/categories/94)｜數據整理，非買賣建議")
     embed = {"title": f"📊 今日匯率總結（{today}）", "url": PAGE, "color": 0x1565C0, "description": "\n".join(lines)}
     img = "/tmp/fx.png"
     if chart(rates, hists, img):
