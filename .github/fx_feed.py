@@ -337,13 +337,14 @@ def main(path):
 
 
 def probe():
-    for u in ("https://rate.bot.com.tw/xrt/flcsv/0/L3M/USD", "https://rate.bot.com.tw/xrt/flcsv/0/L3M/JPY"):
+    for u in ("https://rate.bot.com.tw/xrt/flcsv/0/2023-01/USD", "https://rate.bot.com.tw/xrt/flcsv/0/2020-06/JPY",
+              "https://rate.bot.com.tw/xrt/flcsv/0/LTM/USD"):
         try:
             with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": UA}), timeout=30) as r:
                 t = r.read().decode("utf-8-sig", "ignore").splitlines()
-            print(f"::notice title=歷史 {u[-3:]}::{len(t)} 行｜" + " ⏎ ".join(t[:3]) + " ⏎ … ⏎ " + t[-1])
+            print(f"::notice title=歷史 {u[-11:]}::{len(t)} 行｜" + " ⏎ ".join(t[:3]) + " ⏎ … ⏎ " + t[-1])
         except Exception as e:
-            print(f"::notice title=歷史 {u[-3:]}::{e}")
+            print(f"::notice title=歷史 {u[-11:]}::{e}")
 
 
 if __name__ == "__main__":
