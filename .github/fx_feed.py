@@ -25,6 +25,21 @@ WATCH = {"USD": ("美金", "🇺🇸"), "EUR": ("歐元", "🇪🇺"), "JPY": ("
          "KRW": ("韓元", "🇰🇷")}
 ALERT_PCT = 0.5          # 跟前一個營業日比，漲跌超過 0.5% 就另發提醒
 TW = timezone(timedelta(hours=8))
+DAY_PAGE = "https://rate.bot.com.tw/xrt/quote/day/{}"   # 台銀官方：這種貨幣今天每一次掛牌的時間和價格
+
+
+def quote_time():
+    """台銀網頁上的「牌價最新掛牌時間」；讀不到回傳 None"""
+    import re
+    try:
+        req = urllib.request.Request(PAGE, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            html = r.read(2_000_000).decode("utf-8", "ignore")
+        m = re.search(r"掛牌時間[^0-9]{0,80}(\d{4}/\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2})", html)
+        return m.group(1) if m else None
+    except Exception as e:
+        print(f"讀不到掛牌時間：{e}")
+        return None
 
 
 def fetch():
@@ -58,7 +73,7 @@ def fmt(v):
     return "—" if v is None else (f"{v:.4f}" if v < 1 else f"{v:.3f}" if v < 10 else f"{v:.2f}")
 
 
-def embed_for(rates, prev, now_tw):
+def embed_for(rates, prev, now_tw, qtime=None):
     lines = []
     for code, (zh, flag) in WATCH.items():
         r = rates.get(code)
@@ -71,17 +86,20 @@ def embed_for(rates, prev, now_tw):
             arrow = "🔺" if pct > 0.05 else "🔻" if pct < -0.05 else "▫"
             chg = f"　{arrow} {pct:+.2f}%"
         tv = f"https://www.tradingview.com/symbols/{code}TWD/"
-        lines.append(f"{flag} **{zh} {code}**{chg}　[走勢圖]({tv})\n"
+        lines.append(f"{flag} **{zh} {code}**{chg}　[今日各時段牌價]({DAY_PAGE.format(code)})｜[走勢圖]({tv})\n"
                      f"　現金 買 {fmt(r['cash_buy'])}／賣 {fmt(r['cash_sell'])}　"
                      f"即期 買 {fmt(r['spot_buy'])}／賣 {fmt(r['spot_sell'])}")
     return {
         "title": "💱 外幣匯率（1 外幣 = 多少台幣）",
         "url": PAGE,
         "color": 0x2E7D32,
-        "description": "\n".join(lines) + "\n\n"
+        "description": f"📎 **資料來源：[臺灣銀行牌告匯率]({PAGE})**（官方公開資料）\n"
+                       f"🏦 台銀掛牌時間：**{qtime or '讀不到，請點來源確認'}**\n"
+                       "⏰ 想知道某個時段的實際價格 → 點各貨幣的「今日各時段牌價」（台銀官方，每次掛牌都有記錄）\n\n"
+                       + "\n".join(lines) + "\n\n"
                        "「買」＝銀行跟你買（你賣外幣拿到的台幣）；「賣」＝銀行賣你（你買外幣要付的台幣）\n"
                        "🔺🔻＝跟前一個營業日比（用即期中間價）\n"
-                       f"📎 來源：[臺灣銀行牌告匯率]({PAGE})；走勢圖：TradingView\n"
+                       "📈 走勢圖：TradingView（國際市場價，跟銀行牌價會有一點差距）\n"
                        f"🕒 最後更新：{now_tw}（平日 9:00～16:30 每 30 分鐘）",
     }
 
@@ -120,7 +138,8 @@ def main(path):
         state["day"] = today
         state["alerted"] = []
     prev = state.get("prev", {})
-    e = embed_for(rates, prev, now_tw)
+    qtime = quote_time()
+    e = embed_for(rates, prev, now_tw, qtime)
     print("::notice title=匯率::" + "｜".join(f"{c}={fmt(mid(r))}" for c, r in rates.items()))
     hook = os.environ.get("DISCORD_FX_WEBHOOK", "").strip()
     if os.environ.get("PREVIEW") == "true" or not hook:
