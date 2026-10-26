@@ -62,10 +62,10 @@
 
 ## 外部鬧鐘（重要）
 
-GitHub 自己的排程（cron）常延遲幾小時或直接跳過（排行榜的 cron 一次都沒自己跑過）。所以**匯率、排行榜改用 cron-job.org 當鬧鐘**：
+GitHub 自己的排程（cron）常延遲幾小時或直接跳過（排行榜的 cron 一次都沒自己跑過）。所以**匯率、排行榜、新聞改用 cron-job.org 當鬧鐘**：
 時間到就 POST `https://api.github.com/repos/dadanny1122/video-helper/actions/workflows/{fx|rank}.yml/dispatches`，
 body `{"ref":"main","inputs":{"wait":"true"}}`，Header 帶使用者的 fine-grained token（只有這個 repo 的 Actions 讀寫）。
-匯率 `55 8-16 * * 1-5`、排行榜 `55 19 * * *`（Asia/Taipei）。GitHub 的 cron 留著當備用，靠 slot／last_day 不會重複發。
+匯率 `55 8-16 * * 1-5`、排行榜 `55 19 * * *`、新聞 `23 2,5,8,11,14,17,20,23 * * *`（body 只要 `{"ref":"main"}`，不用 wait）（Asia/Taipei）。GitHub 的 cron 留著當備用，靠 slot／last_day 不會重複發。
 確認鬧鐘有效：看 runs 的 event＝workflow_dispatch、時間在 :55 附近。token 不要經過 AI 對話。
 
 ## 常見任務
