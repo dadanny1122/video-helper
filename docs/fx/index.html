@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>匯率頻道說明書</title>
+<style>
+  :root { --bg:#fafaf7; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#e4e3dc; --accent:#c62828; --blue:#1565c0; --tip:#eef5ee; --warn:#fff6e5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#151514; --fg:#ecebe6; --muted:#a3a29b; --card:#1f1f1d; --line:#33332f; --accent:#ef5350; --blue:#64b5f6; --tip:#1d2a1f; --warn:#2e2715; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.75 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:32px 16px 80px; }
+  h1 { font-size:30px; margin:0 0 4px; }
+  h2 { font-size:21px; margin:44px 0 10px; padding-top:12px; border-top:1px solid var(--line); }
+  h3 { font-size:17px; margin:24px 0 6px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  nav { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 16px; }
+  nav a { display:inline-block; margin:2px 12px 2px 0; }
+  a { color:var(--blue); }
+  .parts { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:14px 0; }
+  @media (max-width:560px) { .parts { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .card .t { display:block; font-size:17px; font-weight:700; margin-bottom:4px; }
+  ol, ul { padding-left:22px; } li { margin:4px 0; }
+  .tip, .warn { border-radius:8px; padding:10px 14px; margin:12px 0; }
+  .tip { background:var(--tip); } .warn { background:var(--warn); }
+  .k { display:inline-block; padding:0 7px; border-radius:5px; font-size:14px; color:#fff; background:var(--accent); white-space:nowrap; }
+  .k.b { background:#1565c0; } .k.g { background:#555; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  td, th { border-bottom:1px solid var(--line); padding:8px 6px; text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  details { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:8px 14px; margin:8px 0; }
+  summary { cursor:pointer; font-weight:600; }
+  footer { margin-top:48px; color:var(--muted); font-size:14px; }
+</style>
+<style> code, pre { font-family: ui-monospace, Consolas, monospace; font-size: 14px; }
+pre { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; } </style>
+</head>
+<body><main>
+<h1>💱 匯率頻道說明書</h1>
+<p class="sub">Discord #匯率 裡每一則訊息、每一個數字怎麼看。看完大約 5 分鐘。</p>
+<nav>
+  <a href="#overview">1. 頻道裡有什麼</a><a href="#table">2. 匯率表</a><a href="#small">3. 小方向（盤中）</a>
+  <a href="#big">4. 大方向（每日總結）</a><a href="#score">5. 準不準</a><a href="#source">6. 資料來源</a><a href="#limit">7. 限制</a>
+</nav>
+
+<div class="warn">⚠ 這裡只整理數字，<b>不是投資或買賣建議</b>。換匯、投資請自己判斷。</div>
+
+<h2 id="overview">1. 頻道裡有什麼</h2>
+<table>
+  <tr><th>訊息</th><th>什麼時候</th><th>內容</th></tr>
+  <tr><td>💱 匯率表</td><td>平日 9:00～16:30，每 30 分鐘<b>修改同一則</b></td><td>9 種外幣的牌價、換匯試算、便宜或貴、盤中變化</td></tr>
+  <tr><td>⚡ 小方向提醒</td><td>盤中有異常時才發</td><td>盤中漲跌超過平常一天的幅度、跑出 5 日預報區間</td></tr>
+  <tr><td>⚠ 匯率大變動</td><td>跟前一營業日比超過 0.5% 時</td><td>哪個貨幣、漲跌多少</td></tr>
+  <tr><td>📊 今日匯率總結</td><td>每天 16:30 後一次</td><td>數據表格、5 日預報、歷史相似走勢、30 天走勢圖</td></tr>
+</table>
+<p>所有價格都是「<b>1 外幣 = 多少台幣</b>」。<b>升</b>＝外幣變貴（台幣變薄），<b>貶</b>＝外幣變便宜。</p>
+
+<h2 id="table">2. 匯率表（每 30 分鐘更新）</h2>
+<h3>現金／即期、買／賣</h3>
+<ul>
+  <li><b>買</b>＝銀行跟你買：你<b>把外幣賣給銀行</b>，拿到多少台幣</li>
+  <li><b>賣</b>＝銀行賣給你：你<b>跟銀行買外幣</b>，要付多少台幣</li>
+  <li><b>現金</b>＝換鈔票（出國用）；<b>即期</b>＝帳戶裡轉換（外幣帳戶）。現金的價差比較大</li>
+</ul>
+<h3>其他標記</h3>
+<table>
+  <tr><th>標記</th><th>意思</th></tr>
+  <tr><td>🔺🔻 ±%</td><td>跟前一個營業日比（用即期買賣的中間價）</td></tr>
+  <tr><td>🟢 偏便宜／🟡 普通／🔴 偏貴</td><td>現在的價格在最近 30 天裡排第幾。最便宜的 20% 是 🟢，最貴的 20% 是 🔴。對「要換外幣的人」來說，🟢 比較划算</td></tr>
+  <tr><td>💵 1 萬台幣換現鈔 →</td><td>用現金賣出價算，1 萬台幣換得到多少外幣；括號是跟 30 天平均比，多換或少換多少</td></tr>
+  <tr><td>⏱ 今日 …</td><td>小方向，見下一節</td></tr>
+  <tr><td>各時段牌價</td><td>台銀官方頁面：今天每一次改價的時間和價格。想知道「下午 2 點換是多少」就點這裡</td></tr>
+  <tr><td>走勢</td><td>TradingView 的國際市場價，跟銀行牌價會有一點差距</td></tr>
+</table>
+
+<h2 id="small">3. 小方向（盤中，每 30 分鐘）</h2>
+<p>看<b>今天之內</b>的變化。匯率表每種貨幣最後一行：</p>
+<pre>⏱ 今日 09:07→14:37 +0.21%｜近 2 小時 +0.08%｜盤中 32.41～32.55｜平常一天 ±0.31%</pre>
+<ul>
+  <li><b>今日 開盤→現在</b>：今天第一次記錄到現在漲跌多少</li>
+  <li><b>近 2 小時</b>：最近 2 小時的漲跌，看短時間的方向</li>
+  <li><b>盤中</b>：今天到目前的最低～最高</li>
+  <li><b>平常一天 ±</b>：最近 30 天，一天通常晃動多少（1 個標準差）。拿來比對今天算不算「動很大」</li>
+</ul>
+<h3>⚡ 小方向提醒，兩種情況會發（同一種貨幣、同一種提醒一天只發一次）</h3>
+<ol>
+  <li><b>盤中波動超過平常一天</b>：例如今天已經 +0.42%，但平常一天只晃 ±0.31%</li>
+  <li><b>跑出 5 日預報區間</b>：價格超出最近一次總結預報的 68% 區間上緣或下緣，代表走勢比預期激烈</li>
+</ol>
+
+<h2 id="big">4. 大方向（每日總結，16:30 後）</h2>
+<h3>📋 行情</h3>
+<table>
+  <tr><th>欄位</th><th>意思</th></tr>
+  <tr><td>Mid</td><td>即期買賣中間價</td></tr>
+  <tr><td>1D%</td><td>跟前一營業日比</td></tr>
+  <tr><td>30D Lo / Hi</td><td>近 30 天最低／最高</td></tr>
+  <tr><td>Pctl</td><td>現價在近 30 天的百分位：0＝最低、100＝最高</td></tr>
+  <tr><td>Vol%</td><td>近 30 天年化波動率：數字越大，晃得越厲害</td></tr>
+</table>
+<h3>📐 5 個營業日價格區間</h3>
+<p>用近 30 天每天晃動的幅度推算：未來 5 個營業日，大約 <b>68%</b> 的機會落在第一個區間、<b>95%</b> 落在第二個。只說範圍，不猜方向。</p>
+<h3>🔁 歷史相似走勢</h3>
+<p>把最近 10 個營業日的「形狀」，拿去跟過去 3 年每一段 10 天比，找出最像的 20 段（互不重疊），看它們<b>之後 5 天</b>怎麼走。</p>
+<table>
+  <tr><th>欄位</th><th>意思</th></tr>
+  <tr><td>Up/N</td><td>之後上漲的段數／總段數。例：13/20＝20 次裡 13 次上漲</td></tr>
+  <tr><td>Mean% / Med%</td><td>之後 5 天報酬的平均／中位數</td></tr>
+  <tr><td>P25% / P75%</td><td>四分位：一半的結果落在這兩個數字之間</td></tr>
+</table>
+<div class="tip">💡 Up/N 接近一半（例如 10/20）＝歷史上類似情況<b>沒有明顯方向</b>，等於沒有訊號。</div>
+
+<h2 id="score">5. 準不準</h2>
+<p>每天的預報都會存起來，<b>5 個營業日後自動對答案</b>，總結裡公開：</p>
+<ul>
+  <li><b>範圍命中</b>：實際價格有沒有落在 68% 區間裡。理論上應該約 68%</li>
+  <li><b>方向</b>：相似走勢多數說升（或貶），結果有沒有對。丟硬幣約 50%，<b>明顯超過 50% 才代表有用</b></li>
+</ul>
+<p>歷史可能重演，也可能不會。這個記錄就是讓數據自己說話。</p>
+
+<h2 id="source">6. 資料來源</h2>
+<ul>
+  <li><a href="https://rate.bot.com.tw/xrt?Lang=zh-TW">臺灣銀行牌告匯率</a>：所有價格、近 3 個月每日牌價（官方公開資料）</li>
+  <li><a href="https://fred.stlouisfed.org/categories/94">FRED（美國聯準會）</a>：過去 3 年的每日匯率，只用來找「歷史相似走勢」</li>
+  <li>TradingView：只附走勢圖連結，不抓它的資料</li>
+</ul>
+
+<h2 id="limit">7. 限制</h2>
+<ul>
+  <li>短期匯率很難預測，學術研究普遍發現複雜模型常常贏不了「明天跟今天一樣」。所以這裡給的是<b>範圍和統計</b>，不是答案</li>
+  <li>台銀只在營業時間改價，晚上和週末不會更新</li>
+  <li>GitHub 排程偶爾會晚到或跳過，更新時間可能會差幾分鐘</li>
+  <li>FRED 會晚大約一週更新，所以相似走勢的資料庫不包含最近一週</li>
+</ul>
+<footer>Video Helper 匯率機器人｜<a href="https://github.com/dadanny1122/video-helper">GitHub</a></footer>
+</main></body></html>

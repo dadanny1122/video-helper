@@ -25,7 +25,8 @@ WATCH = {"USD": ("美金", "🇺🇸"), "EUR": ("歐元", "🇪🇺"), "JPY": ("
          "KRW": ("韓元", "🇰🇷")}
 ALERT_PCT = 0.5          # 跟前一個營業日比，漲跌超過 0.5% 就另發提醒
 TW = timezone(timedelta(hours=8))
-DAY_PAGE = "https://rate.bot.com.tw/xrt/quote/day/{}"   # 台銀官方：這種貨幣今天每一次掛牌的時間和價格
+DAY_PAGE = "https://rate.bot.com.tw/xrt/quote/day/{}"
+DOC = "https://dadanny1122.github.io/video-helper/fx/"     # 匯率頻道說明書   # 台銀官方：這種貨幣今天每一次掛牌的時間和價格
 
 
 def quote_time():
@@ -118,8 +119,9 @@ def fmt(v):
     return "—" if v is None else (f"{v:.4f}" if v < 1 else f"{v:.3f}" if v < 10 else f"{v:.2f}")
 
 
-def embed_for(rates, prev, now_tw, qtime=None, hists=None):
+def embed_for(rates, prev, now_tw, qtime=None, hists=None, small=None):
     hists = hists or {}
+    small = small or {}
     lines = []
     for code, (zh, flag) in WATCH.items():
         r = rates.get(code)
@@ -146,7 +148,8 @@ def embed_for(rates, prev, now_tw, qtime=None, hists=None):
             extra += f"\n　💵 {CALC_TWD // 10000} 萬台幣換現鈔 → **{money(got, code)} {zh}**{diff}"
         lines.append(f"{flag} **{zh} {code}**{chg}　[各時段牌價]({DAY_PAGE.format(code)})｜[走勢]({tv})\n"
                      f"　現金 買 {fmt(r['cash_buy'])}／賣 {fmt(r['cash_sell'])}　"
-                     f"即期 買 {fmt(r['spot_buy'])}／賣 {fmt(r['spot_sell'])}" + extra)
+                     f"即期 買 {fmt(r['spot_buy'])}／賣 {fmt(r['spot_sell'])}" + extra
+                     + (f"\n　{small[code]}" if small.get(code) else ""))
     return {
         "title": "💱 外幣匯率（1 外幣 = 多少台幣）",
         "url": PAGE,
@@ -159,7 +162,9 @@ def embed_for(rates, prev, now_tw, qtime=None, hists=None):
                        "🔺🔻＝跟前一個營業日比（用即期中間價）\n"
                        f"🟢🟡🔴＝現在的價格在最近 {DAYS} 天裡算便宜還是貴（給要換外幣的人參考，不是買賣建議）\n"
                        f"💵＝{CALC_TWD:,} 台幣用現鈔賣出價換得到多少\n"
+                       "⏱＝小方向（今天盤中）：開盤到現在、近 2 小時漲跌、盤中高低、平常一天晃多少\n"
                        "📈 走勢圖：TradingView（國際市場價，跟銀行牌價會有一點差距）\n"
+                       f"📖 [每個數字怎麼看（說明書）]({DOC})\n"
                        f"🕒 最後更新：{now_tw}（平日 9:00～16:30 每 30 分鐘）",
     }
 
@@ -417,7 +422,7 @@ def post_summary(base, rates, prev, hists, today, fcs=None, accuracy=""):
         notes.append(f"處於近 {DAYS} 天低檔（Pctl≤20）：" + "、".join(lo_))
     if notes:
         lines += ["", "**💬 簡短解讀**", *notes]
-    lines.append(f"\n📎 資料：[臺灣銀行牌告匯率]({PAGE})、[FRED](https://fred.stlouisfed.org/categories/94)｜數據整理，非買賣建議")
+    lines.append(f"\n📎 資料：[臺灣銀行牌告匯率]({PAGE})、[FRED](https://fred.stlouisfed.org/categories/94)｜數據整理，非買賣建議｜[📖 說明書]({DOC})")
     embed = {"title": f"📊 今日匯率總結（{today}）", "url": PAGE, "color": 0x1565C0, "description": "\n".join(lines)}
     img = "/tmp/fx.png"
     if chart(rates, hists, img):
@@ -453,6 +458,7 @@ def main(path):
         state["prev"] = state.get("last", {}) or state.get("prev", {})
         state["day"] = today
         state["alerted"] = []
+        state["intra"] = {}                      # 今天盤中每次更新的價格（小方向用）
     prev = state.get("prev", {})
     # 歷史資料一天抓一次就好（台銀一天只多一筆）
     if state.get("hist_day") != today or not state.get("hists"):
@@ -464,8 +470,40 @@ def main(path):
                 print(f"::warning title=匯率歷史::{code} 讀不到：{err}")
         state["hists"], state["hist_day"] = hists, today
     hists = state["hists"]
+    # ---- 小方向：今天盤中的變化（每 30 分鐘一筆）----
+    intra = state.setdefault("intra", {})
+    hm = now.strftime("%H:%M")
+    small, small_alerts = {}, []
+    for code, r in rates.items():
+        m = mid(r)
+        if not m:
+            continue
+        seq = intra.setdefault(code, [])
+        if not seq or seq[-1][1] != m or seq[-1][0] != hm:
+            seq.append([hm, m])
+        o = seq[0][1]
+        day_pct = (m - o) / o * 100
+        lo, hi = min(x[1] for x in seq), max(x[1] for x in seq)
+        two = [x for x in seq if x[0] >= (now - timedelta(hours=2)).strftime("%H:%M")]
+        two_pct = (m - two[0][1]) / two[0][1] * 100 if two else 0.0
+        sd = stats([x[1] for x in hists.get(code) or []])
+        band = sd * 100 if sd else None             # 平常「一天」大約晃多少 %
+        small[code] = (f"⏱ 今日 {seq[0][0]}→{hm} **{day_pct:+.2f}%**｜近 2 小時 {two_pct:+.2f}%｜"
+                       f"盤中 {fmt(lo)}～{fmt(hi)}" + (f"｜平常一天 ±{band:.2f}%" if band else ""))
+        zh, flag = WATCH[code]
+        key1, key2 = f"{code}:day", f"{code}:fc"
+        if band and abs(day_pct) >= band and key1 not in state["alerted"]:
+            small_alerts.append(f"{flag} **{zh}** 盤中 {day_pct:+.2f}%（{fmt(o)} → {fmt(m)}），"
+                                f"已超過平常一天的幅度 ±{band:.2f}%")
+            state["alerted"].append(key1)
+        fc = next((f for f in reversed(state.get("fc", [])) if f["c"] == code and f.get("lo")), None)
+        if fc and not (fc["lo"] <= m <= fc["hi"]) and key2 not in state["alerted"]:
+            side = "上緣" if m > fc["hi"] else "下緣"
+            small_alerts.append(f"{flag} **{zh}** {fmt(m)} 跑出 {fc['d'][5:]} 預報的 5 日 68% 區間{side}"
+                                f"（{fmt(fc['lo'])}～{fmt(fc['hi'])}）")
+            state["alerted"].append(key2)
     qtime = quote_time()
-    e = embed_for(rates, prev, now_tw, qtime, hists)
+    e = embed_for(rates, prev, now_tw, qtime, hists, small)
     if len(e["description"]) > 4000:             # Discord 一則最多 4096 字：太長就拿掉走勢連結
         e["description"] = e["description"].replace("｜[走勢](https://www.tradingview.com/symbols/", "｜[").replace("TWD/)", ")")
     print(f"::notice title=匯率表長度::{len(e['description'])} 字")
@@ -493,6 +531,11 @@ def main(path):
             pct = (m - p) / p * 100
             alerts.append(f"{flag} **{zh}** {'升值' if pct > 0 else '貶值'} {abs(pct):.2f}%（{fmt(p)} → {fmt(m)}）")
             state["alerted"].append(code)
+    if small_alerts:
+        call("POST", base, {"username": "Video Helper 匯率",
+                            "embeds": [{"title": "⚡ 小方向提醒（盤中）", "url": DOC, "color": 0xF9A825,
+                                        "description": "\n".join(small_alerts) +
+                                        f"\n\n只是數據提醒，不是買賣建議｜[這些數字怎麼看]({DOC})"}]})
     if alerts:
         call("POST", base, {"username": "Video Helper 匯率",
                             "embeds": [{"title": f"⚠ 匯率大變動（跟前一個營業日比，超過 {ALERT_PCT}%）",
