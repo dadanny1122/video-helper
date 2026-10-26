@@ -181,6 +181,123 @@ def call(method, url, payload=None):
     raise RuntimeError("Discord 一直說太快")
 
 
+# ---- 預報（forecast）：不猜「會漲還是跌」，只說「可能的範圍」和「歷史上相似的情況後來怎樣」----
+FC_CODES = ["USD", "EUR", "JPY", "CNY"]        # 預報只做這幾種（總結才不會太長）
+FC_DAYS = 5               # 預報未來幾個營業日
+W = 10                    # 「相似走勢」看最近幾個營業日的形狀
+K = 20                    # 找最像的幾段
+LONG_YEARS = 3            # 從過去幾年裡找
+# FRED（美國聯準會公開資料）：(代號, 是不是「1 外幣 = 多少美金」的寫法)
+FRED = {"TWD": ("DEXTAUS", False), "JPY": ("DEXJPUS", False), "CNY": ("DEXCHUS", False), "EUR": ("DEXUSEU", True),
+        "GBP": ("DEXUSUK", True), "HKD": ("DEXHKUS", False), "CHF": ("DEXSZUS", False), "AUD": ("DEXUSAL", True),
+        "KRW": ("DEXKOUS", False), "USD": (None, False)}
+FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={}"
+
+
+def fred(sid):
+    req = urllib.request.Request(FRED_URL.format(sid), headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        rows = list(csv.reader(io.StringIO(r.read().decode("utf-8", "ignore"))))
+    cut = (datetime.now(TW) - timedelta(days=365 * LONG_YEARS + 30)).strftime("%Y-%m-%d")
+    out = {}
+    for row in rows[1:]:
+        try:
+            if row[0] >= cut and float(row[1]) > 0:
+                out[row[0]] = float(row[1])
+        except (ValueError, IndexError):
+            continue
+    return out
+
+
+def long_series(code, twd):
+    """過去 3 年每天「1 外幣 = 多少台幣」（用 FRED 的美金匯率換算）"""
+    sid, inverted = FRED[code]
+    if sid is None:
+        return [twd[d] for d in sorted(twd)]
+    x = fred(sid)
+    out = []
+    for d in sorted(set(x) & set(twd)):
+        out.append(twd[d] * x[d] if inverted else twd[d] / x[d])
+    return out
+
+
+def vol_range(prices, m):
+    """用最近 30 天每天晃動的幅度，推算未來 5 個營業日約 68% 機會落在的範圍"""
+    import math
+    rets = [math.log(b / a) for a, b in zip(prices, prices[1:]) if a and b]
+    if len(rets) < 10:
+        return None
+    mu = sum(rets) / len(rets)
+    sd = (sum((r - mu) ** 2 for r in rets) / (len(rets) - 1)) ** 0.5 * FC_DAYS ** 0.5
+    return m * math.exp(-sd), m * math.exp(sd)
+
+
+def analog(long, recent_prices):
+    """找過去 3 年裡，跟最近 10 天形狀最像的 20 段，看它們之後 5 天怎麼走"""
+    if len(recent_prices) < W + 1 or len(long) < 200:
+        return None
+    tgt = [p / recent_prices[-1] - 1 for p in recent_prices[-(W + 1):]]
+    cands = []
+    for e in range(W, len(long) - FC_DAYS):
+        win = long[e - W:e + 1]
+        path = [p / win[-1] - 1 for p in win]
+        cands.append((sum((a - b) ** 2 for a, b in zip(path, tgt)), e))
+    cands.sort()
+    picked = []
+    for dist, e in cands:                       # 挑出來的片段不要互相重疊
+        if all(abs(e - p) > FC_DAYS for p in picked):
+            picked.append(e)
+        if len(picked) >= K:
+            break
+    outs = sorted(long[e + FC_DAYS] / long[e] - 1 for e in picked)
+    up = sum(1 for o in outs if o > 0)
+    return {"n": len(outs), "up": up, "down": len(outs) - up, "median": outs[len(outs) // 2] * 100}
+
+
+def forecasts(rates, hists):
+    try:
+        twd = fred("DEXTAUS")
+    except Exception as e:
+        print(f"::warning title=預報::讀不到 FRED：{e}")
+        twd = None
+    out = {}
+    for code in FC_CODES:
+        m, h = mid(rates.get(code, {})) if rates.get(code) else None, hists.get(code) or []
+        if not m or len(h) < 10:
+            continue
+        prices = [x[1] for x in h] + [m]
+        f = {"m": m, "range": vol_range(prices, m)}
+        if twd:
+            try:
+                f["analog"] = analog(long_series(code, twd), prices)
+            except Exception as e:
+                print(f"::warning title=預報::{code} 相似走勢失敗：{e}")
+        out[code] = f
+    return out
+
+
+def score(state, hists, today):
+    """對答案：5 個營業日前的預報，實際結果有沒有落在範圍裡、方向有沒有對"""
+    for f in state.get("fc", []):
+        if f.get("done"):
+            continue
+        after = [x for x in (hists.get(f["c"]) or []) if x[0] > f["d"].replace("-", "")]
+        if len(after) < FC_DAYS:
+            continue
+        actual = after[FC_DAYS - 1][1]
+        f["done"] = True
+        f["in"] = f["lo"] <= actual <= f["hi"] if f.get("lo") else None
+        if f.get("up") is not None and f["up"] != 0.5:
+            f["dir"] = (f["up"] > 0.5) == (actual > f["m"])
+    done = [f for f in state.get("fc", []) if f.get("done")][-120:]
+    rin = [f["in"] for f in done if f.get("in") is not None]
+    rdir = [f["dir"] for f in done if f.get("dir") is not None]
+    if not rin:
+        return "📏 準不準：累積中（5 個營業日後開始對答案，結果會公開在這裡）"
+    return (f"📏 準不準（最近 {len(rin)} 次已對答案）：範圍命中 **{sum(rin)}/{len(rin)}**（理論上約 68%）"
+            + (f"｜相似走勢方向 **{sum(rdir)}/{len(rdir)}**（丟硬幣約 50%）" if rdir else ""))
+
+
 def chart(rates, hists, path):
     """畫最近 30 天的走勢（各貨幣都換成「漲跌 %」才能放在同一張圖比較）；失敗回傳 False"""
     try:
@@ -222,7 +339,7 @@ def chart(rates, hists, path):
     return True
 
 
-def post_summary(base, rates, prev, hists, today):
+def post_summary(base, rates, prev, hists, today, fcs=None, accuracy=""):
     """每日收盤總結：今天漲最多、跌最多、30 天最便宜／最貴的，附走勢圖"""
     moves = []
     for code, r in rates.items():
@@ -246,7 +363,20 @@ def post_summary(base, rates, prev, hists, today):
         lines.append(f"🟢 {DAYS} 天內偏便宜：" + "、".join(f"{WATCH[c][1]}{WATCH[c][0]}" for c in cheap))
     if dear:
         lines.append(f"🔴 {DAYS} 天內偏貴：" + "、".join(f"{WATCH[c][1]}{WATCH[c][0]}" for c in dear))
-    lines.append(f"\n📎 資料來源：[臺灣銀行牌告匯率]({PAGE})｜只是整理數字，不是買賣建議")
+    if fcs:
+        lines.append(f"\n**🔮 未來 {FC_DAYS} 個營業日預報**（升＝外幣變貴、台幣變薄）")
+        for code, f in fcs.items():
+            zh, flag = WATCH[code][0], WATCH[code][1]
+            parts = []
+            if f.get("range"):
+                parts.append(f"68% 機會在 {fmt(f['range'][0])}～{fmt(f['range'][1])}")
+            a = f.get("analog")
+            if a:
+                parts.append(f"過去 {LONG_YEARS} 年最像的 {a['n']} 段：之後 {a['up']} 次升、{a['down']} 次貶（中間值 {a['median']:+.2f}%）")
+            lines.append(f"{flag} {zh}：" + "｜".join(parts))
+        lines.append("\n範圍＝用最近 30 天每天晃動的幅度推算；相似走勢＝拿最近 10 天的形狀去比對過去（FRED 資料）\n"
+                     "歷史不一定會重演，所以每次預報都會在 5 個營業日後對答案、公開準度\n" + accuracy)
+    lines.append(f"\n📎 資料來源：[臺灣銀行牌告匯率]({PAGE})、[FRED 美國聯準會匯率](https://fred.stlouisfed.org/categories/94)｜只是整理數字，不是買賣建議")
     embed = {"title": f"📊 今日匯率總結（{today}）", "url": PAGE, "color": 0x1565C0, "description": "\n".join(lines)}
     img = "/tmp/fx.png"
     if chart(rates, hists, img):
@@ -329,7 +459,19 @@ def main(path):
     # 每日收盤總結：下午 4 點半以後第一次跑（或手動勾 summary）時發一則，附 30 天走勢圖
     if (now.hour * 60 + now.minute >= 16 * 60 + 30 and state.get("summary_day") != today) \
             or os.environ.get("SUMMARY") == "true":
-        post_summary(base, rates, prev, hists, today)
+        accuracy = score(state, hists, today)
+        fcs = forecasts(rates, hists)
+        post_summary(base, rates, prev, hists, today, fcs, accuracy)
+        if state.get("fc_day") != today:          # 一天只記一次預報，之後拿來對答案
+            for code, f in fcs.items():
+                a = f.get("analog")
+                state.setdefault("fc", []).append({
+                    "d": today, "c": code, "m": f["m"],
+                    "lo": f["range"][0] if f.get("range") else None, "hi": f["range"][1] if f.get("range") else None,
+                    "up": a["up"] / a["n"] if a and a["n"] else None})
+            state["fc"] = state["fc"][-300:]
+            state["fc_day"] = today
+        print("::notice title=預報::" + json.dumps({c: {"range": f.get("range"), "analog": f.get("analog")} for c, f in fcs.items()}, ensure_ascii=False)[:1500])
         state["summary_day"] = today
     state["last"] = {c: mid(r) for c, r in rates.items() if mid(r)}
     json.dump(state, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
