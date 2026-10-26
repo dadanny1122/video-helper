@@ -1,0 +1,43 @@
+name: Exchange rates to Discord
+
+# 平日台灣時間 9:00～16:30（銀行營業時間）每 30 分鐘更新一次匯率表；大漲大跌另發提醒
+on:
+  schedule:
+    - cron: '7,37 1-8 * * 1-5'   # UTC 1～8 點 = 台灣 9～16 點
+  workflow_dispatch:
+    inputs:
+      preview:
+        description: '只預覽（印在 Actions 頁面），不發到 Discord'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fx
+  cancel-in-progress: false
+
+jobs:
+  fx:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Update the rate table
+        env:
+          DISCORD_FX_WEBHOOK: ${{ secrets.DISCORD_FX_WEBHOOK }}
+          PREVIEW: ${{ inputs.preview }}
+          PYTHONIOENCODING: utf-8
+        run: python3 .github/fx_feed.py .github/fx_state.json
+      - name: Remember the rates
+        if: ${{ inputs.preview != true }}
+        run: |
+          [ -f .github/fx_state.json ] || exit 0
+          git add .github/fx_state.json
+          git diff --cached --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          git commit -m "記住最新匯率"
+          for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 5; done
