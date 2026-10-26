@@ -184,10 +184,10 @@ def main(path):
     except Exception:
         state = {}
     today = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
-    if os.environ.get("EVENT") == "schedule" and state.get("last_day") == today:
+    if (os.environ.get("EVENT") == "schedule" or os.environ.get("WAIT") == "true") and state.get("last_day") == today:
         print(f"::notice title=排行榜::今天（{today}）已經更新過，這次備用排程跳過")
         return
-    if os.environ.get("EVENT") == "schedule":         # 提早啟動的：等到台灣時間 20:00 整再貼
+    if os.environ.get("EVENT") == "schedule" or os.environ.get("WAIT") == "true":   # 提早啟動的：等到台灣時間 20:00 整再貼
         tw = timezone(timedelta(hours=8))
         now = datetime.now(tw)
         target = now.replace(hour=20, minute=0, second=0, microsecond=0)

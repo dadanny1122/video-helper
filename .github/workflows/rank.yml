@@ -14,6 +14,10 @@ on:
         description: '刪掉舊的排行榜訊息，重新貼一份新的'
         type: boolean
         default: false
+      wait:
+        description: '等到今天晚上 8 點整才貼（排程被 GitHub 跳過時手動補用）'
+        type: boolean
+        default: false
       preview:
         description: '只預覽（印在 Actions 頁面），不發到 Discord'
         type: boolean
@@ -41,6 +45,7 @@ jobs:
           REPOST: ${{ inputs.repost }}
           PREVIEW: ${{ inputs.preview }}
           EVENT: ${{ github.event_name }}
+          WAIT: ${{ inputs.wait }}
         run: python3 .github/rank_feed.py .github/rank_state.json
 
       - name: Remember the ranking
