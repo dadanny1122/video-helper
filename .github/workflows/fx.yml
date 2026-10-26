@@ -1,13 +1,18 @@
 name: Exchange rates to Discord
 
-# 平日台灣時間 9:00～16:30（銀行營業時間）每 30 分鐘更新一次匯率表；大漲大跌另發提醒
+# 平日台灣時間 9:00～17:00 每小時整點：#匯率 發價格表、#匯率分析 發小方向；17:00 加發大方向總結
+# GitHub 排程常遲到 → 每小時 :50 先啟動，程式等到整點才發；同一個整點只發一次
 on:
   schedule:
-    - cron: '7,37 1-8 * * 1-5'   # UTC 1～8 點 = 台灣 9～16 點（16:37 那次會順便發「今日匯率總結」）
+    - cron: '50 0-8 * * 1-5'     # UTC 0:50～8:50 = 台灣 8:50～16:50 → 9:00～17:00 整點發
   workflow_dispatch:
     inputs:
       probe:
         description: '診斷：看台銀歷史資料的格式'
+        type: boolean
+        default: false
+      wait:
+        description: '等到下一個整點才發（排程被跳過時手動補用）'
         type: boolean
         default: false
       summary:
@@ -38,6 +43,9 @@ jobs:
       - name: Update the rate table
         env:
           DISCORD_FX_WEBHOOK: ${{ secrets.DISCORD_FX_WEBHOOK }}
+          DISCORD_FX_ANALYSIS_WEBHOOK: ${{ secrets.DISCORD_FX_ANALYSIS_WEBHOOK }}
+          EVENT: ${{ github.event_name }}
+          WAIT: ${{ inputs.wait }}
           PREVIEW: ${{ inputs.preview }}
           PROBE: ${{ inputs.probe }}
           SUMMARY: ${{ inputs.summary }}
