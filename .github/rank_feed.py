@@ -191,6 +191,9 @@ def main(path):
         tw = timezone(timedelta(hours=8))
         now = datetime.now(tw)
         target = now.replace(hour=20, minute=0, second=0, microsecond=0)
+        if (now - target).total_seconds() > 15 * 60:    # 已經過了 8 點 15 分以上（遲到）→ 不發
+            print(f"::notice title=排行榜::現在 {now.strftime('%H:%M')}，已經過了 20:00，這次不發")
+            return
         if (target - now).total_seconds() > 70 * 60:   # 離 8 點還很久（例如半夜試跑）→ 不等，直接結束
             print(f"::notice title=排行榜::現在 {now.strftime('%H:%M')}，離 20:00 還很久，這次不發（鬧鐘試跑成功）")
             return

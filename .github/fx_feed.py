@@ -499,6 +499,10 @@ def main(path):
         return
     now = datetime.now(TW)
     today, now_tw, slot = now.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d %H:%M"), now.strftime("%Y-%m-%d %H")
+    # 保險：鬧鐘只在平日 9:00～17:00 的整點發；遲到超過 10 分鐘、或不在這個時段的就不發
+    if scheduled and (now.weekday() >= 5 or not 9 <= now.hour <= 17 or now.minute > 10):
+        print(f"::notice title=匯率::現在 {now.strftime('%a %H:%M')}，不在平日 9:00～17:00 整點，這次不發")
+        return
     if scheduled and state.get("slot") == slot:
         print(f"::notice title=匯率::{slot} 點已經發過，跳過")
         return

@@ -4,10 +4,6 @@ name: Ranking to Discord
 # GitHub 排程常常晚到、甚至跳過 → 18:31、19:13、19:47 提早啟動，程式等到 20:00 整才貼；
 # 當天已經貼過的就跳過（同一時間只會有一個在跑）
 on:
-  schedule:
-    - cron: '31 10 * * *'   # 台灣 18:31
-    - cron: '13 11 * * *'   # 台灣 19:13
-    - cron: '47 11 * * *'   # 台灣 19:47
   workflow_dispatch:
     inputs:
       repost:
