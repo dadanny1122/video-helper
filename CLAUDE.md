@@ -13,6 +13,7 @@
 | `video_helper_app.py` | 電腦版（Tkinter + yt-dlp + 迷你 ffmpeg），GitHub Actions 打包成 `VideoHelper.exe` |
 | `docs/manual/index.html` | 說明書（GitHub Pages：https://dadanny1122.github.io/video-helper/manual/），改了會自動同步到 Discord |
 | `docs/fx/index.html` | 匯率頻道說明書（https://dadanny1122.github.io/video-helper/fx/），匯率訊息都附這個連結；改了匯率的欄位要一起改 |
+| `docs/fx/calc.html` | 換匯計算機（https://dadanny1122.github.io/video-helper/fx/calc.html）：讀 `docs/fx/rates.json`（fx 每次跑時 `export_rates()` 寫入並 commit，preview 模式也會）；三種模式：買外幣（數量×銀行賣出）、用台幣換（台幣÷賣出）、賣外幣（數量×銀行買入），現金／即期，附算式、30 天平均比較、現金 vs 即期差價 |
 | `docs/practice/` | 學 HLS 用的練習頁 |
 | `CHANGELOG.md` | **電腦版**的更新紀錄（發布 EXE 時當作說明） |
 | `.github/ci_smoke.py` | 電腦版的自動測試（在 Windows 上跑） |

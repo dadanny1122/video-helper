@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>換匯計算機</title>
+<style>
+  :root { --bg:#fafaf7; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#e4e3dc; --accent:#c62828; --blue:#1565c0; --tip:#eef5ee; --warn:#fff6e5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#151514; --fg:#ecebe6; --muted:#a3a29b; --card:#1f1f1d; --line:#33332f; --accent:#ef5350; --blue:#64b5f6; --tip:#1d2a1f; --warn:#2e2715; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.75 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:32px 16px 80px; }
+  h1 { font-size:30px; margin:0 0 4px; }
+  h2 { font-size:21px; margin:44px 0 10px; padding-top:12px; border-top:1px solid var(--line); }
+  h3 { font-size:17px; margin:24px 0 6px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  nav { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 16px; }
+  nav a { display:inline-block; margin:2px 12px 2px 0; }
+  a { color:var(--blue); }
+  .parts { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:14px 0; }
+  @media (max-width:560px) { .parts { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .card .t { display:block; font-size:17px; font-weight:700; margin-bottom:4px; }
+  ol, ul { padding-left:22px; } li { margin:4px 0; }
+  .tip, .warn { border-radius:8px; padding:10px 14px; margin:12px 0; }
+  .tip { background:var(--tip); } .warn { background:var(--warn); }
+  .k { display:inline-block; padding:0 7px; border-radius:5px; font-size:14px; color:#fff; background:var(--accent); white-space:nowrap; }
+  .k.b { background:#1565c0; } .k.g { background:#555; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  td, th { border-bottom:1px solid var(--line); padding:8px 6px; text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  details { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:8px 14px; margin:8px 0; }
+  summary { cursor:pointer; font-weight:600; }
+  footer { margin-top:48px; color:var(--muted); font-size:14px; }
+</style>
+<style>
+  .row { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  .seg { display:flex; flex-wrap:wrap; gap:6px; }
+  .seg button { font:inherit; padding:8px 12px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+  .seg button.on { background:var(--blue); border-color:var(--blue); color:#fff; }
+  .seg button:disabled { opacity:.4; cursor:not-allowed; }
+  select, input { font:inherit; font-size:18px; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); width:100%; }
+  label { display:block; font-weight:600; margin:16px 0 6px; }
+  .result { margin-top:18px; padding:16px; border-radius:10px; background:var(--card); border:1px solid var(--line); }
+  .big { font-size:30px; font-weight:700; line-height:1.3; word-break:break-all; }
+  .formula { font-family:ui-monospace,Consolas,monospace; color:var(--muted); margin-top:6px; word-break:break-all; }
+  .muted { color:var(--muted); font-size:14px; }
+  .quick { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .quick button { font:inherit; font-size:14px; padding:4px 10px; border-radius:999px; border:1px solid var(--line); background:transparent; color:var(--fg); cursor:pointer; }
+</style>
+</head>
+<body><main>
+<h1>🧮 換匯計算機</h1>
+<p class="sub">輸入金額，用臺灣銀行最新牌價直接算。價格每小時更新（平日 9:00～17:00）。</p>
+<p class="muted" id="meta">讀取牌價中…</p>
+
+<label>1. 要做什麼？</label>
+<div class="seg" id="mode">
+  <button data-m="buyQty" class="on">買外幣：我要買多少外幣</button>
+  <button data-m="buyTwd">買外幣：我有多少台幣</button>
+  <button data-m="sell">賣外幣：換回台幣</button>
+</div>
+
+<label for="ccy">2. 哪種貨幣？</label>
+<select id="ccy"></select>
+
+<label>3. 現鈔還是帳戶？</label>
+<div class="seg" id="kind">
+  <button data-k="cash" class="on">現金（換鈔票）</button>
+  <button data-k="spot">即期（外幣帳戶）</button>
+</div>
+
+<label for="amt" id="amtLabel">4. 金額</label>
+<input id="amt" type="number" inputmode="decimal" min="0" step="any" value="1000">
+<div class="quick" id="quick"></div>
+
+<div class="result">
+  <div class="muted" id="resLabel">結果</div>
+  <div class="big" id="res">—</div>
+  <div class="formula" id="formula"></div>
+  <div class="muted" id="extra" style="margin-top:10px"></div>
+</div>
+
+<div class="warn" style="margin-top:20px">⚠ 這是用銀行<b>牌告價格</b>試算，實際成交可能因手續費、優惠或掛牌更新而不同；只是試算，<b>不是買賣建議</b>。</div>
+<p class="muted">📎 資料來源：<a id="src" href="https://rate.bot.com.tw/xrt?Lang=zh-TW">臺灣銀行牌告匯率</a>｜<a href="./">📖 匯率頻道說明書</a></p>
+</main>
+<script>
+let R = null, mode = 'buyQty', kind = 'cash';
+const $ = id => document.getElementById(id);
+const nf = (v, d) => v.toLocaleString('zh-TW', { minimumFractionDigits: d, maximumFractionDigits: d });
+const fdig = c => (c === 'JPY' || c === 'KRW') ? 0 : 2;
+const rdig = v => v < 1 ? 4 : v < 10 ? 3 : 2;
+
+function setSeg(id, attr, val) {
+  document.querySelectorAll('#' + id + ' button').forEach(b => b.classList.toggle('on', b.dataset[attr] === val));
+}
+function quick() {
+  const c = $('ccy').value, q = $('quick');
+  const twd = [1000, 5000, 10000, 30000, 50000, 100000];
+  const fx = { JPY: [10000, 50000, 100000, 300000], KRW: [100000, 500000, 1000000], USD: [100, 500, 1000, 5000] }[c] || [100, 500, 1000, 3000];
+  const list = mode === 'buyTwd' ? twd : fx;
+  q.innerHTML = list.map(v => `<button data-v="${v}">${nf(v, 0)}</button>`).join('');
+  q.querySelectorAll('button').forEach(b => b.onclick = () => { $('amt').value = b.dataset.v; calc(); });
+}
+function calc() {
+  if (!R) return;
+  const c = $('ccy').value, r = R.rates[c], zh = r.zh;
+  const sellKey = kind + '_sell', buyKey = kind + '_buy';
+  // 即期沒有報價（例如韓元）→ 自動改用現金
+  document.querySelector('#kind [data-k="spot"]').disabled = !(r.spot_sell && r.spot_buy);
+  if (kind === 'spot' && !(r.spot_sell && r.spot_buy)) { kind = 'cash'; setSeg('kind', 'k', 'cash'); return calc(); }
+  const a = parseFloat($('amt').value) || 0;
+  const kname = kind === 'cash' ? '現金' : '即期';
+  let res, formula, label, extra = '';
+  if (mode === 'buyQty') {
+    $('amtLabel').textContent = `4. 想買多少${zh}？`;
+    const p = r[sellKey];
+    res = a * p; label = `要付台幣（銀行${kname}賣出價）`;
+    formula = `${nf(a, fdig(c))} ${c} × ${nf(p, rdig(p))} = ${nf(res, 0)} 台幣`;
+    $('res').textContent = `NT$ ${nf(res, 0)}`;
+  } else if (mode === 'buyTwd') {
+    $('amtLabel').textContent = '4. 有多少台幣？';
+    const p = r[sellKey];
+    res = a / p; label = `換得到${zh}（銀行${kname}賣出價）`;
+    formula = `${nf(a, 0)} 台幣 ÷ ${nf(p, rdig(p))} = ${nf(res, fdig(c))} ${c}`;
+    $('res').textContent = `${nf(res, fdig(c))} ${c}`;
+    if (kind === 'cash' && r.avg30_cash_sell) {
+      const d = res - a / r.avg30_cash_sell;
+      extra = `跟近 30 天平均價比：${d >= 0 ? '多換' : '少換'} ${nf(Math.abs(d), fdig(c))} ${c}`;
+    }
+  } else {
+    $('amtLabel').textContent = `4. 要賣多少${zh}？`;
+    const p = r[buyKey];
+    res = a * p; label = `拿回台幣（銀行${kname}買入價）`;
+    formula = `${nf(a, fdig(c))} ${c} × ${nf(p, rdig(p))} = ${nf(res, 0)} 台幣`;
+    $('res').textContent = `NT$ ${nf(res, 0)}`;
+  }
+  // 現金 vs 即期差多少（同樣的數量）
+  if (r.spot_sell && r.cash_sell && mode !== 'sell') {
+    const qty = mode === 'buyQty' ? a : a / r[sellKey];
+    const gap = qty * (r.cash_sell - r.spot_sell);
+    if (gap > 0) extra += (extra ? '<br>' : '') + `同樣的數量，用現金比即期多付約 NT$ ${nf(gap, 0)}（現金價差比較大）`;
+  }
+  $('resLabel').textContent = label;
+  $('formula').textContent = formula;
+  $('extra').innerHTML = extra;
+}
+document.querySelectorAll('#mode button').forEach(b => b.onclick = () => { mode = b.dataset.m; setSeg('mode', 'm', mode); quick(); calc(); });
+document.querySelectorAll('#kind button').forEach(b => b.onclick = () => { if (b.disabled) return; kind = b.dataset.k; setSeg('kind', 'k', kind); calc(); });
+$('ccy').onchange = () => { quick(); calc(); };
+$('amt').oninput = calc;
+
+fetch('rates.json?t=' + Date.now()).then(r => r.json()).then(d => {
+  R = d;
+  $('ccy').innerHTML = Object.entries(d.rates).map(([c, r]) => `<option value="${c}">${r.flag} ${r.zh} ${c}</option>`).join('');
+  $('meta').textContent = `牌價更新：${d.updated}｜台銀掛牌時間：${d.quote_time || '—'}`;
+  quick(); calc();
+}).catch(() => { $('meta').textContent = '讀不到牌價，請稍後再試，或直接看臺灣銀行官網。'; });
+</script>
+</body></html>

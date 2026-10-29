@@ -59,3 +59,14 @@ jobs:
           git config user.email "41898+github-actions[bot]@users.noreply.github.com"
           git commit -m "記住最新匯率"
           for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 5; done
+      # 換匯計算機網頁的牌價：預覽模式也存（只更新網站，不發 Discord）
+      - name: Save calculator rates
+        if: always()
+        run: |
+          [ -f docs/fx/rates.json ] || exit 0
+          git add docs/fx/rates.json
+          git diff --cached --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          git commit -m "更新換匯計算機的牌價"
+          for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 5; done

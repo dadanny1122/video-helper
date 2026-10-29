@@ -163,7 +163,7 @@ def embed_for(rates, prev, now_tw, qtime=None, hists=None, small=None):
                        f"🟢🟡🔴＝現在的價格在最近 {DAYS} 天裡算便宜還是貴（給要換外幣的人參考，不是買賣建議）\n"
                        f"💵＝{CALC_TWD:,} 台幣用現鈔賣出價換得到多少\n"
                        "📈 走勢圖：TradingView（國際市場價，跟銀行牌價會有一點差距）\n"
-                       f"📖 [每個數字怎麼看（說明書）]({DOC})\n"
+                       f"🧮 [換匯計算機：輸入金額直接算]({CALC_URL})｜📖 [說明書]({DOC})\n"
                        f"🕒 最後更新：{now_tw}（平日 9:00～17:00 每小時整點；分析在 #匯率分析）",
     }
 
@@ -441,6 +441,26 @@ def post_summary(base, rates, prev, hists, today, fcs=None, accuracy=""):
     print("::notice title=匯率總結::已發出")
 
 
+CALC_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "fx", "rates.json")
+CALC_URL = "https://dadanny1122.github.io/video-helper/fx/calc.html"
+
+
+def export_rates(rates, hists, now_tw, qtime):
+    """給換匯計算機網頁用：把這次的牌價存成 docs/fx/rates.json（GitHub Pages 會公開）"""
+    out = {"updated": now_tw, "quote_time": qtime, "source": PAGE, "rates": {}}
+    for code, (zh, flag) in WATCH.items():
+        r = rates.get(code)
+        if not r:
+            continue
+        cs = [x[2] for x in (hists.get(code) or []) if x[2]]
+        out["rates"][code] = {"zh": zh, "flag": flag, **r,
+                              "avg30_cash_sell": round(sum(cs) / len(cs), 6) if cs else None}
+    try:
+        json.dump(out, open(CALC_JSON, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    except Exception as e:
+        print(f"::warning title=計算機::存不了 rates.json：{e}")
+
+
 def wait_for_hour():
     """排程在每小時 :50 啟動 → 等到下一個整點才發（GitHub 排程常遲到，提早啟動才準時）"""
     now = datetime.now(TW)
@@ -534,6 +554,7 @@ def main(path):
             state["alerted"].append(code)
     # ---- #匯率：價格表（每小時發一則新的）----
     qtime = quote_time()
+    export_rates(rates, hists, now_tw, qtime)
     e = embed_for(rates, prev, now_tw, qtime, hists)
     if len(e["description"]) > 4000:             # Discord 一則最多 4096 字：太長就拿掉走勢連結
         e["description"] = e["description"].replace("｜[走勢](https://www.tradingview.com/symbols/", "｜[").replace("TWD/)", ")")
