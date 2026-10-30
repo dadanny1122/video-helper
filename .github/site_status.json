@@ -4,12 +4,12 @@
   "why": ""
  },
  "XVideos": {
-  "status": "ok",
-  "why": ""
+  "status": "blocked",
+  "why": "影片頁找不到 setVideoHLS（腳本靠它找影片）"
  },
  "XNXX": {
-  "status": "ok",
-  "why": "伺服器：xnxx-cdn.com"
+  "status": "blocked",
+  "why": "影片頁找不到 setVideoHLS"
  },
  "YouPorn": {
   "status": "blocked",
