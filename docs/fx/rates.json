@@ -1,24 +1,24 @@
 {
- "updated": "2026-10-30 11:00",
- "quote_time": "2026/10/30 10:59",
+ "updated": "2026-10-30 12:00",
+ "quote_time": "2026/10/30 11:55",
  "source": "https://rate.bot.com.tw/xrt?Lang=zh-TW",
  "rates": {
   "USD": {
    "zh": "美金",
    "flag": "🇺🇸",
-   "cash_buy": 32.26,
-   "spot_buy": 32.61,
-   "cash_sell": 32.93,
-   "spot_sell": 32.71,
+   "cash_buy": 32.22,
+   "spot_buy": 32.57,
+   "cash_sell": 32.89,
+   "spot_sell": 32.67,
    "avg30_cash_sell": 32.44375
   },
   "EUR": {
    "zh": "歐元",
    "flag": "🇪🇺",
-   "cash_buy": 35.75,
-   "spot_buy": 36.37,
-   "cash_sell": 37.09,
-   "spot_sell": 36.77,
+   "cash_buy": 35.69,
+   "spot_buy": 36.31,
+   "cash_sell": 37.03,
+   "spot_sell": 36.71,
    "avg30_cash_sell": 36.604
   },
   "JPY": {
@@ -33,54 +33,54 @@
   "CNY": {
    "zh": "人民幣",
    "flag": "🇨🇳",
-   "cash_buy": 4.81,
-   "spot_buy": 4.882,
-   "cash_sell": 4.972,
-   "spot_sell": 4.932,
+   "cash_buy": 4.805,
+   "spot_buy": 4.877,
+   "cash_sell": 4.967,
+   "spot_sell": 4.927,
    "avg30_cash_sell": 4.8746
   },
   "GBP": {
    "zh": "英鎊",
    "flag": "🇬🇧",
-   "cash_buy": 42.55,
-   "spot_buy": 43.56,
-   "cash_sell": 44.67,
-   "spot_sell": 43.96,
+   "cash_buy": 42.48,
+   "spot_buy": 43.49,
+   "cash_sell": 44.6,
+   "spot_sell": 43.89,
    "avg30_cash_sell": 43.664
   },
   "HKD": {
    "zh": "港幣",
    "flag": "🇭🇰",
-   "cash_buy": 4.006,
-   "spot_buy": 4.132,
-   "cash_sell": 4.21,
-   "spot_sell": 4.192,
+   "cash_buy": 4.001,
+   "spot_buy": 4.127,
+   "cash_sell": 4.205,
+   "spot_sell": 4.187,
    "avg30_cash_sell": 4.1479
   },
   "CHF": {
    "zh": "瑞士法郎",
    "flag": "🇨🇭",
-   "cash_buy": 38.95,
-   "spot_buy": 39.63,
-   "cash_sell": 40.15,
-   "spot_sell": 39.88,
+   "cash_buy": 38.87,
+   "spot_buy": 39.55,
+   "cash_sell": 40.07,
+   "spot_sell": 39.8,
    "avg30_cash_sell": 39.2005
   },
   "AUD": {
    "zh": "澳幣",
    "flag": "🇦🇺",
-   "cash_buy": 22.59,
-   "spot_buy": 22.88,
-   "cash_sell": 23.37,
-   "spot_sell": 23.08,
+   "cash_buy": 22.57,
+   "spot_buy": 22.86,
+   "cash_sell": 23.35,
+   "spot_sell": 23.06,
    "avg30_cash_sell": 22.854
   },
   "KRW": {
    "zh": "韓元",
    "flag": "🇰🇷",
-   "cash_buy": 0.02268,
+   "cash_buy": 0.02267,
    "spot_buy": null,
-   "cash_sell": 0.02658,
+   "cash_sell": 0.02657,
    "spot_sell": null,
    "avg30_cash_sell": 0.026233
   }
