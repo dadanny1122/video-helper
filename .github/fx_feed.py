@@ -445,6 +445,24 @@ CALC_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs
 CALC_URL = "https://dadanny1122.github.io/video-helper/fx/calc.html"
 
 
+def ticks(code):
+    """台銀「今日各時段牌價」：今天每一次掛牌 → [[時:分:秒, 現金買, 現金賣, 即期買, 即期賣], …]（舊 → 新）"""
+    import re
+    req = urllib.request.Request(DAY_PAGE.format(code), headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        html = r.read(3_000_000).decode("utf-8", "ignore")
+    num = lambda x: (float(x) if re.fullmatch(r"[\d.]+", x.strip()) and float(x) > 0 else None)
+    out, day = [], None
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+        cells = [re.sub(r"<[^>]+>", "", c).strip() for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+        if len(cells) < 6 or not re.match(r"\d{4}/\d{1,2}/\d{1,2} \d{1,2}:\d{2}:\d{2}", cells[0]):
+            continue
+        d, t = cells[0].split()
+        day = day or d
+        out.append([t.zfill(8), num(cells[2]), num(cells[3]), num(cells[4]), num(cells[5])])
+    return day, sorted(out)
+
+
 def export_rates(rates, hists, now_tw, qtime):
     """給換匯計算機網頁用：把這次的牌價存成 docs/fx/rates.json（GitHub Pages 會公開）"""
     out = {"updated": now_tw, "quote_time": qtime, "source": PAGE, "rates": {}}
@@ -455,8 +473,18 @@ def export_rates(rates, hists, now_tw, qtime):
         cs = [x[2] for x in (hists.get(code) or []) if x[2]]
         out["rates"][code] = {"zh": zh, "flag": flag, **r,
                               "avg30_cash_sell": round(sum(cs) / len(cs), 6) if cs else None}
+    out["ticks"], out["tick_date"] = {}, None
+    for code in out["rates"]:
+        try:
+            day, tk = ticks(code)
+            if tk:
+                out["ticks"][code] = tk
+                out["tick_date"] = out["tick_date"] or day
+        except Exception as e:
+            print(f"::warning title=計算機::{code} 各時段牌價讀不到：{e}")
+    print(f"::notice title=計算機::{out['tick_date']} 各時段牌價：" + "、".join(f"{c} {len(v)} 次" for c, v in out["ticks"].items()))
     try:
-        json.dump(out, open(CALC_JSON, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        json.dump(out, open(CALC_JSON, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     except Exception as e:
         print(f"::warning title=計算機::存不了 rates.json：{e}")
 
@@ -510,6 +538,12 @@ def main(path):
         state = json.load(open(path, encoding="utf-8"))
     except Exception:
         state = {}
+    if os.environ.get("EXPORT") == "true":            # 只更新換匯計算機（每 10 分鐘），不發 Discord
+        rates = fetch()
+        if len(rates) >= 3:
+            now = datetime.now(TW)
+            export_rates(rates, state.get("hists") or {}, now.strftime("%Y-%m-%d %H:%M"), quote_time())
+        return
     scheduled = os.environ.get("EVENT") == "schedule" or os.environ.get("WAIT") == "true"
     if scheduled:
         wait_for_hour()

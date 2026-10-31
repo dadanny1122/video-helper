@@ -13,7 +13,7 @@
 | `video_helper_app.py` | 電腦版（Tkinter + yt-dlp + 迷你 ffmpeg），GitHub Actions 打包成 `VideoHelper.exe` |
 | `docs/manual/index.html` | 說明書（GitHub Pages：https://dadanny1122.github.io/video-helper/manual/），改了會自動同步到 Discord |
 | `docs/fx/index.html` | 匯率頻道說明書（https://dadanny1122.github.io/video-helper/fx/），匯率訊息都附這個連結；改了匯率的欄位要一起改 |
-| `docs/fx/calc.html` | 換匯計算機（https://dadanny1122.github.io/video-helper/fx/calc.html）：讀 `docs/fx/rates.json`（fx 每次跑時 `export_rates()` 寫入並 commit，preview 模式也會）；三種模式：買外幣（數量×銀行賣出）、用台幣換（台幣÷賣出）、賣外幣（數量×銀行買入），現金／即期，附算式、30 天平均比較、現金 vs 即期差價 |
+| `docs/fx/calc.html` | 換匯計算機（https://dadanny1122.github.io/video-helper/fx/calc.html）：讀 `docs/fx/rates.json`（fx 每次跑時 `export_rates()` 寫入並 commit，preview 模式也會）；可選「今天任一分鐘」的價格（`ticks()` 抓台銀「今日各時段牌價」每次掛牌，約每 2～3 分鐘一次、精確到秒；選的時間用最後一筆 ≤ 那一分鐘的掛牌；台銀頁面 CORS 只開給自己，所以要由 Actions 抓）；鬧鐘每 10 分鐘以 `inputs.export=true` 只更新 rates.json、不發 Discord；三種模式：買外幣（數量×銀行賣出）、用台幣換（台幣÷賣出）、賣外幣（數量×銀行買入），現金／即期，附算式、30 天平均比較、現金 vs 即期差價 |
 | `docs/practice/` | 學 HLS 用的練習頁 |
 | `CHANGELOG.md` | **電腦版**的更新紀錄（發布 EXE 時當作說明） |
 | `.github/ci_smoke.py` | 電腦版的自動測試（在 Windows 上跑） |
@@ -67,7 +67,7 @@
 GitHub 自己的排程（cron）常延遲幾小時或直接跳過（排行榜的 cron 一次都沒自己跑過）。所以**匯率、排行榜、新聞改用 cron-job.org 當鬧鐘**：
 時間到就 POST `https://api.github.com/repos/dadanny1122/video-helper/actions/workflows/{fx|rank}.yml/dispatches`，
 body `{"ref":"main","inputs":{"wait":"true"}}`，Header 帶使用者的 fine-grained token（只有這個 repo 的 Actions 讀寫）。
-匯率 `55 8-16 * * 1-5`、排行榜 `55 19 * * *`、新聞 `23 2,5,8,11,14,17,20,23 * * *`（body 只要 `{"ref":"main"}`，不用 wait）（Asia/Taipei）。fx、rank 的 GitHub cron 已移除（會遲到好幾小時亂發，例如 16:50 的拖到 19:05 才發），只靠鬧鐘；程式也擋掉時段外或遲到超過 10～15 分鐘的執行。新聞、網站檢查的 cron 還留著（遲到沒關係）。
+匯率 `55 8-16 * * 1-5`、排行榜 `55 19 * * *`、新聞 `23 2,5,8,11,14,17,20,23 * * *`（body 只要 `{"ref":"main"}`，不用 wait）、計算機 `*/10 9-17 * * 1-5`（fx.yml，body `{"ref":"main","inputs":{"export":"true"}}`）（Asia/Taipei）。fx、rank 的 GitHub cron 已移除（會遲到好幾小時亂發，例如 16:50 的拖到 19:05 才發），只靠鬧鐘；程式也擋掉時段外或遲到超過 10～15 分鐘的執行。新聞、網站檢查的 cron 還留著（遲到沒關係）。
 確認鬧鐘有效：看 runs 的 event＝workflow_dispatch、時間在 :55 附近。token 不要經過 AI 對話。
 
 ## 常見任務

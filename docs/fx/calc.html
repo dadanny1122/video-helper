@@ -53,7 +53,7 @@
 </head>
 <body><main>
 <h1>🧮 換匯計算機</h1>
-<p class="sub">輸入金額，用臺灣銀行最新牌價直接算。價格每小時更新（平日 9:00～17:00）。</p>
+<p class="sub">輸入金額，用臺灣銀行牌價直接算；可以選今天任何一分鐘當時的價格。平日 9:00～17:00 每 10 分鐘更新。</p>
 <p class="muted" id="meta">讀取牌價中…</p>
 
 <label>1. 要做什麼？</label>
@@ -72,7 +72,17 @@
   <button data-k="spot">即期（外幣帳戶）</button>
 </div>
 
-<label for="amt" id="amtLabel">4. 金額</label>
+<label>4. 用哪個時間的價格？</label>
+<div class="seg" id="when">
+  <button data-w="latest" class="on">最新</button>
+  <button data-w="pick">選時間</button>
+</div>
+<div id="pickBox" style="display:none;margin-top:8px">
+  <input id="tm" type="time" step="60" value="10:00">
+</div>
+<div class="muted" id="tickInfo" style="margin-top:6px"></div>
+
+<label for="amt" id="amtLabel">5. 金額</label>
 <input id="amt" type="number" inputmode="decimal" min="0" step="any" value="1000">
 <div class="quick" id="quick"></div>
 
@@ -83,11 +93,14 @@
   <div class="muted" id="extra" style="margin-top:10px"></div>
 </div>
 
+<details style="margin-top:16px"><summary id="tickSum">📋 今天每一次掛牌的價格</summary>
+<div style="overflow-x:auto"><table id="tickTable"></table></div></details>
+
 <div class="warn" style="margin-top:20px">⚠ 這是用銀行<b>牌告價格</b>試算，實際成交可能因手續費、優惠或掛牌更新而不同；只是試算，<b>不是買賣建議</b>。</div>
 <p class="muted">📎 資料來源：<a id="src" href="https://rate.bot.com.tw/xrt?Lang=zh-TW">臺灣銀行牌告匯率</a>｜<a href="./">📖 匯率頻道說明書</a></p>
 </main>
 <script>
-let R = null, mode = 'buyQty', kind = 'cash';
+let R = null, mode = 'buyQty', kind = 'cash', when = 'latest';
 const $ = id => document.getElementById(id);
 const nf = (v, d) => v.toLocaleString('zh-TW', { minimumFractionDigits: d, maximumFractionDigits: d });
 const fdig = c => (c === 'JPY' || c === 'KRW') ? 0 : 2;
@@ -104,9 +117,35 @@ function quick() {
   q.innerHTML = list.map(v => `<button data-v="${v}">${nf(v, 0)}</button>`).join('');
   q.querySelectorAll('button').forEach(b => b.onclick = () => { $('amt').value = b.dataset.v; calc(); });
 }
+// 選的時間（時:分）→ 那一分鐘生效的掛牌（最後一筆 ≤ 那一分鐘）
+function pickRate(c) {
+  const base = R.rates[c], tk = (R.ticks || {})[c] || [];
+  if (when === 'latest' || !tk.length) {
+    $('tickInfo').textContent = when === 'pick' ? '這個貨幣沒有今天的掛牌紀錄，改用最新價格' : '';
+    return base;
+  }
+  const hm = $('tm').value || '00:00', key = hm + ':59';
+  let idx = -1;
+  for (let i = 0; i < tk.length; i++) if (tk[i][0] <= key) idx = i;
+  if (idx < 0) {
+    $('tickInfo').textContent = `${R.tick_date} 台銀第一次掛牌在 ${tk[0][0]}，${hm} 還沒有價格，先用第一次掛牌`;
+    idx = 0;
+  } else {
+    $('tickInfo').textContent = `用 ${R.tick_date} ${tk[idx][0]} 掛牌的價格（當天第 ${idx + 1}／${tk.length} 次掛牌，${hm} 那一分鐘生效的就是這次）`;
+  }
+  const t = tk[idx];
+  return { ...base, cash_buy: t[1], cash_sell: t[2], spot_buy: t[3], spot_sell: t[4] };
+}
+function tickTable() {
+  const c = $('ccy').value, tk = (R.ticks || {})[c] || [], k = kind === 'cash' ? [1, 2] : [3, 4];
+  $('tickSum').textContent = `📋 ${R.tick_date || '今天'} 每一次掛牌的價格（${tk.length} 次，${kind === 'cash' ? '現金' : '即期'}）`;
+  $('tickTable').innerHTML = '<tr><th>時間</th><th>銀行買入</th><th>銀行賣出</th></tr>' +
+    tk.slice().reverse().map(t => `<tr><td>${t[0]}</td><td>${t[k[0]] ?? '—'}</td><td>${t[k[1]] ?? '—'}</td></tr>`).join('');
+}
 function calc() {
   if (!R) return;
-  const c = $('ccy').value, r = R.rates[c], zh = r.zh;
+  const c = $('ccy').value, r = pickRate(c), zh = r.zh;
+  tickTable();
   const sellKey = kind + '_sell', buyKey = kind + '_buy';
   // 即期沒有報價（例如韓元）→ 自動改用現金
   document.querySelector('#kind [data-k="spot"]').disabled = !(r.spot_sell && r.spot_buy);
@@ -115,13 +154,13 @@ function calc() {
   const kname = kind === 'cash' ? '現金' : '即期';
   let res, formula, label, extra = '';
   if (mode === 'buyQty') {
-    $('amtLabel').textContent = `4. 想買多少${zh}？`;
+    $('amtLabel').textContent = `5. 想買多少${zh}？`;
     const p = r[sellKey];
     res = a * p; label = `要付台幣（銀行${kname}賣出價）`;
     formula = `${nf(a, fdig(c))} ${c} × ${nf(p, rdig(p))} = ${nf(res, 0)} 台幣`;
     $('res').textContent = `NT$ ${nf(res, 0)}`;
   } else if (mode === 'buyTwd') {
-    $('amtLabel').textContent = '4. 有多少台幣？';
+    $('amtLabel').textContent = '5. 有多少台幣？';
     const p = r[sellKey];
     res = a / p; label = `換得到${zh}（銀行${kname}賣出價）`;
     formula = `${nf(a, 0)} 台幣 ÷ ${nf(p, rdig(p))} = ${nf(res, fdig(c))} ${c}`;
@@ -131,7 +170,7 @@ function calc() {
       extra = `跟近 30 天平均價比：${d >= 0 ? '多換' : '少換'} ${nf(Math.abs(d), fdig(c))} ${c}`;
     }
   } else {
-    $('amtLabel').textContent = `4. 要賣多少${zh}？`;
+    $('amtLabel').textContent = `5. 要賣多少${zh}？`;
     const p = r[buyKey];
     res = a * p; label = `拿回台幣（銀行${kname}買入價）`;
     formula = `${nf(a, fdig(c))} ${c} × ${nf(p, rdig(p))} = ${nf(res, 0)} 台幣`;
@@ -149,6 +188,9 @@ function calc() {
 }
 document.querySelectorAll('#mode button').forEach(b => b.onclick = () => { mode = b.dataset.m; setSeg('mode', 'm', mode); quick(); calc(); });
 document.querySelectorAll('#kind button').forEach(b => b.onclick = () => { if (b.disabled) return; kind = b.dataset.k; setSeg('kind', 'k', kind); calc(); });
+document.querySelectorAll('#when button').forEach(b => b.onclick = () => {
+  when = b.dataset.w; setSeg('when', 'w', when); $('pickBox').style.display = when === 'pick' ? 'block' : 'none'; calc(); });
+$('tm').oninput = calc;
 $('ccy').onchange = () => { quick(); calc(); };
 $('amt').oninput = calc;
 

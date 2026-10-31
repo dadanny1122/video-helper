@@ -9,6 +9,10 @@ on:
         description: '診斷：看台銀歷史資料的格式'
         type: boolean
         default: false
+      export:
+        description: '只更新換匯計算機的牌價（不發 Discord；外部鬧鐘每 10 分鐘叫一次）'
+        type: boolean
+        default: false
       wait:
         description: '等到下一個整點才發（排程被跳過時手動補用）'
         type: boolean
@@ -44,6 +48,7 @@ jobs:
           DISCORD_FX_ANALYSIS_WEBHOOK: ${{ secrets.DISCORD_FX_ANALYSIS_WEBHOOK }}
           EVENT: ${{ github.event_name }}
           WAIT: ${{ inputs.wait }}
+          EXPORT: ${{ inputs.export }}
           PREVIEW: ${{ inputs.preview }}
           PROBE: ${{ inputs.probe }}
           SUMMARY: ${{ inputs.summary }}
