@@ -12,10 +12,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - name: Post progress and manual
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_FX_PROGRESS_WEBHOOK }}
           PYTHONIOENCODING: utf-8
         run: |
-          python3 .github/discord_notify.py "💱 匯率機器人進度（$(TZ=Asia/Taipei date +%m/%d)）" .github/fx_progress.md "https://github.com/${{ github.repository }}"
-          python3 .github/discord_notify.py "📖 匯率頻道說明書" .github/fx_manual.md "https://dadanny1122.github.io/video-helper/fx/"
+          # 只貼「這次有改的」那個檔（手動 Run workflow 就兩個都貼）
+          changed=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || true)
+          manual="${{ github.event_name }}"
+          if [ "$manual" = "workflow_dispatch" ] || echo "$changed" | grep -q fx_progress.md; then
+            python3 .github/discord_notify.py "💱 匯率機器人進度（$(TZ=Asia/Taipei date +%m/%d)）" .github/fx_progress.md "https://github.com/${{ github.repository }}"
+          fi
+          if [ "$manual" = "workflow_dispatch" ] || echo "$changed" | grep -q fx_manual.md; then
+            python3 .github/discord_notify.py "📖 匯率頻道說明書" .github/fx_manual.md "https://dadanny1122.github.io/video-helper/fx/"
+          fi
