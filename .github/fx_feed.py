@@ -603,14 +603,19 @@ def main(path):
 
 
 def probe():
-    for u in ("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXTAUS",
-              "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXJPUS"):
+    import re
+    for u in ("https://rate.bot.com.tw/xrt/quote/day/USD", "https://rate.bot.com.tw/xrt/flcsv/0/day"):
         try:
-            with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": UA}), timeout=30) as r:
-                t = r.read().decode("utf-8-sig", "ignore").splitlines()
-            print(f"::notice title=歷史 {u[-11:]}::{len(t)} 行｜" + " ⏎ ".join(t[:3]) + " ⏎ … ⏎ " + t[-1])
+            req = urllib.request.Request(u, headers={"User-Agent": UA, "Origin": "https://dadanny1122.github.io"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                cors = r.headers.get("Access-Control-Allow-Origin")
+                t = r.read().decode("utf-8-sig", "ignore")
+            print(f"::notice title=CORS {u[-12:]}::{cors}")
+            i = t.find("<tbody")
+            snip = re.sub(r"\s+", " ", re.sub(r"<(?!/?(tr|td))[^>]*>", "", t[i:i + 3000])) if i >= 0 else t[:300]
+            print(f"::notice title=結構 {u[-12:]}::{len(t)} 字｜{snip[:1500]}")
         except Exception as e:
-            print(f"::notice title=歷史 {u[-11:]}::{e}")
+            print(f"::notice title=結構 {u[-12:]}::{e}")
 
 
 if __name__ == "__main__":
