@@ -8,7 +8,7 @@ on:
       mode:
         description: 'daily＝全台總覽＋提醒；check＝只檢查降雨提醒'
         type: choice
-        options: [check, daily]
+        options: [check, daily, probe]
         default: check
       preview:
         description: '只預覽（印在 Actions 頁面），不發到 Discord'

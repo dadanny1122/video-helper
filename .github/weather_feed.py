@@ -182,5 +182,26 @@ def main(path):
     print(f"::notice title=氣象::{mode} 完成；提醒 {len(hits)} 個縣市時段")
 
 
+def probe():
+    """診斷：看鄉鎮區 2 天預報（F-D0047-005 桃園市，大園區）的資料長怎樣"""
+    key = os.environ.get("CWA_API_KEY", "").strip()
+    url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-005?" + urllib.parse.urlencode(
+        {"Authorization": key, "format": "JSON", "LocationName": "大園區"})
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "VideoHelper-WeatherBot/1.0"}), timeout=30) as r:
+        d = json.loads(r.read())
+    txt = json.dumps(d, ensure_ascii=False)
+    print(f"::notice title=結構 1::{len(txt)} 字｜{txt[:1500]}")
+    recs = d.get("records", {})
+    locs = recs.get("Locations") or recs.get("locations") or []
+    loc = (locs[0].get("Location") or locs[0].get("location"))[0] if locs else {}
+    for el in loc.get("WeatherElement") or loc.get("weatherElement") or []:
+        name = el.get("ElementName") or el.get("elementName")
+        t = (el.get("Time") or el.get("time") or [{}])
+        print(f"::notice title=元素 {name}::{len(t)} 筆｜{json.dumps(t[:2], ensure_ascii=False)[:400]}")
+
+
 if __name__ == "__main__":
+    if os.environ.get("MODE") == "probe":
+        probe()
+        sys.exit(1)
     main(sys.argv[1])
