@@ -1,0 +1,43 @@
+name: Dashboard snapshot to Discord
+
+# 匯率（每 10 分鐘）、排行榜、新聞跑完之後，截一張「即時介面」的圖，修改 Discord #看板 那一則訊息
+# 也可以手動按 Run workflow 馬上截一張
+on:
+  workflow_run:
+    workflows: ["Exchange rates to Discord", "Ranking to Discord", "News to Discord"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dash
+  cancel-in-progress: true
+
+jobs:
+  snap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Install browser
+        run: |
+          pip install -q playwright
+          python -m playwright install --with-deps chromium > /dev/null
+          sudo apt-get install -y -q fonts-noto-cjk fonts-noto-color-emoji > /dev/null
+      - name: Take the snapshot and update Discord
+        env:
+          DISCORD_DASH_WEBHOOK: ${{ secrets.DISCORD_DASH_WEBHOOK }}
+          PYTHONIOENCODING: utf-8
+        run: python3 .github/dash_snapshot.py .github/dash_state.json
+      - name: Remember the message
+        run: |
+          [ -f .github/dash_state.json ] || exit 0
+          git add .github/dash_state.json
+          git diff --cached --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          git commit -m "記住即時介面的訊息"
+          for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 5; done

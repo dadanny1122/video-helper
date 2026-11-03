@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Video Helper 看板</title>
+<title>即時介面</title>
+<link rel="icon" href="favicon.png">
 <style>
   :root { --bg:#fafaf7; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#e4e3dc; --accent:#c62828; --blue:#1565c0; --tip:#eef5ee; --warn:#fff6e5; }
   @media (prefers-color-scheme: dark) {
@@ -37,6 +38,8 @@
 </style>
 <style>
   main { max-width: 1180px; }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .brand img { width:64px; height:64px; border-radius:14px; background:#fff; }
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:16px; }
   @media (max-width: 820px) { .grid { grid-template-columns:1fr; } }
   .box { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; min-height:220px; overflow:hidden; }
@@ -59,7 +62,7 @@
 </style>
 </head>
 <body><main>
-<h1>📊 Video Helper 看板</h1>
+<h1 class="brand"><img src="logo.png" alt="">即時介面</h1>
 <p class="sub">匯率、排行榜、新聞、機器人狀態一次看。每分鐘自動刷新。<span id="clock"></span></p>
 
 <div class="grid">
