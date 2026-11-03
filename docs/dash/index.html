@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Helper 看板</title>
+<style>
+  :root { --bg:#fafaf7; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#e4e3dc; --accent:#c62828; --blue:#1565c0; --tip:#eef5ee; --warn:#fff6e5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#151514; --fg:#ecebe6; --muted:#a3a29b; --card:#1f1f1d; --line:#33332f; --accent:#ef5350; --blue:#64b5f6; --tip:#1d2a1f; --warn:#2e2715; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.75 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:32px 16px 80px; }
+  h1 { font-size:30px; margin:0 0 4px; }
+  h2 { font-size:21px; margin:44px 0 10px; padding-top:12px; border-top:1px solid var(--line); }
+  h3 { font-size:17px; margin:24px 0 6px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  nav { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 16px; }
+  nav a { display:inline-block; margin:2px 12px 2px 0; }
+  a { color:var(--blue); }
+  .parts { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:14px 0; }
+  @media (max-width:560px) { .parts { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .card .t { display:block; font-size:17px; font-weight:700; margin-bottom:4px; }
+  ol, ul { padding-left:22px; } li { margin:4px 0; }
+  .tip, .warn { border-radius:8px; padding:10px 14px; margin:12px 0; }
+  .tip { background:var(--tip); } .warn { background:var(--warn); }
+  .k { display:inline-block; padding:0 7px; border-radius:5px; font-size:14px; color:#fff; background:var(--accent); white-space:nowrap; }
+  .k.b { background:#1565c0; } .k.g { background:#555; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  td, th { border-bottom:1px solid var(--line); padding:8px 6px; text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  details { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:8px 14px; margin:8px 0; }
+  summary { cursor:pointer; font-weight:600; }
+  footer { margin-top:48px; color:var(--muted); font-size:14px; }
+</style>
+<style>
+  main { max-width: 1180px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:16px; }
+  @media (max-width: 820px) { .grid { grid-template-columns:1fr; } }
+  .box { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; min-height:220px; overflow:hidden; }
+  .box h2 { margin:0 0 4px; padding:0; border:0; font-size:20px; display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .box h2 a { font-size:13px; font-weight:400; }
+  .meta { color:var(--muted); font-size:13px; margin-bottom:8px; }
+  table { font-size:14px; }
+  td, th { padding:5px 4px; }
+  .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .up { color:#c62828; } .dn { color:#2e7d32; }
+  @media (prefers-color-scheme: dark) { .up { color:#ef5350; } .dn { color:#66bb6a; } }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+  .g { background:#43a047; } .y { background:#f9a825; } .r { background:#e53935; } .n { background:#9e9e9e; }
+  .news a { display:block; text-decoration:none; color:var(--fg); padding:6px 0; border-bottom:1px solid var(--line); }
+  .news a:hover b { text-decoration:underline; }
+  .news small { color:var(--muted); }
+  .scroll { max-height:420px; overflow-y:auto; }
+  .tag { font-size:12px; padding:0 6px; border-radius:4px; white-space:nowrap; }
+  .tag.dl { background:#1565c0; color:#fff; } .tag.ad { background:var(--line); }
+</style>
+</head>
+<body><main>
+<h1>📊 Video Helper 看板</h1>
+<p class="sub">匯率、排行榜、新聞、機器人狀態一次看。每分鐘自動刷新。<span id="clock"></span></p>
+
+<div class="grid">
+  <section class="box" id="fx"><h2>💱 匯率 <a href="../fx/calc.html">🧮 計算機</a></h2><div class="meta">讀取中…</div></section>
+  <section class="box" id="rank"><h2>🏆 排行榜 <a href="https://theporndude.com/zh/top-porn-tube-sites">來源</a></h2><div class="meta">讀取中…</div></section>
+  <section class="box" id="news"><h2>📰 新聞</h2><div class="meta">讀取中…</div></section>
+  <section class="box" id="health"><h2>🩺 系統狀態 <a href="https://github.com/dadanny1122/video-helper/actions">GitHub</a></h2><div class="meta">讀取中…</div></section>
+</div>
+<footer>資料：臺灣銀行牌告匯率、ThePornDude、Tranco、各新聞媒體、GitHub Actions｜數據整理，非買賣建議｜<a href="../fx/">📖 匯率說明書</a></footer>
+</main>
+<script>
+const RAW = 'https://raw.githubusercontent.com/dadanny1122/video-helper/main/';
+const API = 'https://api.github.com/repos/dadanny1122/video-helper/actions/runs?per_page=100';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const get = p => fetch(RAW + p + '?t=' + Date.now()).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+const body = (id, html) => { const b = $(id); b.querySelectorAll(':scope > :not(h2)').forEach(e => e.remove()); b.insertAdjacentHTML('beforeend', html); };
+const twNow = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+const ago = t => { const m = Math.round((Date.now() - new Date(t)) / 60000); return m < 60 ? `${m} 分鐘前` : m < 1440 ? `${Math.round(m / 60)} 小時前` : `${Math.round(m / 1440)} 天前`; };
+const fmt = v => v == null ? '—' : v < 1 ? v.toFixed(4) : v < 10 ? v.toFixed(3) : v.toFixed(2);
+
+async function fx() {
+  try {
+    const d = await get('docs/fx/rates.json');
+    const rows = Object.entries(d.rates).map(([c, r]) => {
+      const m = r.spot_buy && r.spot_sell ? (r.spot_buy + r.spot_sell) / 2 : (r.cash_buy + r.cash_sell) / 2;
+      const pct = r.prev_mid ? (m / r.prev_mid - 1) * 100 : null;
+      const pos = r.pctl30 == null ? '' : r.pctl30 <= 20 ? '🟢' : r.pctl30 >= 80 ? '🔴' : '🟡';
+      return `<tr><td>${r.flag} ${r.zh}</td><td class="num">${fmt(m)}</td>
+        <td class="num ${pct > 0 ? 'up' : pct < 0 ? 'dn' : ''}">${pct == null ? '—' : (pct > 0 ? '+' : '') + pct.toFixed(2) + '%'}</td>
+        <td class="num">${pos} ${r.pctl30 ?? ''}</td><td class="num">${fmt(r.cash_sell)}</td></tr>`;
+    }).join('');
+    body('fx', `<div class="meta">台銀掛牌：${esc(d.quote_time || '—')}｜更新：${esc(d.updated)}</div>
+      <table><tr><th>貨幣</th><th class="num">中間價</th><th class="num">比前一日</th><th class="num">30天位置</th><th class="num">現鈔賣出</th></tr>${rows}</table>
+      <div class="meta" style="margin-top:6px">30天位置：0＝最便宜、100＝最貴（🟢 便宜 20%、🔴 貴 20%）</div>`);
+  } catch (e) { body('fx', `<div class="meta">讀不到匯率（${esc(e.message)}）</div>`); }
+}
+
+async function rank() {
+  try {
+    const d = await get('.github/rank_state.json');
+    const FULL = ['pornhub', 'xvideos', 'xnxx', 'redtube', 'youporn', 'xhamster', 'tube8', 'youjizz', 'spankbang'];
+    const tr = d.tranco || {};
+    const order = Object.keys(tr).sort((a, b) => tr[a] - tr[b]);
+    const rows = (d.rows || []).map(([p, n, u]) => {
+      const dl = FULL.includes(n.replace(/\s*\(.*\)$/, '').trim().toLowerCase());
+      const f = order.indexOf(n);
+      return `<tr><td class="num">${p}</td><td><a href="${esc(u)}">${esc(n)}</a></td>
+        <td><span class="tag ${dl ? 'dl' : 'ad'}">${dl ? '⬇ 可下載' : '只擋廣告'}</span></td>
+        <td class="num">${f >= 0 ? '流量第 ' + (f + 1) : '—'}</td></tr>`;
+    }).join('');
+    body('rank', `<div class="meta">每天 20:00 更新｜最後：${esc(d.updated || '—')}｜流量＝Tranco 全球排名重排</div>
+      <div class="scroll"><table><tr><th class="num">#</th><th>網站</th><th>功能</th><th class="num">流量</th></tr>${rows}</table></div>`);
+  } catch (e) { body('rank', `<div class="meta">讀不到排行榜（${esc(e.message)}）</div>`); }
+}
+
+async function news() {
+  try {
+    const d = await get('.github/news_seen.json');
+    const list = d.recent || [];
+    body('news', list.length ? `<div class="meta">最近貼出的 ${list.length} 則（只收認識的新聞媒體）</div><div class="news scroll">` +
+      list.map(n => `<a href="${esc(n.link)}" target="_blank" rel="noopener"><b>${esc(n.title)}</b>
+        ${n.zh ? `<br><small>🈯 ${esc(n.zh)}</small>` : ''}
+        <br><small>🏷 ${esc(n.topic)}｜📰 ${esc(n.source)}${n.when ? '｜' + ago(n.when) : ''}</small></a>`).join('') + '</div>'
+      : '<div class="meta">還沒有記錄到新聞（下一則新聞貼出後就會出現）</div>');
+  } catch (e) { body('news', `<div class="meta">讀不到新聞（${esc(e.message)}）</div>`); }
+}
+
+// 每個機器人「多久沒跑就算有問題」（分鐘）；只在該跑的時段檢查
+const BOTS = [
+  { name: 'Exchange rates to Discord', zh: '💱 匯率', limit: () => { const t = twNow(), d = t.getDay(), h = t.getHours() + t.getMinutes() / 60;
+      return d >= 1 && d <= 5 && h >= 9.3 && h <= 18 ? 25 : null; } },
+  { name: 'Ranking to Discord', zh: '🏆 排行榜', limit: () => 26 * 60 },
+  { name: 'News to Discord', zh: '📰 新聞', limit: () => 4 * 60 },
+  { name: 'Site change alarm', zh: '🔔 網站檢查', limit: () => 30 * 60 },
+];
+let lastApi = 0, runsCache = null;
+async function health() {
+  try {
+    if (!runsCache || Date.now() - lastApi > 5 * 60000) {          // GitHub 免登入每小時只能問 60 次 → 5 分鐘問一次
+      const r = await fetch(API); if (!r.ok) throw new Error('GitHub ' + r.status);
+      runsCache = (await r.json()).workflow_runs; lastApi = Date.now();
+    }
+    const rows = BOTS.map(b => {
+      const run = runsCache.find(x => x.name === b.name && x.status === 'completed');
+      const busy = runsCache.find(x => x.name === b.name && x.status !== 'completed');
+      if (!run) return `<tr><td>${b.zh}</td><td><span class="dot n"></span>沒有紀錄</td><td></td></tr>`;
+      const mins = (Date.now() - new Date(run.updated_at)) / 60000, lim = b.limit();
+      const bad = run.conclusion === 'failure', late = lim != null && mins > lim;
+      const dot = bad ? 'r' : late ? 'y' : 'g';
+      const msg = bad ? '上次失敗' : late ? '太久沒跑' : '正常';
+      return `<tr><td>${b.zh}</td><td><span class="dot ${dot}"></span>${msg}${busy ? '（執行中）' : ''}</td>
+        <td class="num"><a href="${run.html_url}">${ago(run.updated_at)}</a></td></tr>`;
+    }).join('');
+    let sites = '';
+    try {
+      const s = await get('.github/site_status.json');
+      sites = Object.entries(s).map(([n, v]) => {
+        const dot = v.status === 'ok' ? 'g' : v.status === 'broken' ? 'r' : 'n';
+        const msg = v.status === 'ok' ? '正常' : v.status === 'broken' ? '可能改版' : '檢查主機看不到（不算改版）';
+        return `<tr><td>${esc(n)}</td><td colspan="2"><span class="dot ${dot}"></span>${msg}</td></tr>`;
+      }).join('');
+    } catch (e) {}
+    body('health', `<table><tr><th>機器人</th><th>狀態</th><th class="num">上次跑完</th></tr>${rows}</table>
+      <div class="meta" style="margin-top:12px">Video Helper 支援的網站（每天檢查一次）</div><table>${sites}</table>`);
+  } catch (e) { body('health', `<div class="meta">讀不到狀態（${esc(e.message)}）</div>`); }
+}
+
+function all() { fx(); rank(); news(); health();
+  $('clock').textContent = '｜上次刷新 ' + twNow().toTimeString().slice(0, 5); }
+all(); setInterval(all, 60000);
+</script>
+</body></html>

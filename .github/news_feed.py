@@ -387,6 +387,10 @@ def main(path, dry=False, mark_only=False):
             continue
         if post(hook, n):
             posted += 1
+            state.setdefault("recent", []).insert(0, {    # 給網頁看板用：最近貼出的新聞
+                "title": n["title"], "zh": n.get("zh"), "link": n["link"], "source": n.get("source"),
+                "topic": n.get("topic"), "when": n["when"].isoformat() if n.get("when") else None})
+            state["recent"] = state["recent"][:15]
         time.sleep(1.2)
     # 這次看到的都記成看過（包含沒貼的），之後只貼真的新的
     for n in items:

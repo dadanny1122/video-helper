@@ -246,6 +246,8 @@ def main(path):
                             "embeds": [{"title": f"📊 今日排名變動（{now_tw[:10]}，跟昨天比）", "url": PAGE,
                                         "color": 0xF9A825, "description": body + f"\n\n📎 來源：[ThePornDude]({PAGE})（單一網站，僅供參考）"}]})
     state["rows"] = [list(x) for x in rows[:TOP]]
+    state["tranco"] = tr or {}                       # 給網頁看板用
+    state["updated"] = now_tw
     if os.environ.get("EVENT") == "schedule" or os.environ.get("WAIT") == "true":
         state["last_day"] = today                    # 只有「晚上 8 點那一次」才算今天貼過（手動重貼不算）
     json.dump(state, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)

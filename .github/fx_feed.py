@@ -472,7 +472,9 @@ def export_rates(rates, hists, now_tw, qtime):
             continue
         cs = [x[2] for x in (hists.get(code) or []) if x[2]]
         out["rates"][code] = {"zh": zh, "flag": flag, **r,
-                              "avg30_cash_sell": round(sum(cs) / len(cs), 6) if cs else None}
+                              "avg30_cash_sell": round(sum(cs) / len(cs), 6) if cs else None,
+                              "prev_mid": (hists.get(code) or [[None, None]])[-1][1],     # 前一個營業日（看板算漲跌）
+                              "pctl30": round(position(mid(r), hists[code])[1] * 100) if mid(r) and hists.get(code) else None}
     out["ticks"], out["tick_date"] = {}, None
     for code in out["rates"]:
         try:
