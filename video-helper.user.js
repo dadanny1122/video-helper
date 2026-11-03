@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.16.0
+// @version      3.17.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -41,6 +41,11 @@
 // @grant        GM_info
 // @grant        GM_setClipboard
 // @grant        unsafeWindow
+// @grant        GM.xmlHttpRequest
+// @grant        GM.getValue
+// @grant        GM.setValue
+// @grant        GM.setClipboard
+// @grant        GM.info
 // @connect      *
 // @connect      127.0.0.1
 // @run-at       document-start
@@ -65,6 +70,46 @@
    * ================================================================== */
 
   const PW = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+
+  // ---- 相容不同的腳本管理器 ----
+  // 電腦：暴力猴（GM_xxx 舊寫法）；iPhone：Safari 的 Userscripts 等（多半只有 GM.xxx 新寫法）
+  // 每個功能：先用舊寫法 → 沒有就用新寫法 → 再沒有就用瀏覽器內建的方法頂替
+  const GMN = typeof GM !== 'undefined' ? GM : {};
+  const gmInfo = typeof GM_info !== 'undefined' ? GM_info : (GMN.info || { script: { version: '?' }, scriptHandler: '?' });
+  const gmXhr = typeof GM_xmlhttpRequest === 'function' ? GM_xmlhttpRequest
+    : typeof GMN.xmlHttpRequest === 'function' ? (o => { GMN.xmlHttpRequest(o); })
+    : (o => {                                        // 最後手段：一般的 fetch（只抓得到允許跨網站讀取的檔案）
+        fetch(o.url, { method: o.method || 'GET', headers: o.headers, body: o.data })
+          .then(async r => {
+            const response = o.responseType === 'arraybuffer' ? await r.arrayBuffer()
+              : o.responseType === 'blob' ? await r.blob() : await r.text();
+            o.onload && o.onload({ status: r.status, response, responseText: typeof response === 'string' ? response : '',
+                                   responseHeaders: [...r.headers].map(([k, v]) => k + ': ' + v).join('\r\n'), finalUrl: r.url });
+          })
+          .catch(e => { o.onerror ? o.onerror(e) : o.ontimeout && o.ontimeout(e); });
+      });
+  const gmDownload = typeof GM_download === 'function' ? GM_download
+    : (o => {                                        // 沒有 GM_download：先抓成檔案，再用「下載連結」存
+        gmXhr({ url: o.url, responseType: 'blob', onprogress: o.onprogress,
+          onload: r => {
+            try {
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(r.response instanceof Blob ? r.response : new Blob([r.response]));
+              a.download = o.name; document.body.appendChild(a); a.click(); a.remove();
+              setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+              o.onload && o.onload();
+            } catch (e) { o.onerror && o.onerror({ error: e.message }); }
+          },
+          onerror: e => o.onerror && o.onerror({ error: (e && e.message) || '下載失敗' }) });
+      });
+  const gmClip = typeof GM_setClipboard === 'function' ? GM_setClipboard
+    : typeof GMN.setClipboard === 'function' ? (t => GMN.setClipboard(t))
+    : (t => { try { navigator.clipboard.writeText(t); } catch (e) {} });
+  const gmMenu = typeof GM_registerMenuCommand === 'function' ? GM_registerMenuCommand
+    : typeof GMN.registerMenuCommand === 'function' ? ((n, f) => GMN.registerMenuCommand(n, f))
+    : (() => {});                                    // 沒有選單就算了（功能都還能從盾牌面板用）
+  const gmGetValue = k => (typeof GM_getValue === 'function' ? GM_getValue(k) : undefined);
+  const gmSetValue = (k, v) => { if (typeof GM_setValue === 'function') GM_setValue(k, v); else if (GMN.setValue) GMN.setValue(k, v); };
   const IS_TOP = window.top === window.self;
   const HOST = location.hostname;
   const baseOf = h => h.split('.').slice(-2).join('.');
@@ -74,12 +119,12 @@
   // 主要存在暴力猴裡（所有網站共用），同時在網站的 localStorage 留一份備份
   const store = {
     get(k, d) {
-      try { const v = GM_getValue(k); if (v !== undefined) return v; } catch (e) {}
+      try { const v = gmGetValue(k); if (v !== undefined) return v; } catch (e) {}
       try { const b = localStorage.getItem('vh_' + k); if (b !== null) return JSON.parse(b); } catch (e) {}
       return d;
     },
     set(k, v) {
-      try { GM_setValue(k, v); } catch (e) {}
+      try { gmSetValue(k, v); } catch (e) {}
       try { localStorage.setItem('vh_' + k, JSON.stringify(v)); } catch (e) {}
     },
   };
@@ -244,7 +289,7 @@
   // ---- 網路請求 ----
   function gmGet(url, type) {
     return new Promise((resolve, reject) => {
-      GM_xmlhttpRequest({
+      gmXhr({
         method: 'GET', url, responseType: type, timeout: 30000,
         onload: r => (r.status >= 200 && r.status < 300) ? resolve(r.response) : reject(new Error('HTTP ' + r.status)),
         onerror: () => reject(new Error('連線失敗')),
@@ -265,7 +310,7 @@
 
   function getSize(url) {
     return new Promise(resolve => {
-      GM_xmlhttpRequest({
+      gmXhr({
         method: 'HEAD', url, timeout: 10000,
         onload: r => {
           const m = (r.responseHeaders || '').match(/content-length:\s*(\d+)/i);
@@ -313,7 +358,7 @@
   // 「這是誤擋」→ 複製一份回報（不含網址後面的參數）
   function reportWrong(ev) {
     const text = JSON.stringify({
-      type: '誤擋回報', version: (typeof GM_info !== 'undefined' && GM_info.script) ? GM_info.script.version : '?',
+      type: '誤擋回報', version: (gmInfo.script && gmInfo.script.version) || '?',
       site: (typeof site !== 'undefined' && site) ? site.name : HOST, page: location.href.split('?')[0],
       event: ev, recent: events.slice(0, 10),
     }, null, 1);
@@ -1946,7 +1991,7 @@
       const headers = {};
       if (body) headers['Content-Type'] = 'application/json';
       if (token) headers['X-VH-Token'] = token;
-      GM_xmlhttpRequest({
+      gmXhr({
         method, url: `http://127.0.0.1:${port}${path}`, headers, timeout: 3000,
         data: body ? JSON.stringify(body) : undefined,
         onload: r => { let d = {}; try { d = JSON.parse(r.responseText || '{}'); } catch (e) {} resolve({ status: r.status, data: d }); },
@@ -1997,7 +2042,7 @@
     const height = s.height || null;                 // 0（交給電腦版找畫質）→ 用電腦版的預設畫質
     const port = await findBridge();
     if (!port) {
-      try { GM_setClipboard(url); } catch (e) {}
+      try { gmClip(url); } catch (e) {}
       throw new Error('找不到電腦版。請先打開 Video Helper 電腦版，並在「③ 設定」按「🔗 配對瀏覽器…」。\n（網址已經幫你複製，切到電腦版也會自動偵測）');
     }
     const media = s.url ? new URL(s.url, location.href).href : '';
@@ -2118,7 +2163,7 @@
       };
 
       if (s.kind === 'mp4') {
-        GM_download({
+        gmDownload({
           url: s.url,
           name: baseName + '.mp4',
           onprogress: e => {
@@ -2156,7 +2201,7 @@
     try {
       for (const name of site.features) {
         const on = isOn(name);
-        GM_registerMenuCommand(`${on ? '✅' : '⬜'} ${MODULES[name].label}`, () => {
+        gmMenu(`${on ? '✅' : '⬜'} ${MODULES[name].label}`, () => {
           settings[name] = !on;
           store.set('settings', settings);
           location.reload();
@@ -2182,7 +2227,7 @@
     const hooked = active.includes('saveData') ? !/native code/.test(String(PW.fetch)) : true;
     const hasMux = typeof muxjs !== 'undefined' || !!(window.muxjs || PW.muxjs);
     const sp = measureSpeed();
-    const ver = (typeof GM_info !== 'undefined' && GM_info.script) ? GM_info.script.version : '?';
+    const ver = (gmInfo.script && gmInfo.script.version) || '?';
 
     add(`<b>🩺 狀態檢查（${esc(site.name)}）</b>`);
     add(`腳本版本：v${esc(ver)}`);
@@ -2253,7 +2298,7 @@
   };
 
   if (IS_TOP) {
-    try { GM_registerMenuCommand('📋 查看這頁連到的其他網站（封鎖廣告）', () => { ui.flush(); ui.openPanel(); }); } catch (e) {}
+    try { gmMenu('📋 查看這頁連到的其他網站（封鎖廣告）', () => { ui.flush(); ui.openPanel(); }); } catch (e) {}
   }
 
   // ---- 診斷：背景自動記錄，使用者點一下就複製 ----
@@ -2278,9 +2323,9 @@
         const fvKey = Object.keys(PW).find(k => k.startsWith('flashvars_'));
         const fv = fvKey ? PW[fvKey] : null;
         const report = {
-          version: GM_info && GM_info.script && GM_info.script.version,
-          manager: GM_info && GM_info.scriptHandler,
-          injectInto: GM_info && GM_info.injectInto,
+          version: gmInfo.script && gmInfo.script.version,
+          manager: gmInfo.scriptHandler,
+          injectInto: gmInfo.injectInto,
           pageHooked: PW.fetch !== undefined && !/native code/.test(String(PW.fetch)),
           site: site.name, page: location.href.split('?')[0],
           features: active,
@@ -2293,7 +2338,7 @@
           paused: PAUSED,
           recentEvents: events.slice(0, 20),
           userBlockStored: store.get('userBlock', null),
-          storageTest: (() => { try { const t = Date.now(); GM_setValue('vh_test', t); return GM_getValue('vh_test') === t ? 'ok' : 'mismatch'; } catch (e) { return 'error: ' + e.message; } })(),
+          storageTest: (() => { try { const t = Date.now(); gmSetValue('vh_test', t); return gmGetValue('vh_test') === t ? 'ok' : 'mismatch'; } catch (e) { return 'error: ' + e.message; } })(),
           otherHosts: [...new Set(performance.getEntriesByType('resource').map(e => {
             try { return baseOf(new URL(e.name).hostname); } catch (er) { return ''; }
           }))].filter(h => h && h !== HOME),
@@ -2303,7 +2348,7 @@
           () => alert('✅ 診斷資料已複製，直接貼給開發者就好'),
           () => prompt('請複製下面的內容：', text));
     };
-    try { GM_registerMenuCommand('🔧 診斷（複製給開發者）', ui.actions.diagnose); } catch (e) {}
+    try { gmMenu('🔧 診斷（複製給開發者）', ui.actions.diagnose); } catch (e) {}
   }
 
   // 要早啟動的（安全防護）

@@ -28,6 +28,7 @@
   - `adPath`：網站自己網域上的廣告路徑；`ownDomains`：網站自己的影片伺服器（不要封鎖）
 - `MODULES`：功能本體（security、saveData、hideAds、autoSkip、videoStatus、estimator、listLabels、download）
 - 找影片：`findPhSources`（Pornhub：flashvars）、`findXvSources`（XVideos／XNXX：setVideoHLS）、`findAyloSources`（YouPorn／RedTube：mediaDefinitions）、`findYjSources`（YouJizz：dataEncodings）、`findSbSources`（SpankBang：stream_data，讀不到 → 交給電腦版）、Tube8 用 `findAyloSources`、`findXhSources`（xHamster：window.initials；網址被加密成 16 進位字，`xhDecodeHex` 解開＝第 1 位元組選算法 1～7、第 2～5 位元組是 seed、其餘 XOR，跟 yt-dlp 同法；網站換新算法時解不出來 → 退回「交給電腦版」）
+- **相容層**（v3.17.0）：不要直接呼叫 GM_xxx，一律用 `gmXhr`、`gmDownload`、`gmClip`、`gmMenu`、`gmGetValue`、`gmSetValue`、`gmInfo`（先用暴力猴的 GM_xxx → 沒有就用新式 GM.xxx → 再沒有就用 fetch／下載連結／navigator.clipboard 頂替），讓 iPhone Safari 的 Userscripts 等其他管理器也能跑
 - 「🖥 送到電腦版」：`sendToDesktop` → 電腦版 `127.0.0.1:47321～47325`，要先 6 位數配對；會一起送影片真正的位址（網站會擋程式開網頁，例如 Pornhub 回 410）
 
 ## 支援的網站
@@ -99,4 +100,4 @@ body `{"ref":"main","inputs":{"wait":"true"}}`，Header 帶使用者的 fine-gra
 - Tube8、YouJizz、SpankBang 下載 v3.14.0／電腦版 v1.17.0 加入，使用者說下載都沒問題
 - YouJizz 全螢幕時推薦影片的預覽會閃一下（網站自己的功能，使用者說不用理）
 - 新加的「只擋廣告」網站都還沒有專屬規則（有人回報再加）
-- 手機版（Android 的 Firefox／Kiwi 可以裝暴力猴；iPhone 要另外的 App）
+- 手機版：使用者只有 iPhone（沒有 Android）→ 先做 iPhone：Safari ＋ Userscripts App；v3.17.0 加了相容層，待使用者實測（送到電腦版在手機上不能用：電腦版只聽 127.0.0.1）
