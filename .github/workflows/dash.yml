@@ -7,12 +7,21 @@ on:
     workflows: ["Exchange rates to Discord", "Ranking to Discord", "News to Discord"]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      interaction:
+        description: '（Discord 指令用）這次指令的回覆代碼，15 分鐘內有效'
+        required: false
+        default: ''
+      app_id:
+        description: '（Discord 指令用）Discord 應用程式 ID'
+        required: false
+        default: ''
 
 permissions:
   contents: write
 
 concurrency:
-  group: dash
+  group: dash-${{ inputs.interaction != '' && github.run_id || 'auto' }}
   cancel-in-progress: true
 
 jobs:
@@ -27,8 +36,13 @@ jobs:
           pip install -q playwright
           python -m playwright install --with-deps chromium > /dev/null
           sudo apt-get install -y -q fonts-noto-cjk fonts-noto-color-emoji > /dev/null
+      - name: Hide the reply code in logs
+        if: ${{ inputs.interaction != '' }}
+        run: echo "::add-mask::${{ inputs.interaction }}"
       - name: Take the snapshot and update Discord
         env:
+          INTERACTION: ${{ inputs.interaction }}
+          APP_ID: ${{ inputs.app_id }}
           DISCORD_DASH_WEBHOOK: ${{ secrets.DISCORD_DASH_WEBHOOK }}
           PYTHONIOENCODING: utf-8
         run: python3 .github/dash_snapshot.py .github/dash_state.json
