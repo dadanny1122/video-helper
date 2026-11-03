@@ -118,7 +118,7 @@ async function cmdStatus(env) {
   if (!r.ok) return reply({ description: `讀不到 GitHub 狀態（${r.status}）` }, 64);
   const runs = (await r.json()).workflow_runs;
   const BOTS = [['Exchange rates to Discord', '💱 匯率'], ['Ranking to Discord', '🏆 排行榜'], ['News to Discord', '📰 新聞'],
-                ['Site change alarm', '🔔 網站檢查'], ['Dashboard snapshot to Discord', '📊 即時介面']];
+                ['Site change alarm', '🔔 網站檢查'], ['Weather to Discord', '🌦 天氣'], ['Dashboard snapshot to Discord', '📊 即時介面']];
   const ago = t => { const m = Math.round((Date.now() - new Date(t)) / 60000); return m < 60 ? `${m} 分鐘前` : m < 1440 ? `${Math.round(m / 60)} 小時前` : `${Math.round(m / 1440)} 天前`; };
   const lines = BOTS.map(([n, zh]) => {
     const x = runs.find(w => w.name === n && w.status === 'completed');

@@ -63,15 +63,17 @@
 </head>
 <body><main>
 <h1 class="brand"><img src="logo.png" alt="">即時介面</h1>
-<p class="sub">匯率、排行榜、新聞、機器人狀態一次看。每分鐘自動刷新。<span id="clock"></span></p>
+<p class="sub">匯率、排行榜、新聞、天氣、機器人狀態一次看。每分鐘自動刷新。<span id="clock"></span></p>
 
 <div class="grid">
   <section class="box" id="fx"><h2>💱 匯率 <a href="../fx/calc.html">🧮 計算機</a></h2><div class="meta">讀取中…</div></section>
   <section class="box" id="rank"><h2>🏆 排行榜 <a href="https://theporndude.com/zh/top-porn-tube-sites">來源</a></h2><div class="meta">讀取中…</div></section>
   <section class="box" id="news"><h2>📰 新聞</h2><div class="meta">讀取中…</div></section>
+  <section class="box" id="weather"><h2>🌦 天氣 <a href="https://www.cwa.gov.tw/V8/C/W/County/index.html">中央氣象署</a></h2><div class="meta">讀取中…</div></section>
   <section class="box" id="health"><h2>🩺 系統狀態 <a href="https://github.com/dadanny1122/video-helper/actions">GitHub</a></h2><div class="meta">讀取中…</div></section>
+  <section class="box" id="sites"><h2>🌐 支援網站檢查</h2><div class="meta">讀取中…</div></section>
 </div>
-<footer>資料：臺灣銀行牌告匯率、ThePornDude、Tranco、各新聞媒體、GitHub Actions｜數據整理，非買賣建議｜<a href="../fx/">📖 匯率說明書</a></footer>
+<footer>資料：臺灣銀行牌告匯率、ThePornDude、Tranco、各新聞媒體、中央氣象署、GitHub Actions｜數據整理，非買賣建議｜<a href="../fx/">📖 匯率說明書</a></footer>
 </main>
 <script>
 const RAW = 'https://raw.githubusercontent.com/dadanny1122/video-helper/main/';
@@ -131,6 +133,26 @@ async function news() {
   } catch (e) { body('news', `<div class="meta">讀不到新聞（${esc(e.message)}）</div>`); }
 }
 
+async function weather() {
+  try {
+    const d = (await get('.github/weather_state.json')).dash;
+    if (!d) throw new Error('還沒有資料');
+    const icon = w => /雷/.test(w) ? '⛈' : /雨/.test(w) ? '🌧' : /陰/.test(w) ? '☁' : /多雲/.test(w) ? (/晴/.test(w) ? '⛅' : '🌥') : /晴/.test(w) ? '☀' : '🌤';
+    const rows = Object.entries(d.spots).map(([n, v]) => {
+      const now = v.now || {}, pk = v.peak || {};
+      const hot = p => p >= 70 ? ' ☔' : '';
+      return `<tr><td>${esc(n)}</td><td>${icon(now.wx || '')} ${esc(now.wx || '—')}</td>
+        <td class="num">${now.pop ?? '—'}%${hot(now.pop)}</td>
+        <td class="num">${pk.range ? pk.range + ' 點 ' + pk.pop + '%' + hot(pk.pop) : '—'}</td>
+        <td class="num">${v.temp ? v.temp[0] + '–' + v.temp[1] + '°' : '—'}</td></tr>`;
+    }).join('');
+    const wet = Object.entries(d.spots).filter(([, v]) => (v.peak || {}).pop >= 70).map(([n]) => n);
+    body('weather', `<div class="meta">更新：${esc(d.updated)}（每小時）｜降雨機率是 3 小時一段</div>
+      <div class="meta" style="color:var(--fg)">${wet.length ? '☔ 今天要帶傘：' + wet.map(esc).join('、') : '☀ 今天剩下的時段降雨機率都低於 70%'}</div>
+      <table><tr><th>地點</th><th>現在天氣</th><th class="num">現在降雨</th><th class="num">今天最可能下雨</th><th class="num">氣溫</th></tr>${rows}</table>`);
+  } catch (e) { body('weather', `<div class="meta">讀不到天氣（${esc(e.message)}）</div>`); }
+}
+
 // 每個機器人「多久沒跑就算有問題」（分鐘）；只在該跑的時段檢查
 const BOTS = [
   { name: 'Exchange rates to Discord', zh: '💱 匯率', limit: () => { const t = twNow(), d = t.getDay(), h = t.getHours() + t.getMinutes() / 60;
@@ -138,6 +160,7 @@ const BOTS = [
   { name: 'Ranking to Discord', zh: '🏆 排行榜', limit: () => 26 * 60 },
   { name: 'News to Discord', zh: '📰 新聞', limit: () => 4 * 60 },
   { name: 'Site change alarm', zh: '🔔 網站檢查', limit: () => 30 * 60 },
+  { name: 'Weather to Discord', zh: '🌦 天氣', limit: () => 90 },
 ];
 let lastApi = 0, runsCache = null;
 async function health() {
@@ -167,11 +190,12 @@ async function health() {
       }).join('');
     } catch (e) {}
     body('health', `<table><tr><th>機器人</th><th>狀態</th><th class="num">上次跑完</th></tr>${rows}</table>
-      <div class="meta" style="margin-top:12px">Video Helper 支援的網站（每天檢查一次）</div><table>${sites}</table>`);
+      <div class="meta" style="margin-top:8px">🟢 正常｜🟡 太久沒跑｜🔴 上次失敗</div>`);
+    body('sites', `<div class="meta">Video Helper 能下載的網站，網頁寫法有沒有改版（每天檢查一次）</div><table>${sites}</table>`);
   } catch (e) { body('health', `<div class="meta">讀不到狀態（${esc(e.message)}）</div>`); }
 }
 
-function all() { fx(); rank(); news(); health();
+function all() { fx(); rank(); news(); weather(); health();
   $('clock').textContent = '｜上次刷新 ' + twNow().toTimeString().slice(0, 5); }
 all(); setInterval(all, 60000);
 </script>

@@ -278,6 +278,23 @@ def main(path):
             print("::notice title=預覽 突變::" + json.dumps(e, ensure_ascii=False)[:2500])
         else:
             call(hook, {"username": "Video Helper 氣象", "embeds": [e]})
+    # 給即時介面用：每個地點「現在這 3 小時」和「今天最可能下雨的時段」
+    now = datetime.now(TW)
+    dash = {}
+    for label, _, _ in SPOTS:
+        f = sp.get(label)
+        if not f:
+            continue
+        bl = [b for b in f["blocks"] if b[2] is not None]
+        cur = next((b for b in bl if b[0] <= now < b[1]), bl[0] if bl else None)
+        today = [b for b in bl if b[0].date() == now.date() and b[1] > now] or bl[:4]
+        top = max(today, key=lambda b: b[2]) if today else None
+        ts = [v for k, v in f["temp"].items() if k.date() == now.date()]
+        dash[label] = {
+            "now": {"range": f"{cur[0].hour:02d}–{cur[1].hour:02d}", "pop": cur[2], "wx": cur[3]} if cur else None,
+            "peak": {"range": f"{top[0].hour:02d}–{top[1].hour:02d}", "pop": top[2]} if top else None,
+            "temp": [min(ts), max(ts)] if ts else None}
+    state["dash"] = {"updated": now.strftime("%Y-%m-%d %H:%M"), "spots": dash}
     if not preview:
         state["last"] = datetime.now(TW).strftime("%Y-%m-%d %H:%M")
         json.dump(state, open(path, "w", encoding="utf-8"), ensure_ascii=False)

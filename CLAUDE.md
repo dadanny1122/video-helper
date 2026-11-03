@@ -14,7 +14,7 @@
 | `docs/manual/index.html` | 說明書（GitHub Pages：https://dadanny1122.github.io/video-helper/manual/），改了會自動同步到 Discord |
 | `docs/fx/index.html` | 匯率頻道說明書（https://dadanny1122.github.io/video-helper/fx/），匯率訊息都附這個連結；改了匯率的欄位要一起改 |
 | `docs/fx/calc.html` | 換匯計算機（https://dadanny1122.github.io/video-helper/fx/calc.html）：讀 `docs/fx/rates.json`（fx 每次跑時 `export_rates()` 寫入並 commit，preview 模式也會）；可選「今天任一分鐘」的價格（`ticks()` 抓台銀「今日各時段牌價」每次掛牌，約每 2～3 分鐘一次、精確到秒；選的時間用最後一筆 ≤ 那一分鐘的掛牌；台銀頁面 CORS 只開給自己，所以要由 Actions 抓）；鬧鐘每 10 分鐘以 `inputs.export=true` 只更新 rates.json、不發 Discord；三種模式：買外幣（數量×銀行賣出）、用台幣換（台幣÷賣出）、賣外幣（數量×銀行買入），現金／即期，附算式、30 天平均比較、現金 vs 即期差價 |
-| `docs/dash/index.html` | 「即時介面」（使用者要的名字；logo＝使用者提供的吉祥物圖 docs/dash/logo.png，含 Pornhub 標誌元素，已提醒商標風險）網頁看板（https://dadanny1122.github.io/video-helper/dash/）四格：匯率（讀 docs/fx/rates.json：prev_mid、pctl30）、排行榜（讀 .github/rank_state.json：rows、tranco、updated）、新聞（讀 .github/news_seen.json 的 recent，最近貼出 15 則）、系統狀態（GitHub API 各 workflow 最後一次執行，免登入每小時 60 次 → 5 分鐘問一次；site_status.json）。都從 raw.githubusercontent.com 讀，每分鐘刷新 |
+| `docs/dash/index.html` | 「即時介面」（使用者要的名字；logo＝使用者提供的吉祥物圖 docs/dash/logo.png，含 Pornhub 標誌元素，已提醒商標風險）網頁看板（https://dadanny1122.github.io/video-helper/dash/）六格（2×3）：天氣（讀 .github/weather_state.json 的 dash：6 地點現在 3 小時降雨、今天最可能下雨時段、氣溫）、支援網站檢查（site_status.json）、匯率（讀 docs/fx/rates.json：prev_mid、pctl30）、排行榜（讀 .github/rank_state.json：rows、tranco、updated）、新聞（讀 .github/news_seen.json 的 recent，最近貼出 15 則）、系統狀態（GitHub API 各 workflow 最後一次執行，免登入每小時 60 次 → 5 分鐘問一次；site_status.json）。都從 raw.githubusercontent.com 讀，每分鐘刷新 |
 | `docs/practice/` | 學 HLS 用的練習頁 |
 | `CHANGELOG.md` | **電腦版**的更新紀錄（發布 EXE 時當作說明） |
 | `.github/ci_smoke.py` | 電腦版的自動測試（在 Windows 上跑） |

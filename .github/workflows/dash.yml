@@ -1,10 +1,10 @@
 name: Dashboard snapshot to Discord
 
-# 匯率（每 10 分鐘）、排行榜、新聞跑完之後，截一張「即時介面」的圖，修改 Discord #看板 那一則訊息
+# 匯率（每 10 分鐘）、排行榜、新聞、天氣跑完之後，截一張「即時介面」的圖，修改 Discord #看板 那一則訊息
 # 也可以手動按 Run workflow 馬上截一張
 on:
   workflow_run:
-    workflows: ["Exchange rates to Discord", "Ranking to Discord", "News to Discord"]
+    workflows: ["Exchange rates to Discord", "Ranking to Discord", "News to Discord", "Weather to Discord"]
     types: [completed]
   workflow_dispatch:
     inputs:
