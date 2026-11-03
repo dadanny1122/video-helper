@@ -61,7 +61,7 @@
 | `fx-progress.yml` | 改了 `.github/fx_progress.md`／`fx_manual.md` | 匯率的進度、說明書摘要貼到 #匯率進度（使用者說「匯率進度上傳 DC」時改寫這兩個檔） | `DISCORD_FX_PROGRESS_WEBHOOK` |
 | `ios-guide.yml` | 改了 `.github/ios_guide.md` | iPhone 安裝教學貼到 #video_ios（iPhone 從 raw GitHub 網址裝，Greasy Fork 成人腳本要登入才看得到） | `DISCORD_IOS_WEBHOOK` |
 | `dash.yml` | 匯率／排行榜／新聞跑完（workflow_run）或手動 | `dash_snapshot.py` 用 Playwright 截「即時介面」深色版 → 修改 #看板 同一則訊息（`.github/dash_state.json` 存 message_id）；Discord 指令 `/快照`（命令名 snapshot、zh-TW 顯示快照）：`cloudflare/worker.js` 放在使用者的 Cloudflare Workers，驗 Discord 簽章 → dispatch dash.yml（inputs.interaction／app_id）→ `reply_command()` 把「截圖中…」換成圖；其他指令（Worker 直接讀 raw GitHub 的 JSON，1 秒內回覆，不叫 GitHub Actions）：`/換匯`（exchange：貨幣、數量、方式 buy/twd/sell、現金或即期）、`/匯率`（rate）、`/排行榜`（rank）、`/狀態`（status，用 Worker 的 GITHUB_TOKEN 讀 Actions runs）；指令清單在 `COMMANDS`，改了要請使用者重貼 Worker 程式並開 /register | `DISCORD_DASH_WEBHOOK` |
-| `weather.yml` | 鬧鐘：每天 7:00 mode=daily、每 3 小時 mode=check | `weather_feed.py`：中央氣象署 F-C0032-001（今明 36 小時，22 縣市）→ #每日氣象；daily＝依北中南東離島分組的總覽；check＝接下來兩個時段降雨機率 ≥ 70% 發 ☔ 提醒（`weather_state.json` 記 縣市|時段，不重發）；勾 preview 只印 | `CWA_API_KEY`、`DISCORD_WEATHER_WEBHOOK` |
+| `weather.yml` | 鬧鐘：每天 7:00 mode=daily、每小時 mode=check | `weather_feed.py` → #每日氣象。使用者要「大小方向」：🗓 大方向（daily）＝`SPOTS` 6 個地點（大園、青埔＝中壢區、土城、台北101＝信義區、竹科＝新竹市東區、竹北）今天每 3 小時降雨機率時間表＋最可能下雨時段（氣象署 F-D0047-xxx 鄉鎮 2 天預報，元素「3小時降雨機率」「天氣現象」「溫度」）＋全台 22 縣市今明總覽（F-C0032-001）；⚡ 小方向（check）＝接下來 3 小時（now+1h 所在區塊）從 <70% 變 ≥70% 才通知、下過雨後 ≤30% 通知雨停（`weather_state.json` 的 spots 記狀態）。氣象署沒有逐小時降雨機率，最細 3 小時；勾 preview 只印、mode=probe 看格式 | `CWA_API_KEY`、`DISCORD_WEATHER_WEBHOOK` |
 | `announce.yml` | 改了 `.github/announce.md` | 把更新總結貼到 #進度（使用者說「上傳 DC 更新結果」時：改寫這個檔、推上去） | `DISCORD_WEBHOOK` |
 | `rank.yml` | 每天 20:00 整（使用者要求固定 8 點；cron 18:31、19:13、19:47 提早啟動，程式 sleep 到 20:00 才貼；`last_day` 只有 8 點那次（schedule 或手動勾 wait）才記，今天貼過就跳過；排程被 GitHub 跳過時手動 Run workflow 勾 wait 補救；concurrency 一次只跑一個、checkout ref: main 拿最新狀態） | ThePornDude 前 20 名 → 排行榜頻道（修改同一則），標「可下載／只擋廣告」；每天另發一則跟昨天比的名次變動；並排 Tranco 全球流量排名（`tranco()` 下載 top-1m，`DOMAINS` 對照名稱→網域）、列出兩邊差最多的；附來源連結＋Similarweb 連結；勾 preview 只印在 annotations 不發 Discord；手動 Run workflow 勾 repost 會刪舊訊息重貼 | `DISCORD_RANK_WEBHOOK` |
 
@@ -72,7 +72,7 @@
 GitHub 自己的排程（cron）常延遲幾小時或直接跳過（排行榜的 cron 一次都沒自己跑過）。所以**匯率、排行榜、新聞改用 cron-job.org 當鬧鐘**：
 時間到就 POST `https://api.github.com/repos/dadanny1122/video-helper/actions/workflows/{fx|rank}.yml/dispatches`，
 body `{"ref":"main","inputs":{"wait":"true"}}`，Header 帶使用者的 fine-grained token（只有這個 repo 的 Actions 讀寫）。
-匯率 `55 8-16 * * 1-5`、排行榜 `55 19 * * *`、新聞 `23 2,5,8,11,14,17,20,23 * * *`（body 只要 `{"ref":"main"}`，不用 wait）、計算機 `*/10 9-17 * * 1-5`（fx.yml，body `{"ref":"main","inputs":{"export":"true"}}`）（Asia/Taipei）。fx、rank 的 GitHub cron 已移除（會遲到好幾小時亂發，例如 16:50 的拖到 19:05 才發），只靠鬧鐘；程式也擋掉時段外或遲到超過 10～15 分鐘的執行。新聞、網站檢查的 cron 還留著（遲到沒關係）。
+匯率 `55 8-16 * * 1-5`、排行榜 `55 19 * * *`、新聞 `23 2,5,8,11,14,17,20,23 * * *`（body 只要 `{"ref":"main"}`，不用 wait）、天氣 `0 7 * * *`（mode daily）＋ `5 * * * *`（mode check）、計算機 `*/10 9-17 * * 1-5`（fx.yml，body `{"ref":"main","inputs":{"export":"true"}}`）（Asia/Taipei）。fx、rank 的 GitHub cron 已移除（會遲到好幾小時亂發，例如 16:50 的拖到 19:05 才發），只靠鬧鐘；程式也擋掉時段外或遲到超過 10～15 分鐘的執行。新聞、網站檢查的 cron 還留著（遲到沒關係）。
 確認鬧鐘有效：看 runs 的 event＝workflow_dispatch、時間在 :55 附近。token 不要經過 AI 對話。
 
 ## 常見任務

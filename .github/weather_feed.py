@@ -1,7 +1,9 @@
 """
 中央氣象署「一般天氣預報－今明 36 小時天氣預報」（F-C0032-001）→ Discord #每日氣象
-  MODE=daily：全台 22 縣市今明天氣總覽（每天早上 7:00）
-  MODE=check：任何縣市接下來的時段降雨機率 ≥ 70% → ☔ 提醒（每 3 小時；同縣市同時段只提醒一次）
+  MODE=daily：🗓 大方向（每天早上 7:00）＝ 盯的地點「今天每 3 小時降雨機率時間表」＋ 全台 22 縣市今明總覽
+  MODE=check：⚡ 小方向（每小時）＝ 盯的地點「接下來 3 小時」降雨機率從 < 70% 變成 ≥ 70% → 通知；
+              下過雨之後降到 ≤ 30% → 通知雨停（只在狀態改變時通知，不重複吵）
+  鄉鎮區資料：氣象署 F-D0047-xxx（各縣市鄉鎮 2 天預報，3 小時一筆）
 
 用法：python weather_feed.py 狀態檔.json
 環境變數：CWA_API_KEY（氣象署授權碼）、DISCORD_WEATHER_WEBHOOK、MODE、PREVIEW=true（只印不發）
@@ -26,6 +28,110 @@ REGIONS = [               # 依地區分組（名字跟氣象署一樣，「臺�
     ("⛰ 東部", ["花蓮縣", "臺東縣"]),
     ("🏝 離島", ["澎湖縣", "金門縣", "連江縣"]),
 ]
+
+
+# 要盯的地點（使用者指定）：顯示名稱、氣象署資料集（各縣市 2 天預報）、鄉鎮區
+SPOTS = [
+    ("大園", "F-D0047-005", "大園區"),
+    ("青埔（中壢）", "F-D0047-005", "中壢區"),
+    ("土城", "F-D0047-069", "土城區"),
+    ("台北101（信義）", "F-D0047-061", "信義區"),
+    ("竹科（新竹東區）", "F-D0047-053", "東區"),
+    ("竹北", "F-D0047-009", "竹北市"),
+]
+RAIN_STOP = 30            # 下過雨之後降到 ≤ 30% 就通知「雨停」
+API_BASE = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/"
+
+
+def spots_forecast():
+    """→ {顯示名稱: {"blocks": [(開始, 結束, 降雨機率, 天氣)], "temp": {時間: 溫度}}}（時間都是台灣時間 datetime）"""
+    key = os.environ.get("CWA_API_KEY", "").strip()
+    out, by_ds = {}, {}
+    for label, ds, town in SPOTS:
+        by_ds.setdefault(ds, []).append((label, town))
+    p = lambda t: datetime.fromisoformat(t).astimezone(TW)
+    for ds, items in by_ds.items():
+        url = API_BASE + ds + "?" + urllib.parse.urlencode(
+            {"Authorization": key, "format": "JSON", "LocationName": ",".join(t for _, t in items)})
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "VideoHelper-WeatherBot/1.0"}), timeout=30) as r:
+            d = json.loads(r.read())
+        locs = (d.get("records", {}).get("Locations") or [{}])[0].get("Location") or []
+        for loc in locs:
+            town = loc.get("LocationName")
+            label = next((l for l, t in items if t == town), None)
+            if not label:
+                continue
+            els = {e.get("ElementName"): e.get("Time") or [] for e in loc.get("WeatherElement") or []}
+            wx = {t["StartTime"]: (t["ElementValue"] or [{}])[0].get("Weather", "") for t in els.get("天氣現象", [])}
+            blocks = []
+            for t in els.get("3小時降雨機率", []):
+                v = (t["ElementValue"] or [{}])[0].get("ProbabilityOfPrecipitation")
+                try:
+                    pop = int(v)
+                except (TypeError, ValueError):
+                    pop = None
+                blocks.append((p(t["StartTime"]), p(t["EndTime"]), pop, wx.get(t["StartTime"], "")))
+            temp = {}
+            for t in els.get("溫度", []):
+                try:
+                    temp[p(t["DataTime"])] = int((t["ElementValue"] or [{}])[0].get("Temperature"))
+                except (TypeError, ValueError, KeyError):
+                    pass
+            out[label] = {"blocks": sorted(blocks), "temp": temp}
+    return out
+
+
+def timetable_embed(sp):
+    """🗓 大方向：今天每 3 小時的降雨機率，標出最可能下雨的時段"""
+    now = datetime.now(TW)
+    lines, peaks = [], []
+    for label, _, _ in SPOTS:
+        f = sp.get(label)
+        if not f:
+            lines.append(f"**{label}**：讀不到資料")
+            continue
+        today = [b for b in f["blocks"] if b[0].date() == now.date() and b[0].hour >= 6 and b[2] is not None]
+        if not today:
+            today = [b for b in f["blocks"] if b[2] is not None][:6]
+        cells = "｜".join(f"{b[0].hour:02d} {b[2]}%{'☔' if b[2] >= RAIN_ALERT else ''}" for b in today)
+        top = max(today, key=lambda b: b[2])
+        ts = [v for k, v in f["temp"].items() if k.date() == now.date()]
+        tr = f"{min(ts)}–{max(ts)}°C　" if ts else ""
+        lines.append(f"**{label}**　{tr}最可能：{top[0].hour:02d}–{top[1].hour:02d} 點 **{top[2]}%**\n`{cells}`")
+        peaks.append((top[2], label, top))
+    hot = [x for x in peaks if x[0] >= RAIN_ALERT]
+    head = ("☔ **今天要帶傘：**" + "、".join(f"{l}（{t[0].hour:02d}–{t[1].hour:02d} 點 {p}%）" for p, l, t in sorted(hot, reverse=True))
+            if hot else "☀ 你盯的地點今天降雨機率都低於 70%")
+    return {"title": f"🗓 今日降雨時間表｜{now.strftime('%m/%d')}", "url": PAGE, "color": 0x00897B,
+            "description": head + "\n\n" + "\n\n".join(lines) +
+                           "\n\n每格＝從幾點開始的 3 小時降雨機率（例：`15 80%`＝15–18 點 80%）",
+            "footer": {"text": "資料：中央氣象署 鄉鎮區 2 天預報（3 小時一筆）"}}
+
+
+def mutation_alerts(sp, state):
+    """⚡ 小方向：接下來 3 小時的降雨機率，跨過 70%（變高）或下過雨後掉到 30% 以下（雨停）才通知"""
+    now = datetime.now(TW)
+    target = now + timedelta(minutes=60)
+    st = state.setdefault("spots", {})
+    msgs = []
+    for label, _, _ in SPOTS:
+        f = sp.get(label)
+        if not f:
+            continue
+        cur = next((b for b in f["blocks"] if b[0] <= target < b[1] and b[2] is not None), None)
+        if not cur:
+            continue
+        s0 = st.setdefault(label, {"raining": False, "pop": None})
+        prev = s0["pop"]
+        rng = f"{cur[0].hour:02d}–{cur[1].hour:02d} 點"
+        if cur[2] >= RAIN_ALERT and not s0["raining"]:
+            msgs.append(f"☔ **{label}**　{rng} 降雨機率 **{cur[2]}%**" + (f"（剛剛 {prev}%）" if prev is not None else "") + f"　{cur[3]}")
+            s0["raining"] = True
+        elif s0["raining"] and cur[2] <= RAIN_STOP:
+            msgs.append(f"🌤 **{label}**　{rng} 降雨機率降到 **{cur[2]}%**，應該快停了　{cur[3]}")
+            s0["raining"] = False
+        s0["pop"] = cur[2]
+    return msgs
 
 
 def wx_icon(wx):
@@ -150,36 +256,32 @@ def main(path):
         state = json.load(open(path, encoding="utf-8"))
     except Exception:
         state = {}
-    fc = parse(fetch())
-    if len(fc) < 10:
-        print(f"::warning title=氣象::只讀到 {len(fc)} 個縣市，資料格式可能改了")
-        return
     mode = os.environ.get("MODE", "check")
     hook = os.environ.get("DISCORD_WEATHER_WEBHOOK", "").strip()
     preview = os.environ.get("PREVIEW") == "true" or not hook
-    print("::notice title=氣象::" + "｜".join(f"{n} {ps[0]['wx']} {ps[0]['pop']}%" for n, ps in list(fc.items())[:8]))
+    sp = spots_forecast()
+    print("::notice title=氣象 地點::" + "｜".join(
+        f"{l} " + ",".join(f"{b[0].hour:02d}:{b[2]}%" for b in v["blocks"][:4]) for l, v in sp.items()))
     if mode == "daily":
-        e = daily_embed(fc)
+        fc = parse(fetch())
+        embeds = [timetable_embed(sp)] + ([daily_embed(fc)] if len(fc) >= 10 else [])
         if preview:
-            print("::notice title=預覽 每日::" + json.dumps(e, ensure_ascii=False)[:3000])
+            for e in embeds:
+                print("::notice title=預覽 每日::" + json.dumps(e, ensure_ascii=False)[:3000])
         else:
-            call(hook, {"username": "Video Helper 氣象", "embeds": [e]})
-    hits = check_alerts(fc, state)
-    if hits:
-        by = {}
-        for n, p in hits:
-            by.setdefault(when(p["start"], p["end"]), []).append(f"{wx_icon(p['wx'])} **{n}** 💧{p['pop']}%　{p['wx']}")
-        desc = "\n\n".join(f"**🕒 {k}**\n" + "\n".join(v) for k, v in by.items())
-        e = {"title": f"☔ 降雨提醒：{len(hits)} 個縣市降雨機率 ≥ {RAIN_ALERT}%", "url": PAGE, "color": 0x1565C0,
-             "description": desc[:3900] + "\n\n記得帶傘 ☂｜資料：中央氣象署"}
+            call(hook, {"username": "Video Helper 氣象", "embeds": embeds})
+    msgs = mutation_alerts(sp, state)
+    if msgs:
+        e = {"title": "⚡ 降雨突變提醒（接下來 3 小時）", "url": PAGE, "color": 0x1565C0,
+             "description": "\n".join(msgs) + f"\n\n☔＝降雨機率剛升到 {RAIN_ALERT}% 以上｜🌤＝下過雨後降到 {RAIN_STOP}% 以下\n資料：中央氣象署（3 小時一筆）"}
         if preview:
-            print("::notice title=預覽 提醒::" + json.dumps(e, ensure_ascii=False)[:2500])
+            print("::notice title=預覽 突變::" + json.dumps(e, ensure_ascii=False)[:2500])
         else:
             call(hook, {"username": "Video Helper 氣象", "embeds": [e]})
     if not preview:
         state["last"] = datetime.now(TW).strftime("%Y-%m-%d %H:%M")
         json.dump(state, open(path, "w", encoding="utf-8"), ensure_ascii=False)
-    print(f"::notice title=氣象::{mode} 完成；提醒 {len(hits)} 個縣市時段")
+    print(f"::notice title=氣象::{mode} 完成；突變提醒 {len(msgs)} 則")
 
 
 def probe():
