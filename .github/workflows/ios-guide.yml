@@ -1,0 +1,19 @@
+name: iOS guide to Discord
+
+# 改了 .github/ios_guide.md → 貼到 Discord #video_ios；也可以手動按 Run workflow 再貼一次
+on:
+  push:
+    branches: [main]
+    paths: ['.github/ios_guide.md']
+  workflow_dispatch:
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Post the iPhone guide
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_IOS_WEBHOOK }}
+          PYTHONIOENCODING: utf-8
+        run: python3 .github/discord_notify.py "📱 iPhone 安裝教學（Video Helper）" .github/ios_guide.md "https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js"
