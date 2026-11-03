@@ -104,4 +104,4 @@ body `{"ref":"main","inputs":{"wait":"true"}}`，Header 帶使用者的 fine-gra
 - Tube8、YouJizz、SpankBang 下載 v3.14.0／電腦版 v1.17.0 加入，使用者說下載都沒問題
 - YouJizz 全螢幕時推薦影片的預覽會閃一下（網站自己的功能，使用者說不用理）
 - 新加的「只擋廣告」網站都還沒有專屬規則（有人回報再加）
-- 手機版：使用者只有 iPhone（沒有 Android）→ 先做 iPhone：Safari ＋ Userscripts App；v3.17.0 加了相容層，待使用者實測（送到電腦版在手機上不能用：電腦版只聽 127.0.0.1）
+- 手機版：使用者只有 iPhone（沒有 Android）→ 先做 iPhone：Safari ＋ Userscripts App；v3.17.0 加了相容層；iPhone 已能裝、有盾牌和畫質清單，但 Pornhub 240p MP4 下載卡在「準備中」（Userscripts 沒 GM_download，備用法整檔抓進記憶體、沒進度）→ v3.18.0：沒 GM_download（`NATIVE_DL`）時 MP4 先給「① 開啟影片檔（Safari 分享→儲存到檔案）」或「② 在這頁下載」，並顯示等待秒數，待實測（送到電腦版在手機上不能用：電腦版只聽 127.0.0.1）

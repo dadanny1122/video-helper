@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.17.0
+// @version      3.18.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -88,6 +88,7 @@
           })
           .catch(e => { o.onerror ? o.onerror(e) : o.ontimeout && o.ontimeout(e); });
       });
+  const NATIVE_DL = typeof GM_download === 'function';   // 有沒有「直接存檔」的能力（iPhone 的 Userscripts 沒有）
   const gmDownload = typeof GM_download === 'function' ? GM_download
     : (o => {                                        // 沒有 GM_download：先抓成檔案，再用「下載連結」存
         gmXhr({ url: o.url, responseType: 'blob', onprogress: o.onprogress,
@@ -2157,10 +2158,40 @@
 
       const ok = name => { busy = false; panel.innerHTML = `✅ 下載完成<br><small>${name}<br>檔案在「下載」資料夾</small>`; };
       const fail = msg => { busy = false; panel.innerHTML = '❌ 下載失敗：' + msg; };
-      const showFrac = (frac, extra) => {
+      let showFrac = (frac, extra) => {
         const el = (Date.now() - t0) / 1000;
         prog.textContent = `${(frac * 100).toFixed(0)}%${extra}｜剩約 ${fmt(el / frac - el)}`;
       };
+
+      // iPhone（Userscripts）等沒有 GM_download 的管理器：整個檔案要先抓進記憶體、看不到進度，常像卡住
+      // → 先給「直接開啟影片檔」（用 Safari 分享 → 儲存到檔案，不佔記憶體），也可以選在這頁下載
+      if (s.kind === 'mp4' && !NATIVE_DL && !s._here) {
+        busy = false;
+        panel.innerHTML = `📱 這台裝置不能直接存檔，選一種方式：<br><small>${baseName}</small>`;
+        const open = document.createElement('a');
+        open.href = s.url; open.target = '_blank'; open.rel = 'noopener';
+        open.textContent = '① 開啟影片檔（推薦）';
+        open.style.cssText = 'display:block;margin-top:8px;padding:8px 10px;border-radius:8px;background:#1565c0;color:#fff;text-align:center;text-decoration:none;';
+        const tip = document.createElement('div');
+        tip.style.cssText = 'font-size:12px;opacity:.8;margin-top:4px;';
+        tip.textContent = '影片開始播放後，點 Safari 的「分享」→「儲存到檔案」';
+        const here = document.createElement('button');
+        here.textContent = '② 在這頁下載（大檔可能失敗）';
+        here.style.cssText = 'display:block;width:100%;margin-top:8px;padding:6px;border-radius:8px;border:1px solid #888;background:transparent;color:inherit;';
+        here.onclick = () => startDownload({ ...s, _here: true }, bytes);
+        panel.append(open, tip, here);
+        return;
+      }
+      // 沒有進度回報時，至少讓人知道還在跑（每秒更新等待秒數；太久給提示）
+      let gotProgress = false;
+      const tick = setInterval(() => {
+        if (gotProgress || !busy) return clearInterval(tick);
+        const sec = Math.round((Date.now() - t0) / 1000);
+        prog.textContent = `下載中，已等 ${sec} 秒（這台裝置看不到進度）` +
+          (sec >= 60 && s.kind === 'mp4' && !NATIVE_DL ? '｜太久的話，重按下載改用「① 開啟影片檔」' : '');
+      }, 1000);
+      const origShow = showFrac;
+      showFrac = (f, e) => { gotProgress = true; origShow(f, e); };
 
       if (s.kind === 'mp4') {
         gmDownload({
@@ -2169,7 +2200,7 @@
           onprogress: e => {
             const total = e.total || bytes;
             if (!e.loaded) return;
-            if (!total) { prog.textContent = '已下載 ' + fmtSize(e.loaded); return; }
+            if (!total) { gotProgress = true; prog.textContent = '已下載 ' + fmtSize(e.loaded); return; }
             showFrac(e.loaded / total, '');
           },
           onload: () => ok(baseName + '.mp4'),
