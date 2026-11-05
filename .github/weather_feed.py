@@ -302,7 +302,18 @@ def main(path):
 
 
 def probe():
-    """診斷：看鄉鎮區 2 天預報（F-D0047-005 桃園市，大園區）的資料長怎樣"""
+    """診斷：看天氣特報（W-C0033-001）的資料長怎樣"""
+    key = os.environ.get("CWA_API_KEY", "").strip()
+    url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/W-C0033-001?" + urllib.parse.urlencode({"Authorization": key, "format": "JSON"})
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "VideoHelper-WeatherBot/1.0"}), timeout=30) as r:
+        d = json.loads(r.read())
+    txt = json.dumps(d, ensure_ascii=False)
+    print(f"::notice title=特報 結構::{len(txt)} 字｜{txt[:1200]}")
+    recs = d.get("records", {})
+    locs = recs.get("location") or recs.get("Location") or []
+    with_hz = [l for l in locs if (l.get("hazardConditions") or {}).get("hazards")]
+    print(f"::notice title=特報 有發布的::{len(locs)} 縣市，{len(with_hz)} 個有特報｜" + json.dumps(with_hz[:2], ensure_ascii=False)[:1500])
+    return
     key = os.environ.get("CWA_API_KEY", "").strip()
     url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-005?" + urllib.parse.urlencode(
         {"Authorization": key, "format": "JSON", "LocationName": "大園區"})
