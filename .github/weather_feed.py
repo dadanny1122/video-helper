@@ -3,7 +3,8 @@
   MODE=daily：🗓 大方向（每天早上 7:00）＝ 盯的地點「今天每 3 小時降雨機率時間表」＋ 全台 22 縣市今明總覽
   MODE=check：⚡ 小方向（每小時）＝ 盯的地點「接下來 3 小時」降雨機率從 < 70% 變成 ≥ 70% → 通知；
               下過雨之後降到 ≤ 30% → 通知雨停（只在狀態改變時通知，不重複吵）
-  鄉鎮區資料：氣象署 F-D0047-xxx（各縣市鄉鎮 2 天預報，3 小時一筆）
+  ⛈ 特報（兩種 MODE 都會看）：你的地點所在縣市，有新的大雨／豪雨／颱風特報 → 通知；解除也通知
+  鄉鎮區資料：氣象署 F-D0047-xxx（各縣市鄉鎮 2 天預報，3 小時一筆）；特報：W-C0033-001
 
 用法：python weather_feed.py 狀態檔.json
 環境變數：CWA_API_KEY（氣象署授權碼）、DISCORD_WEATHER_WEBHOOK、MODE、PREVIEW=true（只印不發）
@@ -40,6 +41,44 @@ SPOTS = [
     ("竹北", "F-D0047-009", "竹北市"),
 ]
 RAIN_STOP = 30            # 下過雨之後降到 ≤ 30% 就通知「雨停」
+DS_COUNTY = {"F-D0047-005": "桃園市", "F-D0047-069": "新北市", "F-D0047-061": "臺北市",
+             "F-D0047-053": "新竹市", "F-D0047-009": "新竹縣"}
+NOTIFY_HAZ = ("雨", "颱風")   # 特報名稱有這些字才發通知（大雨、豪雨、大豪雨、超大豪雨、颱風）；其他特報只顯示在即時介面
+
+
+def warnings():
+    """天氣特報 → {縣市: [{"phen": 大雨, "sig": 特報, "start": …, "end": …}]}（只留你的地點所在縣市）"""
+    key = os.environ.get("CWA_API_KEY", "").strip()
+    url = API_BASE + "W-C0033-001?" + urllib.parse.urlencode({"Authorization": key, "format": "JSON"})
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "VideoHelper-WeatherBot/1.0"}), timeout=30) as r:
+        d = json.loads(r.read())
+    watch = set(DS_COUNTY.values())
+    out = {}
+    for loc in (d.get("records", {}).get("location") or []):
+        name = loc.get("locationName")
+        if name not in watch:
+            continue
+        for h in (loc.get("hazardConditions") or {}).get("hazards") or []:
+            info, vt = h.get("info") or {}, h.get("validTime") or {}
+            out.setdefault(name, []).append({"phen": info.get("phenomena", ""), "sig": info.get("significance", ""),
+                                             "start": vt.get("startTime", ""), "end": vt.get("endTime", "")})
+    return out
+
+
+def warning_alerts(wn, state):
+    """新出現的雨／颱風特報 → 通知；之前有、現在沒有 → 解除"""
+    old = set(state.get("warn", []))
+    cur = {f"{c}|{h['phen']}{h['sig']}|{h['start'][:16]}|{h['end'][:16]}" for c, hs in wn.items() for h in hs
+           if any(k in h["phen"] for k in NOTIFY_HAZ)}
+    msgs = []
+    for k in sorted(cur - old):
+        c, name, st, et = k.split("|")
+        msgs.append(f"⛈ **{c}　{name}**　{st[5:].replace('-', '/')} ～ {et[5:].replace('-', '/')}")
+    for k in sorted(old - cur):
+        c, name, _, _ = k.split("|")
+        msgs.append(f"✅ {c}　{name} 已解除")
+    state["warn"] = sorted(cur)
+    return msgs
 API_BASE = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/"
 
 
@@ -270,6 +309,20 @@ def main(path):
                 print("::notice title=預覽 每日::" + json.dumps(e, ensure_ascii=False)[:3000])
         else:
             call(hook, {"username": "Video Helper 氣象", "embeds": embeds})
+    try:
+        wn = warnings()
+    except Exception as e:
+        print(f"::warning title=氣象::讀不到天氣特報：{e}")
+        wn = None
+    if wn is not None:
+        wmsgs = warning_alerts(wn, state)
+        if wmsgs:
+            e = {"title": "⛈ 天氣特報（你常去的縣市）", "url": "https://www.cwa.gov.tw/V8/C/P/Warning/FIFOWS.html",
+                 "color": 0xC62828, "description": "\n".join(wmsgs) + "\n\n資料：中央氣象署 天氣特報"}
+            if preview:
+                print("::notice title=預覽 特報::" + json.dumps(e, ensure_ascii=False)[:2000])
+            else:
+                call(hook, {"username": "Video Helper 氣象", "embeds": [e]})
     msgs = mutation_alerts(sp, state)
     if msgs:
         e = {"title": "⚡ 降雨突變提醒（接下來 3 小時）", "url": PAGE, "color": 0x1565C0,
@@ -294,7 +347,11 @@ def main(path):
             "now": {"range": f"{cur[0].hour:02d}–{cur[1].hour:02d}", "pop": cur[2], "wx": cur[3]} if cur else None,
             "peak": {"range": f"{top[0].hour:02d}–{top[1].hour:02d}", "pop": top[2]} if top else None,
             "temp": [min(ts), max(ts)] if ts else None}
-    state["dash"] = {"updated": now.strftime("%Y-%m-%d %H:%M"), "spots": dash}
+    state["dash"] = {"updated": now.strftime("%Y-%m-%d %H:%M"), "spots": dash,
+                     # 給即時介面的「查某個時間」和 Discord /天氣 用：未來 2 天每 3 小時的預報、每小時氣溫
+                     "blocks": {l: [[b[0].isoformat(), b[1].isoformat(), b[2], b[3]] for b in v["blocks"]] for l, v in sp.items()},
+                     "temps": {l: [[k.isoformat(), t] for k, t in sorted(v["temp"].items())] for l, v in sp.items()},
+                     "warnings": wn or {}}
     if not preview:
         state["last"] = datetime.now(TW).strftime("%Y-%m-%d %H:%M")
         json.dump(state, open(path, "w", encoding="utf-8"), ensure_ascii=False)

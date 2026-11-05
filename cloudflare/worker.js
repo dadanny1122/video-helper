@@ -5,6 +5,7 @@
 //   /匯率   → 某個貨幣的現價、漲跌、30 天位置
 //   /排行榜 → 前 10 名＋可下載的網站
 //   /狀態   → 各個機器人最後一次跑的時間、成功或失敗
+//   /天氣   → 某個地點、某個時間會不會下雨（讀 GitHub 上的 weather_state.json）
 //
 // 要在 Cloudflare 設定的變數（Settings → Variables and Secrets，全部選 Secret）：
 //   DISCORD_PUBLIC_KEY  Discord 開發者網站 → General Information → Public Key
@@ -49,6 +50,14 @@ const COMMANDS = [
     options: [{ type: 3, name: 'currency', name_localizations: { 'zh-TW': '貨幣' }, description: 'Currency', description_localizations: { 'zh-TW': '哪種貨幣' }, required: true, choices: CCY_CHOICES }] },
   { name: 'rank', name_localizations: { 'zh-TW': '排行榜' }, type: 1,
     description: 'Top 10 video sites', description_localizations: { 'zh-TW': '影片網站排行前 10 名＋哪些可以下載' } },
+  { name: 'weather', name_localizations: { 'zh-TW': '天氣' }, type: 1,
+    description: 'Will it rain at that place and time?', description_localizations: { 'zh-TW': '查某個地點、某個時間會不會下雨' },
+    options: [
+      { type: 3, name: 'place', name_localizations: { 'zh-TW': '地點' }, description: 'Place', description_localizations: { 'zh-TW': '哪裡' }, required: true,
+        choices: ['大園', '青埔（中壢）', '土城', '台北101（信義）', '竹科（新竹東區）', '竹北'].map(n => ({ name: n, value: n })) },
+      { type: 4, name: 'hour', name_localizations: { 'zh-TW': '幾點' }, description: 'Hour (0-23)', description_localizations: { 'zh-TW': '幾點（0～23，不填＝現在）' }, min_value: 0, max_value: 23 },
+      { type: 3, name: 'day', name_localizations: { 'zh-TW': '哪天' }, description: 'Day', description_localizations: { 'zh-TW': '哪一天（不填＝今天）' },
+        choices: [{ name: '今天', value: '0' }, { name: '明天', value: '1' }, { name: '後天', value: '2' }] }] },
   { name: 'status', name_localizations: { 'zh-TW': '狀態' }, type: 1,
     description: 'Are the bots running?', description_localizations: { 'zh-TW': '各個機器人有沒有正常在跑' } },
 ];
@@ -111,6 +120,29 @@ async function cmdRank() {
                  `🕒 最後更新：${d.updated || '—'}（每天 20:00）｜[📊 即時介面](${DASH})` });
 }
 
+// ---- /天氣 ----
+async function cmdWeather(i) {
+  const d = (await getJson('.github/weather_state.json')).dash || {};
+  const n = opt(i, 'place'), off = Number(opt(i, 'day') || 0);
+  const tw = new Date(Date.now() + 8 * 3600e3);                     // 台灣時間（用 UTC 欄位讀）
+  const h = opt(i, 'hour') ?? tw.getUTCHours();
+  const day = new Date(Date.UTC(tw.getUTCFullYear(), tw.getUTCMonth(), tw.getUTCDate() + off));
+  const ymd = day.toISOString().slice(0, 10);
+  const t = new Date(`${ymd}T${String(h).padStart(2, '0')}:00:00+08:00`);
+  const b = ((d.blocks || {})[n] || []).find(x => new Date(x[0]) <= t && t < new Date(x[1]));
+  const label = `${['今天', '明天', '後天'][off]} ${String(h).padStart(2, '0')}:00`;
+  if (!b || b[2] == null) return reply({ description: `${n} ${label}：超出預報範圍（只有未來約 2 天）` }, 64);
+  const temps = (d.temps || {})[n] || [];
+  const tp = temps.length ? temps.reduce((a, x) => Math.abs(new Date(x[0]) - t) < Math.abs(new Date(a[0]) - t) ? x : a)[1] : null;
+  const hz = Object.entries(d.warnings || {}).flatMap(([c, hs]) => hs.map(x => `${c} ${x.phen}${x.sig}`));
+  const icon = /雷/.test(b[3]) ? '⛈' : /雨/.test(b[3]) ? '🌧' : /陰/.test(b[3]) ? '☁' : /多雲/.test(b[3]) ? '⛅' : /晴/.test(b[3]) ? '☀' : '🌤';
+  const hh = x => String(new Date(new Date(x).getTime() + 8 * 3600e3).getUTCHours()).padStart(2, '0');
+  return reply({ title: `${icon} ${n}｜${label}`, url: DASH,
+    description: `**${b[3]}**\n💧 降雨機率 **${b[2]}%**${b[2] >= 70 ? '　☔ 記得帶傘' : ''}\n🌡 約 ${tp ?? '—'}°C\n（${hh(b[0])}–${hh(b[1])} 點這一段的預報）` +
+                 (hz.length ? `\n\n⛈ 目前特報：${hz.join('、')}` : '') +
+                 `\n\n🕒 預報更新：${d.updated || '—'}｜資料：中央氣象署｜[📊 即時介面](${DASH})` });
+}
+
 // ---- /狀態 ----
 async function cmdStatus(env) {
   const r = await fetch(`https://api.github.com/repos/${REPO}/actions/runs?per_page=60`, {
@@ -154,7 +186,7 @@ export default {
         headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(COMMANDS),
       });
-      return text(r.ok ? '✅ 指令註冊成功！回 Discord 打 / 看看：快照、換匯、匯率、排行榜、狀態' : `❌ 註冊失敗（${r.status}）：${await r.text()}`);
+      return text(r.ok ? '✅ 指令註冊成功！回 Discord 打 / 看看：快照、換匯、匯率、排行榜、狀態、天氣' : `❌ 註冊失敗（${r.status}）：${await r.text()}`);
     }
     if (req.method !== 'POST') return text('🤖 Video Helper 指令機器人：運作中');
 
@@ -182,6 +214,7 @@ export default {
       if (i.type === 2 && i.data.name === 'rate') return await cmdRate(i);
       if (i.type === 2 && i.data.name === 'rank') return await cmdRank();
       if (i.type === 2 && i.data.name === 'status') return await cmdStatus(env);
+      if (i.type === 2 && i.data.name === 'weather') return await cmdWeather(i);
     } catch (e) {
       return json({ type: 4, data: { content: `出錯了：${e.message}`, flags: 64 } });
     }

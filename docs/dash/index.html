@@ -59,6 +59,7 @@
   .scroll { max-height:420px; overflow-y:auto; }
   .tag { font-size:12px; padding:0 6px; border-radius:4px; white-space:nowrap; }
   .tag.dl { background:#1565c0; color:#fff; } .tag.ad { background:var(--line); }
+  #wq select { font:inherit; padding:6px 8px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--fg); }
 </style>
 </head>
 <body><main>
@@ -147,9 +148,39 @@ async function weather() {
         <td class="num">${v.temp ? v.temp[0] + '–' + v.temp[1] + '°' : '—'}</td></tr>`;
     }).join('');
     const wet = Object.entries(d.spots).filter(([, v]) => (v.peak || {}).pop >= 70).map(([n]) => n);
+    const hz = Object.entries(d.warnings || {}).flatMap(([c, hs]) => hs.map(h => `${c} ${h.phen}${h.sig}`));
+    const keep = document.getElementById('wq');                     // 每分鐘刷新時，保留使用者選好的查詢條件
+    const prev = keep ? { s: keep.querySelector('#wqS').value, d: keep.querySelector('#wqD').value, h: keep.querySelector('#wqH').value } : null;
+    const days = [...new Set(Object.values(d.blocks || {}).flat().map(b => b[0].slice(0, 10)))].sort();
+    const dayName = x => { const t = twNow(); const k = i => { const z = new Date(t); z.setDate(z.getDate() + i); return z.toLocaleDateString('sv-SE'); };
+      return x === k(0) ? '今天' : x === k(1) ? '明天' : x === k(2) ? '後天' : x.slice(5); };
     body('weather', `<div class="meta">更新：${esc(d.updated)}（每小時）｜降雨機率是 3 小時一段</div>
+      ${hz.length ? `<div class="meta" style="color:#e53935;font-weight:600">⛈ 特報：${hz.map(esc).join('、')}</div>` : ''}
       <div class="meta" style="color:var(--fg)">${wet.length ? '☔ 今天要帶傘：' + wet.map(esc).join('、') : '☀ 今天剩下的時段降雨機率都低於 70%'}</div>
-      <table><tr><th>地點</th><th>現在天氣</th><th class="num">現在降雨</th><th class="num">今天最可能下雨</th><th class="num">氣溫</th></tr>${rows}</table>`);
+      <table><tr><th>地點</th><th>現在天氣</th><th class="num">現在降雨</th><th class="num">今天最可能下雨</th><th class="num">氣溫</th></tr>${rows}</table>
+      <div id="wq" style="margin-top:12px;padding:10px;border:1px dashed var(--line);border-radius:8px">
+        <b>🔎 查某個時間會不會下雨</b>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+          <select id="wqS">${Object.keys(d.blocks || {}).map(n => `<option>${esc(n)}</option>`).join('')}</select>
+          <select id="wqD">${days.map(x => `<option value="${x}">${dayName(x)}（${x.slice(5)}）</option>`).join('')}</select>
+          <select id="wqH">${Array.from({ length: 24 }, (_, i) => `<option value="${i}">${String(i).padStart(2, '0')}:00</option>`).join('')}</select>
+        </div>
+        <div id="wqR" style="margin-top:8px"></div>
+      </div>`);
+    const q = () => {
+      const n = $('wqS').value, day = $('wqD').value, h = +$('wqH').value;
+      const t = new Date(`${day}T${String(h).padStart(2, '0')}:00:00+08:00`);
+      const b = (d.blocks[n] || []).find(x => new Date(x[0]) <= t && t < new Date(x[1]));
+      const tp = (d.temps[n] || []).reduce((a, x) => Math.abs(new Date(x[0]) - t) < Math.abs(new Date(a[0]) - t) ? x : a, (d.temps[n] || [[0, null]])[0]);
+      if (!b || b[2] == null) { $('wqR').innerHTML = '<span class="meta">這個時間超出預報範圍（只有未來約 2 天）</span>'; return; }
+      $('wqR').innerHTML = `${icon(b[3])} <b>${esc(n)}　${dayName(day)} ${String(h).padStart(2, '0')}:00</b>　${esc(b[3])}<br>
+        💧 降雨機率 <b style="font-size:20px">${b[2]}%</b>${b[2] >= 70 ? ' ☔ 記得帶傘' : ''}　🌡 約 ${tp[1] ?? '—'}°C
+        <div class="meta">（${new Date(b[0]).getHours().toString().padStart(2, '0')}–${new Date(b[1]).getHours().toString().padStart(2, '0')} 點這一段的預報）</div>`;
+    };
+    ['wqS', 'wqD', 'wqH'].forEach(id => $(id).onchange = q);
+    if (prev) { $('wqS').value = prev.s; if (days.includes(prev.d)) $('wqD').value = prev.d; $('wqH').value = prev.h; }
+    else { const t = twNow(); $('wqH').value = Math.min(23, t.getHours() + 1); }
+    q();
   } catch (e) { body('weather', `<div class="meta">讀不到天氣（${esc(e.message)}）</div>`); }
 }
 
