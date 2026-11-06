@@ -28,6 +28,8 @@ COMMON=(
   --enable-decoder=aac,aac_latm,mp3float,opus
   # ffmpeg 命令列本身需要的最少濾鏡
   --enable-filter=null,anull,aresample,format,aformat,copy,acopy
+  # AI 字幕：把聲音轉成 16kHz wav 給 whisper 聽（pcm 不是壓縮，只是把聲音攤開）
+  --enable-encoder=pcm_s16le --enable-muxer=wav --enable-demuxer=wav
 )
 
 if [ "$TARGET" = "windows" ]; then

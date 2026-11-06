@@ -100,6 +100,23 @@ jobs:
           PYTHONUTF8: "1"
         run: python .github/ci_smoke.py
 
+      # AI 字幕：真的下載 whisper.cpp ＋ 最小模型，用 Windows 內建語音念一句英文，看聽不聽得出來
+      # 網路偶爾不穩，失敗只警告、不擋發布
+      - name: AI subtitle test (real whisper.cpp)
+        if: steps.chk.outputs.exists != '1'
+        continue-on-error: true
+        timeout-minutes: 15
+        shell: pwsh
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+          VIDEO_HELPER_FFMPEG: ffmpeg_bin/ffmpeg.exe
+        run: |
+          Add-Type -AssemblyName System.Speech
+          $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+          $s.SetOutputToWaveFile("$PWD\speech.wav"); $s.Speak("Hello world. This is a subtitle test."); $s.Dispose()
+          python -c "import video_helper_app as v; r = v.make_subtitles('speech.wav', 'en', 'tiny'); t = open(r['orig'], encoding='utf-8-sig').read(); print('::notice title=AI subtitle::' + t.replace(chr(10), ' | ')); assert 'hello' in t.lower(), t"
+
       # Pillow 只用來畫系統匣圖示，用不到的圖片格式（AVIF、WebP…）不包進去
       - name: Build exe
         if: steps.chk.outputs.exists != '1'

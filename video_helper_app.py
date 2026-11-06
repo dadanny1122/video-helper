@@ -79,7 +79,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.17.0"
+VERSION = "1.18.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -156,6 +156,9 @@ DEFAULT_SETTINGS = {
     "setup_seen": False,         # 看過「安裝擋廣告」了（第一次打開才自動切過去）
     "ai_key": "",                # AI 判斷廣告網域用的 API 金鑰（只存在這台電腦，不會匯出）
     "ai_cache": {},              # AI 判斷過的網域：網域 → {verdict, reason, t}（問過就不再問）
+    "sub_lang": "自動偵測",      # AI 字幕：影片說的語言
+    "sub_model": "快（small，約 190 MB）",
+    "sub_translate": True,       # 有 AI 金鑰就翻成中文
 }
 
 
@@ -1408,6 +1411,250 @@ import tkinter as tk                                   # noqa: E402
 from tkinter import ttk, messagebox, filedialog        # noqa: E402
 
 
+# ======================================================================
+# AI 字幕（全部在自己電腦上跑）：whisper.cpp 聽寫 → .srt；想要中文的話，用 AI 金鑰只把「字幕文字」拿去翻譯
+# 第一次用才下載：whisper.cpp 程式（約 5 MB，GitHub 官方發布）＋ 模型（190～550 MB，Hugging Face）
+# ======================================================================
+
+WHISPER_API = "https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest"
+WHISPER_ASSET = "whisper-bin-x64.zip"           # 一般電腦（CPU）版
+SUB_MODELS = {"快（small，約 190 MB）": "small-q5_1", "準（large-v3-turbo，約 550 MB）": "large-v3-turbo-q5_0"}
+MODEL_URLS = ("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin",
+              "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin")
+SUB_LANGS = {"自動偵測": "auto", "日文": "ja", "英文": "en", "韓文": "ko", "中文": "zh"}
+SUB_BATCH = 80                                  # 翻譯一次送幾句
+
+
+def whisper_dir():
+    d = os.path.join(data_dir(), "whisper")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def find_whisper():
+    """找 whisper-cli：環境變數（測試用）→ 下載過的 → 電腦裡本來就有的"""
+    env = os.environ.get("VIDEO_HELPER_WHISPER")
+    if env:
+        return env
+    names = ("whisper-cli.exe", "whisper-cli", "main.exe")
+    for root, _, files in os.walk(whisper_dir()):
+        for n in names:
+            if n in files:
+                return os.path.join(root, n)
+    import shutil
+    return shutil.which("whisper-cli")
+
+
+def fetch_file(url, dest, on_progress=None, cancel_event=None, headers=None):
+    """下載到 dest（先寫 .part，完整了才改名，中斷不會留下壞檔）"""
+    part = dest + ".part"
+    req = urllib.request.Request(url, headers={"User-Agent": f"VideoHelper/{VERSION}", **(headers or {})})
+    with urllib.request.urlopen(req, timeout=60) as r, open(part, "wb") as f:
+        total, got = int(r.headers.get("Content-Length") or 0), 0
+        while True:
+            if cancel_event is not None and cancel_event.is_set():
+                f.close()
+                os.remove(part)
+                raise Cancelled()
+            b = r.read(1 << 20)
+            if not b:
+                break
+            f.write(b)
+            got += len(b)
+            if on_progress:
+                on_progress(got, total)
+    if total and got < total:
+        os.remove(part)
+        raise RuntimeError("下載不完整，請再試一次")
+    os.replace(part, dest)
+    return dest
+
+
+def install_whisper(on_stage=None, on_progress=None, cancel_event=None):
+    exe = find_whisper()
+    if exe:
+        return exe
+    if not sys.platform.startswith("win"):
+        raise RuntimeError("找不到 whisper-cli。Windows 會自動下載；其他系統請先自己安裝 whisper.cpp。")
+    if on_stage:
+        on_stage("第一次使用：下載 whisper.cpp 聽寫程式…")
+    with urllib.request.urlopen(urllib.request.Request(WHISPER_API, headers={"User-Agent": "VideoHelper"}), timeout=30) as r:
+        rel = json.loads(r.read().decode("utf-8"))
+    asset = next((a for a in rel.get("assets", []) if a.get("name") == WHISPER_ASSET), None)
+    if not asset:
+        raise RuntimeError("whisper.cpp 官方的下載檔名變了，請回報作者")
+    z = fetch_file(asset["browser_download_url"], os.path.join(whisper_dir(), WHISPER_ASSET), on_progress, cancel_event)
+    import zipfile
+    with zipfile.ZipFile(z) as zf:
+        zf.extractall(os.path.join(whisper_dir(), rel.get("tag_name", "bin")))
+    os.remove(z)
+    exe = find_whisper()
+    if not exe:
+        raise RuntimeError("whisper.cpp 解壓縮後找不到 whisper-cli.exe，請回報作者")
+    return exe
+
+
+def ensure_model(name, on_stage=None, on_progress=None, cancel_event=None):
+    path = os.path.join(whisper_dir(), f"ggml-{name}.bin")
+    if os.path.isfile(path):
+        return path
+    last = None
+    for tpl in MODEL_URLS:
+        if on_stage:
+            on_stage(f"第一次使用這個模型：下載 {name}（只要下載一次）…")
+        try:
+            return fetch_file(tpl.format(name), path, on_progress, cancel_event)
+        except Cancelled:
+            raise
+        except Exception as e:
+            last = e
+            log.warning("模型下載失敗 %s：%s", tpl, e)
+    raise RuntimeError(f"模型下載失敗（{last}）")
+
+
+def _popen_kw():
+    return {"creationflags": 0x08000000} if sys.platform.startswith("win") else {}   # Windows 不要跳出黑色視窗
+
+
+def extract_audio(video, wav, ffmpeg=None):
+    """影片 → 16kHz 單聲道 wav（whisper 只吃這種）"""
+    ff = ffmpeg or FFMPEG
+    if not ff:
+        raise RuntimeError("找不到 ffmpeg")
+    p = subprocess.run([ff, "-y", "-v", "error", "-i", video, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wav],
+                       capture_output=True, text=True, encoding="utf-8", errors="ignore", **_popen_kw())
+    if p.returncode != 0 or not os.path.isfile(wav):
+        raise RuntimeError("讀不出影片的聲音：" + (p.stderr.strip().splitlines() or ["未知錯誤"])[-1][:200])
+    return wav
+
+
+def run_whisper(exe, model, wav, lang, out_base, on_progress=None, cancel_event=None):
+    """回傳 (srt 路徑, 偵測到的語言)"""
+    import re
+    threads = str(max(1, min(8, (os.cpu_count() or 4) - 1)))
+    cmd = [exe, "-m", model, "-f", wav, "-l", lang, "-osrt", "-of", out_base, "-pp", "-t", threads]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                         errors="ignore", **_popen_kw())
+    detected, tail = lang, []
+    for line in p.stdout:
+        if cancel_event is not None and cancel_event.is_set():
+            p.kill()
+            raise Cancelled()
+        tail = (tail + [line.strip()])[-5:]
+        m = re.search(r"progress\s*=\s*(\d+)%", line)
+        if m and on_progress:
+            on_progress(int(m.group(1)), 100)
+        m = re.search(r"auto-detected language:\s*([a-z]{2})", line)
+        if m:
+            detected = m.group(1)
+    if p.wait() != 0 or not os.path.isfile(out_base + ".srt"):
+        raise RuntimeError("AI 聽寫失敗：" + " ".join(tail)[-200:])
+    return out_base + ".srt", detected
+
+
+def parse_srt(text):
+    """→ [(時間那一行, 字幕文字)]"""
+    out = []
+    for block in text.replace("\r\n", "\n").strip().split("\n\n"):
+        lines = block.strip().split("\n")
+        i = next((k for k, l in enumerate(lines) if "-->" in l), None)
+        if i is None:
+            continue
+        out.append((lines[i].strip(), " ".join(l.strip() for l in lines[i + 1:]).strip()))
+    return out
+
+
+def write_srt(entries, path):
+    with open(path, "w", encoding="utf-8-sig") as f:              # 有 BOM：舊播放器才不會亂碼
+        for n, (tm, txt) in enumerate(entries, 1):
+            f.write(f"{n}\n{tm}\n{txt}\n\n")
+    return path
+
+
+def ai_translate(key, lines, src, timeout=90):
+    """一批字幕 → 繁體中文（只送文字，不送影片、聲音）"""
+    numbered = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(lines))
+    prompt = ("把下面的影片字幕翻成台灣用語的繁體中文，口語、簡短，保留語氣。原文語言：" + src + "。\n"
+              "每一行都要翻，行數要完全一樣；聽不清楚的雜音（例如 [音樂]）照樣翻成中文括號。\n"
+              '只回 JSON 字串陣列，不要其他文字，例如 ["第一句","第二句"]。\n\n' + numbered)
+    body = json.dumps({"model": AI_MODEL, "max_tokens": 8000,
+                       "messages": [{"role": "user", "content": prompt}]}).encode("utf-8")
+    req = urllib.request.Request(AI_API, data=body, method="POST", headers={
+        "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raise RuntimeError({401: "API 金鑰不對", 429: "AI 額度用完或問太快"}.get(e.code, f"AI 伺服器錯誤（{e.code}）")) from None
+    text = "".join(c.get("text", "") for c in data.get("content", []) if c.get("type") == "text")
+    out = [str(x) for x in parse_ai_json(text)]
+    if len(out) != len(lines):
+        raise ValueError("行數對不上")
+    return out
+
+
+def translate_entries(key, entries, src, on_progress=None, cancel_event=None, translate_fn=None):
+    fn = translate_fn or ai_translate
+    out = []
+    for i in range(0, len(entries), SUB_BATCH):
+        if cancel_event is not None and cancel_event.is_set():
+            raise Cancelled()
+        chunk = entries[i:i + SUB_BATCH]
+        texts = [t for _, t in chunk]
+        try:
+            zh = fn(key, texts, src)
+        except ValueError:                                         # 行數對不上：拆小一點再試一次
+            zh = []
+            for j in range(0, len(texts), 10):
+                try:
+                    zh += fn(key, texts[j:j + 10], src)
+                except ValueError:
+                    zh += texts[j:j + 10]                          # 還是不行就保留原文
+        out += [(tm, z) for (tm, _), z in zip(chunk, zh)]
+        if on_progress:
+            on_progress(min(i + SUB_BATCH, len(entries)), len(entries))
+    return out
+
+
+def make_subtitles(video, lang="auto", model="small-q5_1", key="", on_stage=None, on_progress=None,
+                   cancel_event=None, translate_fn=None):
+    """影片 → 同資料夾的字幕檔。回傳 {"orig": 原文字幕, "zh": 中文字幕或 None, "lang": 語言}
+    中文字幕取名「影片名.srt」：VLC、PotPlayer、電影與電視 打開影片會自動載入"""
+    if not os.path.isfile(video):
+        raise RuntimeError("找不到影片檔")
+    exe = install_whisper(on_stage, on_progress, cancel_event)
+    mpath = ensure_model(model, on_stage, on_progress, cancel_event)
+    base = os.path.splitext(video)[0]
+    tmp = os.path.join(whisper_dir(), f"audio-{os.getpid()}-{threading.get_ident()}")
+    try:
+        if on_stage:
+            on_stage("讀取影片的聲音…")
+        extract_audio(video, tmp + ".wav")
+        if on_stage:
+            on_stage("AI 聽寫中（在你的電腦上跑，影片越長越久）…")
+        srt, detected = run_whisper(exe, mpath, tmp + ".wav", lang, tmp, on_progress, cancel_event)
+        entries = parse_srt(open(srt, encoding="utf-8", errors="ignore").read())
+    finally:
+        for ext in (".wav", ".srt"):
+            try:
+                os.remove(tmp + ext)
+            except OSError:
+                pass
+    if not entries:
+        raise RuntimeError("沒聽到任何說話聲")
+    res = {"lang": detected, "zh": None, "count": len(entries)}
+    if detected == "zh":
+        res["orig"] = write_srt(entries, base + ".srt")
+        return res
+    res["orig"] = write_srt(entries, f"{base}.{detected}.srt")
+    if key:
+        if on_stage:
+            on_stage(f"翻成中文（只送字幕文字，共 {len(entries)} 句）…")
+        res["zh"] = write_srt(translate_entries(key, entries, detected, on_progress, cancel_event, translate_fn),
+                              base + ".srt")
+    return res
+
+
 class App:
     def __init__(self, root):
         self.root = root
@@ -2331,6 +2578,7 @@ class App:
         self.htree.bind("<<TreeviewSelect>>", lambda e: self.show_history_detail())
         self.htree.bind("<Double-1>", lambda e: self.history_double())
         self.add_menu(self.htree, [("▶ 播放", self.history_play), ("📂 打開檔案位置", self.history_open),
+                                   ("📝 產生 AI 字幕…", self.subtitle_dialog),
                                    ("↻ 重新下載", self.history_redownload), None,
                                    ("刪除這筆紀錄", self.history_delete), ("清除全部紀錄", self.history_clear)])
 
@@ -2341,6 +2589,7 @@ class App:
         bar.pack(fill="x", **pad)
         ttk.Button(bar, text="📂 打開檔案位置", command=self.history_open).pack(side="left")
         ttk.Button(bar, text="打開下載資料夾", command=lambda: open_path(self.settings.download_dir)).pack(side="left", padx=6)
+        ttk.Button(bar, text="📝 AI 字幕", command=self.subtitle_dialog).pack(side="left")
         ttk.Label(bar, text="雙擊播放；按右鍵有更多選項", foreground="#888").pack(side="right")
         self.refresh_history()
 
@@ -2427,6 +2676,116 @@ class App:
         if self.history.items and messagebox.askyesno("清除全部", "確定要清除所有下載紀錄嗎？（不會刪除已下載的影片）"):
             self.history.clear()
             self.refresh_history()
+
+    # ------------------------------------------------------------------
+    # AI 字幕
+    # ------------------------------------------------------------------
+
+    def subtitle_dialog(self, video=None):
+        if video is None:
+            _, r = self.selected_history()
+            video = r.get("file") if r else None
+        if not (video and os.path.isfile(video)):
+            messagebox.showinfo("AI 字幕", "請先在清單裡選一支「已下載完成、檔案還在」的影片。")
+            return
+        if getattr(self, "sub_win", None) is not None and self.sub_win.winfo_exists():
+            self.sub_win.lift()
+            return
+        w = self.sub_win = tk.Toplevel(self.root)
+        w.title("📝 AI 字幕")
+        w.resizable(False, False)
+        f = ttk.Frame(w, padding=14)
+        f.pack(fill="both")
+        ttk.Label(f, text=os.path.basename(video), font=("", 10, "bold"), wraplength=440).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(f, text="影片說的語言").grid(row=1, column=0, sticky="w", pady=(10, 2))
+        lang = ttk.Combobox(f, values=list(SUB_LANGS), state="readonly", width=24)
+        lang.set(self.settings["sub_lang"] if self.settings["sub_lang"] in SUB_LANGS else "自動偵測")
+        lang.grid(row=1, column=1, sticky="w", pady=(10, 2))
+        ttk.Label(f, text="AI 模型").grid(row=2, column=0, sticky="w", pady=2)
+        model = ttk.Combobox(f, values=list(SUB_MODELS), state="readonly", width=24)
+        model.set(self.settings["sub_model"] if self.settings["sub_model"] in SUB_MODELS else next(iter(SUB_MODELS)))
+        model.grid(row=2, column=1, sticky="w", pady=2)
+        key = (self.settings["ai_key"] or "").strip()
+        tr = tk.BooleanVar(value=bool(key) and self.settings["sub_translate"])
+        cb = ttk.Checkbutton(f, text="翻成繁體中文" + ("" if key else "（要先在 ⚙ 進階設定 填 AI 金鑰）"), variable=tr)
+        cb.grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 2))
+        if not key:
+            cb.state(["disabled"])
+        ttk.Label(f, foreground="#666", wraplength=440, justify="left", text=(
+            "• 聽寫完全在你的電腦上跑，影片和聲音不會上傳。\n"
+            "• 第一次用會下載聽寫程式和模型（只要一次）。沒有顯示卡的電腦，1 小時影片「快」約 10～30 分鐘。\n"
+            "• 翻中文時只把字幕文字送給 AI（用你的金鑰，會花一點點額度）。\n"
+            "• 字幕存在影片旁邊，同名的 .srt；VLC、PotPlayer 打開影片會自動載入。")).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 6))
+        self.sub_stage = ttk.Label(f, text="")
+        self.sub_stage.grid(row=5, column=0, columnspan=2, sticky="w")
+        self.sub_bar = ttk.Progressbar(f, length=440, maximum=100)
+        self.sub_bar.grid(row=6, column=0, columnspan=2, pady=4)
+        btns = ttk.Frame(f)
+        btns.grid(row=7, column=0, columnspan=2, sticky="e", pady=(6, 0))
+        self.sub_cancel = threading.Event()
+        go = ttk.Button(btns, text="開始")
+        stop = ttk.Button(btns, text="取消", command=lambda: (self.sub_cancel.set(), None) if self.sub_running else w.destroy())
+        go.pack(side="left", padx=4)
+        stop.pack(side="left")
+        self.sub_running = False
+
+        def start():
+            self.settings["sub_lang"], self.settings["sub_model"] = lang.get(), model.get()
+            if key:
+                self.settings["sub_translate"] = tr.get()
+            self.settings.save()
+            go.state(["disabled"])
+            self.sub_running = True
+            args = (video, SUB_LANGS[lang.get()], SUB_MODELS[model.get()], key if tr.get() else "")
+            threading.Thread(target=self._subtitle_worker, args=args, daemon=True).start()
+        go.config(command=start)
+
+    def _subtitle_worker(self, video, lang, model, key):
+        def prog(got, total):
+            self.q.put(("sub_progress", (got, total)))
+        try:
+            res = make_subtitles(video, lang, model, key, on_stage=lambda t: self.q.put(("sub_stage", t)),
+                                 on_progress=prog, cancel_event=self.sub_cancel)
+            self.q.put(("sub_done", res))
+        except Cancelled:
+            self.q.put(("sub_error", "已取消"))
+        except Exception as e:
+            log.exception("AI 字幕失敗：%s", video)
+            self.q.put(("sub_error", str(e)))
+
+    def _sub_alive(self):
+        return getattr(self, "sub_win", None) is not None and self.sub_win.winfo_exists()
+
+    def on_sub_stage(self, text):
+        if self._sub_alive():
+            self.sub_stage.config(text=text)
+            self.sub_bar.config(value=0)
+
+    def on_sub_progress(self, data):
+        got, total = data
+        if self._sub_alive():
+            if total:
+                self.sub_bar.config(value=got * 100 / total)
+            if total > 1000:                                   # 下載中：顯示 MB
+                self.sub_stage.config(text=self.sub_stage.cget("text").split("｜")[0] + f"｜{fmt_size(got)} / {fmt_size(total)}")
+
+    def on_sub_done(self, res):
+        self.sub_running = False
+        if self._sub_alive():
+            self.sub_win.destroy()
+        msg = f"完成！共 {res['count']} 句，語言：{res['lang']}\n\n原文字幕：{res['orig']}"
+        if res.get("zh"):
+            msg += f"\n中文字幕：{res['zh']}"
+        if messagebox.askyesno("AI 字幕", msg + "\n\n要打開檔案位置嗎？"):
+            open_path(res.get("zh") or res["orig"], select=True)
+
+    def on_sub_error(self, msg):
+        self.sub_running = False
+        if self._sub_alive():
+            self.sub_win.destroy()
+        if msg != "已取消":
+            messagebox.showerror("AI 字幕", "沒有做成功：" + msg + "\n\n（詳細原因在 ⚙ 進階設定 → 問題排查 → 打開錯誤日誌）")
+
 
     # ------------------------------------------------------------------
     # ④ 設定
