@@ -85,7 +85,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.18.3"
+VERSION = "1.18.4"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -1553,26 +1553,49 @@ def extract_audio(video, wav, ffmpeg=None):
     return wav
 
 
-def run_whisper(exe, model, wav, lang, out_base, on_progress=None, cancel_event=None):
-    """回傳 (srt 路徑, 偵測到的語言)"""
+def _mmss(sec):
+    sec = int(sec)
+    return f"{sec // 3600}:{sec % 3600 // 60:02d}:{sec % 60:02d}" if sec >= 3600 else f"{sec // 60}:{sec % 60:02d}"
+
+
+def run_whisper(exe, model, wav, lang, out_base, on_progress=None, cancel_event=None, on_text=None, fast=False):
+    """回傳 (srt 路徑, 偵測到的語言)。進度用「聽到第幾秒」算（whisper 每聽完一句就印一行 [時間 --> 時間] 文字）"""
     import re
+    import time
     threads = str(max(1, min(8, (os.cpu_count() or 4) - 1)))
-    cmd = [exe, "-m", model, "-f", wav, "-l", lang, "-osrt", "-of", out_base, "-pp", "-t", threads]
+    cmd = [exe, "-m", model, "-f", wav, "-l", lang, "-osrt", "-of", out_base, "-t", threads]
+    if fast:
+        cmd += ["-bs", "1", "-bo", "1"]                  # 只想一種答案（不比較 5 種）：快約 2 倍，準度差一點點
+    total = max(1.0, (os.path.getsize(wav) - 44) / 32000)   # 16kHz × 2 位元組 ＝ 每秒 32000
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                          errors="ignore", **_popen_kw())
-    detected, tail = lang, []
+
+    def watch():                                         # 很久沒印東西時也能馬上取消
+        while p.poll() is None:
+            if cancel_event is not None and cancel_event.wait(0.5):
+                p.kill()
+                return
+    if cancel_event is not None:
+        threading.Thread(target=watch, daemon=True).start()
+    detected, tail, t0 = lang, [], time.time()
     for line in p.stdout:
-        if cancel_event is not None and cancel_event.is_set():
-            p.kill()
-            raise Cancelled()
         tail = (tail + [line.strip()])[-5:]
-        m = re.search(r"progress\s*=\s*(\d+)%", line)
-        if m and on_progress:
-            on_progress(int(m.group(1)), 100)
         m = re.search(r"auto-detected language:\s*([a-z]{2})", line)
         if m:
             detected = m.group(1)
-    if p.wait() != 0 or not os.path.isfile(out_base + ".srt"):
+        m = re.match(r"\s*\[(\d+):(\d\d):(\d\d)[.,]\d+ --> (\d+):(\d\d):(\d\d)[.,]\d+\]\s*(.*)", line)
+        if m:
+            end = int(m.group(4)) * 3600 + int(m.group(5)) * 60 + int(m.group(6))
+            if on_progress:
+                on_progress(int(min(end, total) / total * 1000), 1000)
+            if on_text:
+                spent = time.time() - t0
+                left = spent / max(end, 1) * max(total - end, 0)
+                on_text(f"聽到 {_mmss(end)} / {_mmss(total)}｜大約還要 {max(1, round(left / 60))} 分鐘\n最新：{m.group(7).strip()[:60]}")
+    p.wait()
+    if cancel_event is not None and cancel_event.is_set():
+        raise Cancelled()
+    if p.returncode != 0 or not os.path.isfile(out_base + ".srt"):
         raise RuntimeError("AI 聽寫失敗：" + " ".join(tail)[-200:])
     return out_base + ".srt", detected
 
@@ -1642,7 +1665,7 @@ def translate_entries(key, entries, src, on_progress=None, cancel_event=None, tr
 
 
 def make_subtitles(video, lang="auto", model="small-q5_1", key="", on_stage=None, on_progress=None,
-                   cancel_event=None, translate_fn=None):
+                   cancel_event=None, translate_fn=None, on_text=None):
     """影片 → 同資料夾的字幕檔。回傳 {"orig": 原文字幕, "zh": 中文字幕或 None, "lang": 語言}
     中文字幕取名「影片名.srt」：VLC、PotPlayer、電影與電視 打開影片會自動載入"""
     if not os.path.isfile(video):
@@ -1657,7 +1680,8 @@ def make_subtitles(video, lang="auto", model="small-q5_1", key="", on_stage=None
         extract_audio(video, tmp + ".wav")
         if on_stage:
             on_stage("AI 聽寫中（在你的電腦上跑，影片越長越久）…")
-        srt, detected = run_whisper(exe, mpath, tmp + ".wav", lang, tmp, on_progress, cancel_event)
+        srt, detected = run_whisper(exe, mpath, tmp + ".wav", lang, tmp, on_progress, cancel_event,
+                                    on_text, fast=model.startswith("small"))
         entries = parse_srt(open(srt, encoding="utf-8", errors="ignore").read())
     finally:
         for ext in (".wav", ".srt"):
@@ -2738,15 +2762,18 @@ class App:
             cb.state(["disabled"])
         ttk.Label(f, foreground="#666", wraplength=440, justify="left", text=(
             "• 聽寫完全在你的電腦上跑，影片和聲音不會上傳。\n"
-            "• 第一次用會下載聽寫程式和模型（只要一次）。沒有顯示卡的電腦，1 小時影片「快」約 10～30 分鐘。\n"
+            "• 第一次用會下載聽寫程式和模型（只要一次）。沒有顯示卡的電腦，1 小時影片「快」約 10～20 分鐘，「準」慢 3～5 倍。\n"
+            "• 影片本來就是中文：語言選「中文」，不用翻譯。\n"
             "• 翻中文時只把字幕文字送給 AI（用你的金鑰，會花一點點額度）。\n"
             "• 字幕存在影片旁邊，同名的 .srt；VLC、PotPlayer 打開影片會自動載入。")).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 6))
         self.sub_stage = ttk.Label(f, text="")
         self.sub_stage.grid(row=5, column=0, columnspan=2, sticky="w")
         self.sub_bar = ttk.Progressbar(f, length=440, maximum=100)
         self.sub_bar.grid(row=6, column=0, columnspan=2, pady=4)
+        self.sub_info = ttk.Label(f, text="", foreground="#555", wraplength=440, justify="left")
+        self.sub_info.grid(row=7, column=0, columnspan=2, sticky="w")
         btns = ttk.Frame(f)
-        btns.grid(row=7, column=0, columnspan=2, sticky="e", pady=(6, 0))
+        btns.grid(row=9, column=0, columnspan=2, sticky="e", pady=(6, 0))
         self.sub_cancel = threading.Event()
         go = ttk.Button(btns, text="開始")
         stop = ttk.Button(btns, text="取消", command=lambda: (self.sub_cancel.set(), None) if self.sub_running else w.destroy())
@@ -2770,7 +2797,8 @@ class App:
             self.q.put(("sub_progress", (got, total)))
         try:
             res = make_subtitles(video, lang, model, key, on_stage=lambda t: self.q.put(("sub_stage", t)),
-                                 on_progress=prog, cancel_event=self.sub_cancel)
+                                 on_progress=prog, cancel_event=self.sub_cancel,
+                                 on_text=lambda t: self.q.put(("sub_text", t)))
             self.q.put(("sub_done", res))
         except Cancelled:
             self.q.put(("sub_error", "已取消"))
@@ -2786,12 +2814,16 @@ class App:
             self.sub_stage.config(text=text)
             self.sub_bar.config(value=0)
 
+    def on_sub_text(self, text):
+        if self._sub_alive():
+            self.sub_info.config(text=text)
+
     def on_sub_progress(self, data):
         got, total = data
         if self._sub_alive():
             if total:
                 self.sub_bar.config(value=got * 100 / total)
-            if total > 1000:                                   # 下載中：顯示 MB
+            if total > 1000:                                   # 下載中（聽寫的進度是千分比，total＝1000）：顯示 MB
                 self.sub_stage.config(text=self.sub_stage.cget("text").split("｜")[0] + f"｜{fmt_size(got)} / {fmt_size(total)}")
 
     def on_sub_done(self, res):
