@@ -79,7 +79,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.18.0"
+VERSION = "1.18.1"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -1416,7 +1416,7 @@ from tkinter import ttk, messagebox, filedialog        # noqa: E402
 # 第一次用才下載：whisper.cpp 程式（約 5 MB，GitHub 官方發布）＋ 模型（190～550 MB，Hugging Face）
 # ======================================================================
 
-WHISPER_API = "https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest"
+WHISPER_API = "https://api.github.com/repos/ggml-org/whisper.cpp/releases?per_page=15"
 WHISPER_ASSET = "whisper-bin-x64.zip"           # 一般電腦（CPU）版
 SUB_MODELS = {"快（small，約 190 MB）": "small-q5_1", "準（large-v3-turbo，約 550 MB）": "large-v3-turbo-q5_0"}
 MODEL_URLS = ("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin",
@@ -1470,6 +1470,27 @@ def fetch_file(url, dest, on_progress=None, cancel_event=None, headers=None):
     return dest
 
 
+def pick_whisper_asset():
+    """從最近幾次發布裡，找一般電腦（CPU）用的 Windows 64 位元壓縮檔；檔名偶爾會變，用規則找"""
+    import re
+    with urllib.request.urlopen(urllib.request.Request(WHISPER_API, headers={"User-Agent": "VideoHelper"}), timeout=30) as r:
+        rels = json.loads(r.read().decode("utf-8"))
+    seen = []
+    for rel in rels:
+        if rel.get("draft") or rel.get("prerelease"):
+            continue
+        names = {a.get("name", ""): a for a in rel.get("assets", [])}
+        seen += list(names)
+        if WHISPER_ASSET in names:
+            return names[WHISPER_ASSET], rel, seen
+        for n, a in names.items():
+            low = n.lower()
+            if (low.endswith(".zip") and "x64" in low and ("win" in low or "bin" in low)
+                    and not re.search(r"cuda|cublas|vulkan|blas|arm|sycl|opencl|xcframework|java|jni", low)):
+                return a, rel, seen
+    return None, None, seen
+
+
 def install_whisper(on_stage=None, on_progress=None, cancel_event=None):
     exe = find_whisper()
     if exe:
@@ -1478,11 +1499,9 @@ def install_whisper(on_stage=None, on_progress=None, cancel_event=None):
         raise RuntimeError("找不到 whisper-cli。Windows 會自動下載；其他系統請先自己安裝 whisper.cpp。")
     if on_stage:
         on_stage("第一次使用：下載 whisper.cpp 聽寫程式…")
-    with urllib.request.urlopen(urllib.request.Request(WHISPER_API, headers={"User-Agent": "VideoHelper"}), timeout=30) as r:
-        rel = json.loads(r.read().decode("utf-8"))
-    asset = next((a for a in rel.get("assets", []) if a.get("name") == WHISPER_ASSET), None)
+    asset, rel, seen = pick_whisper_asset()
     if not asset:
-        raise RuntimeError("whisper.cpp 官方的下載檔名變了，請回報作者")
+        raise RuntimeError("找不到 whisper.cpp 的 Windows 版下載檔，請回報作者（看到的檔名：" + ", ".join(seen[:12]) + "）")
     z = fetch_file(asset["browser_download_url"], os.path.join(whisper_dir(), WHISPER_ASSET), on_progress, cancel_event)
     import zipfile
     with zipfile.ZipFile(z) as zf:
