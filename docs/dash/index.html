@@ -100,7 +100,14 @@ async function fx() {
     }).join('');
     body('fx', `<div class="meta">台銀掛牌：${esc(d.quote_time || '—')}｜更新：${esc(d.updated)}</div>
       <table><tr><th>貨幣</th><th class="num">中間價</th><th class="num">比前一日</th><th class="num">30天位置</th><th class="num">現鈔賣出</th></tr>${rows}</table>
-      <div class="meta" style="margin-top:6px">30天位置：0＝最便宜、100＝最貴（🟢 便宜 20%、🔴 貴 20%）</div>`);
+      <div class="meta" style="margin-top:6px">30天位置：0＝最便宜、100＝最貴（🟢 便宜 20%、🔴 貴 20%）</div>
+      <div class="meta" id="arena" style="margin-top:4px"></div>`);
+    get('docs/fx/arena.json').then(a => {
+      const dir = Object.entries(a.dir).filter(([, x]) => x.n).map(([m, x]) => [m, x.k / x.n * 100]).sort((p, q) => q[1] - p[1]);
+      const rng = Object.entries(a.rng).filter(([, x]) => x.n).map(([m, x]) => [m, x.in / x.n * 100]).sort((p, q) => Math.abs(p[1] - 68) - Math.abs(q[1] - 68));
+      const el = document.getElementById('arena');
+      if (el && dir.length) el.innerHTML = `🏟 <a href="../fx/#arena">預報擂台</a>（${esc(a.updated)}）：方向第一 ${esc(dir[0][0])} ${dir[0][1].toFixed(1)}%（丟硬幣 50%）｜範圍最準 ${esc(rng[0][0])} ${rng[0][1].toFixed(1)}%（目標 68%）`;
+    }).catch(() => {});
   } catch (e) { body('fx', `<div class="meta">讀不到匯率（${esc(e.message)}）</div>`); }
 }
 

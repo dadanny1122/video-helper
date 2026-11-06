@@ -58,6 +58,8 @@ const COMMANDS = [
       { type: 4, name: 'hour', name_localizations: { 'zh-TW': '幾點' }, description: 'Hour (0-23)', description_localizations: { 'zh-TW': '幾點（0～23，不填＝現在）' }, min_value: 0, max_value: 23 },
       { type: 3, name: 'day', name_localizations: { 'zh-TW': '哪天' }, description: 'Day', description_localizations: { 'zh-TW': '哪一天（不填＝今天）' },
         choices: [{ name: '今天', value: '0' }, { name: '明天', value: '1' }, { name: '後天', value: '2' }] }] },
+  { name: 'arena', name_localizations: { 'zh-TW': '擂台' }, type: 1,
+    description: 'Which FX forecast method is most accurate', description_localizations: { 'zh-TW': '匯率預報擂台：哪種預報方法比較準（每週六更新）' } },
   { name: 'status', name_localizations: { 'zh-TW': '狀態' }, type: 1,
     description: 'Are the bots running?', description_localizations: { 'zh-TW': '各個機器人有沒有正常在跑' } },
 ];
@@ -106,6 +108,20 @@ async function cmdRate(i) {
       `現金　買 ${rf(r.cash_buy)}／賣 ${rf(r.cash_sell)}\n即期　買 ${rf(r.spot_buy)}／賣 ${rf(r.spot_sell)}\n` +
       `💵 1 萬台幣換現鈔 → **${nf(got, DIG(c))} ${CCY[c]}**\n\n🏦 台銀掛牌：${d.quote_time || '—'}｜更新：${d.updated}\n` +
       `📎 [今日各時段牌價](https://rate.bot.com.tw/xrt/quote/day/${c})｜[🧮 計算機](${CALC})｜[📊 即時介面](${DASH})` });
+}
+
+// ---- /擂台 ----
+async function cmdArena() {
+  const d = await getJson('docs/fx/arena.json');
+  const dir = Object.entries(d.dir).filter(([, x]) => x.n).map(([m, x]) => [m, x.k / x.n * 100, x.n]).sort((a, b) => b[1] - a[1]);
+  const rng = Object.entries(d.rng).filter(([, x]) => x.n).map(([m, x]) => [m, x.in / x.n * 100, x.w / x.n]).sort((a, b) => Math.abs(a[1] - 68) - Math.abs(b[1] - 68));
+  const medal = ['🥇', '🥈', '🥉', '4.', '5.'];
+  return reply({ title: '🏟 匯率預報擂台', url: 'https://dadanny1122.github.io/video-helper/fx/#arena',
+    description: '**方向：猜 5 個營業日後會漲還是跌**（丟硬幣＝50%）\n' +
+      dir.map(([m, p, n], k) => `${medal[k]} ${m}　**${p.toFixed(1)}%**（考 ${n} 次）`).join('\n') +
+      '\n\n**範圍：說 68% 會落在裡面，實際幾 %**（越接近 68% 越好）\n' +
+      rng.map(([m, c, w], k) => `${medal[k]} ${m}　**${c.toFixed(1)}%**（寬 ${w.toFixed(2)}%）`).join('\n') +
+      `\n\n「永遠猜漲」是及格線：贏不了它就是沒學到東西。過去 6 年 USD／EUR／JPY／CNY 回測，每 5 天考一次、不偷看未來。\n更新：${d.updated}｜不是投資建議` });
 }
 
 // ---- /排行榜 ----
@@ -213,6 +229,7 @@ export default {
       if (i.type === 2 && i.data.name === 'exchange') return await cmdExchange(i);
       if (i.type === 2 && i.data.name === 'rate') return await cmdRate(i);
       if (i.type === 2 && i.data.name === 'rank') return await cmdRank();
+      if (i.type === 2 && i.data.name === 'arena') return await cmdArena();
       if (i.type === 2 && i.data.name === 'status') return await cmdStatus(env);
       if (i.type === 2 && i.data.name === 'weather') return await cmdWeather(i);
     } catch (e) {
