@@ -39,6 +39,12 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+try:                                        # 用 Windows 自己信任的憑證清單（防毒軟體、公司網路會換憑證，Python 內建的清單不認得）
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:
+    pass
+
 import yt_dlp
 
 try:                                        # 系統匣（沒裝的話就沒有這個功能，其他照常）
@@ -79,7 +85,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.18.2"
+VERSION = "1.18.3"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址

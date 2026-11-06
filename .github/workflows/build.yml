@@ -90,7 +90,7 @@ jobs:
       # 不裝 imageio-ffmpeg（那是 88 MB 的完整版），改用上面編的迷你版
       - name: Install packages
         if: steps.chk.outputs.exists != '1'
-        run: pip install yt-dlp pystray pillow pyinstaller
+        run: pip install yt-dlp pystray pillow pyinstaller truststore
 
       - name: Smoke test (window, tabs, history, bridge, mini ffmpeg on Windows)
         if: steps.chk.outputs.exists != '1'
