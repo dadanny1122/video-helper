@@ -198,11 +198,11 @@ FRED = {"TWD": ("DEXTAUS", False), "JPY": ("DEXJPUS", False), "CNY": ("DEXCHUS",
 FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={}"
 
 
-def fred(sid):
+def fred(sid, years=LONG_YEARS):
     req = urllib.request.Request(FRED_URL.format(sid), headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=60) as r:
         rows = list(csv.reader(io.StringIO(r.read().decode("utf-8", "ignore"))))
-    cut = (datetime.now(TW) - timedelta(days=365 * LONG_YEARS + 30)).strftime("%Y-%m-%d")
+    cut = (datetime.now(TW) - timedelta(days=365 * years + 30)).strftime("%Y-%m-%d")
     out = {}
     for row in rows[1:]:
         try:
@@ -213,12 +213,12 @@ def fred(sid):
     return out
 
 
-def long_series(code, twd):
+def long_series(code, twd, years=LONG_YEARS):
     """過去 3 年每天「1 外幣 = 多少台幣」（用 FRED 的美金匯率換算）"""
     sid, inverted = FRED[code]
     if sid is None:
         return [twd[d] for d in sorted(twd)]
-    x = fred(sid)
+    x = fred(sid, years)
     out = []
     for d in sorted(set(x) & set(twd)):
         out.append(twd[d] * x[d] if inverted else twd[d] / x[d])

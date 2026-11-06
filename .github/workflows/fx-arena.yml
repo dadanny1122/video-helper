@@ -1,0 +1,43 @@
+name: FX forecast arena
+
+# 匯率預報擂台：每週六早上（台灣約 10 點）用過去 6 年資料考試，看哪種預報方法比較準 → #匯率分析
+# 每週一次，GitHub 排程遲到幾小時沒關係，所以不用外部鬧鐘
+on:
+  schedule:
+    - cron: '7 2 * * 6'
+  workflow_dispatch:
+    inputs:
+      preview:
+        description: '只預覽（印在 Actions 頁面），不發到 Discord'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  arena:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Run the backtest
+        env:
+          DISCORD_FX_WEBHOOK: ${{ secrets.DISCORD_FX_WEBHOOK }}
+          DISCORD_FX_ANALYSIS_WEBHOOK: ${{ secrets.DISCORD_FX_ANALYSIS_WEBHOOK }}
+          PREVIEW: ${{ inputs.preview }}
+          PYTHONIOENCODING: utf-8
+        run: python3 .github/fx_backtest.py docs/fx/arena.json | tee arena.txt
+      - name: Show result
+        if: always()
+        run: '[ -f arena.txt ] && sed "s/^/::notice title=擂台::/" arena.txt | head -40 || true'
+      - name: Save result
+        if: ${{ inputs.preview != true }}
+        run: |
+          git add docs/fx/arena.json
+          git diff --cached --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          git commit -m "更新匯率預報擂台成績"
+          for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 5; done
