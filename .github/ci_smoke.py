@@ -281,12 +281,13 @@ _srv.shutdown()
 # 7b. 🔒 安全分頁
 app.show_advanced(); r.update()
 # 🔒 安全分頁：配對清單、AI 紀錄、連線紀錄、元件指紋都畫得出來
+_m = time.strftime("%Y-%m")
+_before = ((app.settings["ai_usage"] or {}).get(_m, {}).get("classify") or {}).get("calls", 0)
 app.note_ai_usage("classify", {"input_tokens": 120, "output_tokens": 30})
 app.refresh_security(); r.update()
 wait(lambda: "yt-dlp" in app.sec_comp.cget("text"))
 print("::notice title=安全分頁 元件::" + app.sec_comp.cget("text").replace("\n", " | ")[:600])
-_m = time.strftime("%Y-%m")
-assert app.settings["ai_usage"][_m]["classify"]["calls"] == 1, "AI 使用紀錄沒記到"
+assert app.settings["ai_usage"][_m]["classify"]["calls"] == _before + 1, "AI 使用紀錄沒記到"
 app.adv.withdraw(); r.update()
 
 # 8. 系統匣：關視窗 → 縮到系統匣 → 從系統匣打開 → 結束
