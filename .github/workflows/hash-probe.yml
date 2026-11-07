@@ -1,0 +1,14 @@
+name: Model hash probe (temporary)
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -s "https://huggingface.co/api/models/ggerganov/whisper.cpp/tree/main" | python3 -c "
+          import json,sys
+          for f in json.load(sys.stdin):
+              if f['path'] in ('ggml-small-q5_1.bin','ggml-large-v3-turbo-q5_0.bin','ggml-tiny.bin'):
+                  print('::notice title=hash::' + f['path'] + ' ' + f['lfs']['oid'] + ' ' + str(f['lfs']['size']))"
+          # 再真的下載最小的那個算一次，確認 API 給的就是檔案的 sha256
+          curl -sL -o t.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin && echo "::notice title=tiny real::$(sha256sum t.bin)"
