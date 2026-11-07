@@ -85,7 +85,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.18.5"
+VERSION = "1.18.6"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -1477,6 +1477,13 @@ WHISPER_ASSET = "whisper-bin-x64.zip"           # 一般電腦（CPU）版
 SUB_MODELS = {"快（small，約 190 MB）": "small-q5_1", "準（large-v3-turbo，約 550 MB）": "large-v3-turbo-q5_0"}
 MODEL_URLS = ("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin",
               "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin")
+# 模型的官方指紋（Hugging Face 公布的 sha256、大小；2026-11-07 用 GitHub Actions 實際下載核對過）
+# 下載後對不上就刪掉、不用 → 檔案被換掉或下載壞掉都擋得住
+MODEL_SHA256 = {
+    "small-q5_1": ("ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb", 190085487),
+    "large-v3-turbo-q5_0": ("394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2", 574041195),
+    "tiny": ("be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21", 77691713),   # 自動測試用
+}
 SUB_LANGS = {"自動偵測": "auto", "日文": "ja", "英文": "en", "韓文": "ko", "中文": "zh"}
 SUB_BATCH = 80                                  # 翻譯一次送幾句
 
@@ -1561,11 +1568,7 @@ def install_whisper(on_stage=None, on_progress=None, cancel_event=None):
     z = fetch_file(asset["browser_download_url"], os.path.join(whisper_dir(), WHISPER_ASSET), on_progress, cancel_event)
     want = (asset.get("digest") or "").lower()         # GitHub 幫每個發布檔算好的指紋（sha256）
     if want.startswith("sha256:"):
-        h = hashlib.sha256()
-        with open(z, "rb") as f:
-            for b in iter(lambda: f.read(1 << 20), b""):
-                h.update(b)
-        if h.hexdigest() != want[7:]:
+        if file_sha256(z) != want[7:]:
             os.remove(z)
             raise RuntimeError("下載的聽寫程式指紋對不上（可能被竄改或下載壞掉），已刪除，請再試一次")
         log.info("whisper.cpp 指紋相符：%s", want)
@@ -1579,16 +1582,36 @@ def install_whisper(on_stage=None, on_progress=None, cancel_event=None):
     return exe
 
 
+def file_sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
 def ensure_model(name, on_stage=None, on_progress=None, cancel_event=None):
+    if name not in MODEL_SHA256:
+        raise RuntimeError(f"不認得的模型：{name}")
+    want, size = MODEL_SHA256[name]
     path = os.path.join(whisper_dir(), f"ggml-{name}.bin")
     if os.path.isfile(path):
-        return path
+        if os.path.getsize(path) == size:
+            return path
+        os.remove(path)                                 # 大小不對＝壞掉或被換掉 → 重新下載
     last = None
     for tpl in MODEL_URLS:
         if on_stage:
             on_stage(f"第一次使用這個模型：下載 {name}（只要下載一次）…")
         try:
-            return fetch_file(tpl.format(name), path, on_progress, cancel_event)
+            fetch_file(tpl.format(name), path, on_progress, cancel_event)
+            if on_stage:
+                on_stage("核對模型指紋…")
+            if file_sha256(path) != want:
+                os.remove(path)
+                raise RuntimeError("模型指紋對不上（可能被竄改或下載壞掉），已刪除")
+            log.info("模型 %s 指紋相符", name)
+            return path
         except Cancelled:
             raise
         except Exception as e:

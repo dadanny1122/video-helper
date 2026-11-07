@@ -100,6 +100,15 @@ jobs:
           PYTHONUTF8: "1"
         run: python .github/ci_smoke.py
 
+      # 網路流量測試：記錄電腦版所有對外連線，連到 SECURITY.md 清單以外的地方就失敗（擋發布）
+      - name: Network allowlist test
+        if: steps.chk.outputs.exists != '1'
+        timeout-minutes: 15
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+        run: python .github/net_test.py
+
       - name: Secret encryption test (DPAPI)
         if: steps.chk.outputs.exists != '1'
         shell: pwsh
@@ -162,7 +171,10 @@ jobs:
           v = "${{ steps.ver.outputs.v }}"
           text = open("CHANGELOG.md", encoding="utf-8").read()
           m = re.search(r"^## v" + re.escape(v) + r"\s*\n(.*?)(?=^## |\Z)", text, re.S | re.M)
-          body = (m.group(1).strip() if m else "") + "\n\n下載 VideoHelper.exe 雙擊即可使用。"
+          import hashlib
+          sha = hashlib.sha256(open("dist/VideoHelper.exe", "rb").read()).hexdigest()
+          body = ((m.group(1).strip() if m else "") + "\n\n下載 VideoHelper.exe 雙擊即可使用。"
+                  + "\n\n🔒 檔案指紋（SHA-256）：`" + sha + "`\n確認下載的檔案沒被換掉：在檔案所在資料夾開命令提示字元，輸入 `certutil -hashfile VideoHelper.exe SHA256`，結果要一模一樣。")
           open("release_notes.md", "w", encoding="utf-8").write(body.strip())
           PY
           wc -c release_notes.md

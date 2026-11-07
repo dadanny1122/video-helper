@@ -10,7 +10,7 @@
 | 檔案 | 是什麼 |
 |---|---|
 | `video-helper.user.js` | 瀏覽器腳本（暴力猴／Violentmonkey）。約 2,200 行，**單一檔案**（Greasy Fork 規定） |
-| `video_helper_app.py` | 電腦版（Tkinter + yt-dlp + 迷你 ffmpeg），GitHub Actions 打包成 `VideoHelper.exe`；v1.18.0 加「📝 AI 字幕」（② 下載紀錄的按鈕／右鍵）：`make_subtitles()`＝迷你 ffmpeg 轉 16kHz wav（build.sh 加了 pcm_s16le、wav）→ whisper.cpp（第一次用從 GitHub releases/latest 下載 whisper-bin-x64.zip 到設定資料夾/whisper；模型從 Hugging Face 下載，快＝small-q5_1、準＝large-v3-turbo-q5_0）→ 原文 `影片.語言.srt`；有 ai_key 就 `ai_translate()` 只送字幕文字翻成繁中 `影片.srt`；build.yml 有真的 whisper 測試（Windows 語音念英文、tiny 模型，失敗只警告） |
+| `video_helper_app.py` | 電腦版（Tkinter + yt-dlp + 迷你 ffmpeg），GitHub Actions 打包成 `VideoHelper.exe`；v1.18.0 加「📝 AI 字幕」（② 下載紀錄的按鈕／右鍵）：`make_subtitles()`＝迷你 ffmpeg 轉 16kHz wav（build.sh 加了 pcm_s16le、wav）→ whisper.cpp（第一次用從 GitHub releases/latest 下載 whisper-bin-x64.zip 到設定資料夾/whisper；模型從 Hugging Face 下載，快＝small-q5_1、準＝large-v3-turbo-q5_0，指紋寫死在 `MODEL_SHA256`；whisper zip 比對 GitHub asset digest；AI 金鑰用 DPAPI 加密（`SECRET_KEYS`））→ 原文 `影片.語言.srt`；有 ai_key 就 `ai_translate()` 只送字幕文字翻成繁中 `影片.srt`；build.yml 有真的 whisper 測試（Windows 語音念英文、tiny 模型，失敗只警告） |
 | `docs/manual/index.html` | 說明書（GitHub Pages：https://dadanny1122.github.io/video-helper/manual/），改了會自動同步到 Discord |
 | `docs/fx/index.html` | 匯率頻道說明書（https://dadanny1122.github.io/video-helper/fx/），匯率訊息都附這個連結；改了匯率的欄位要一起改 |
 | `docs/fx/calc.html` | 換匯計算機（https://dadanny1122.github.io/video-helper/fx/calc.html）：讀 `docs/fx/rates.json`（fx 每次跑時 `export_rates()` 寫入並 commit，preview 模式也會）；可選「今天任一分鐘」的價格（`ticks()` 抓台銀「今日各時段牌價」每次掛牌，約每 2～3 分鐘一次、精確到秒；選的時間用最後一筆 ≤ 那一分鐘的掛牌；台銀頁面 CORS 只開給自己，所以要由 Actions 抓）；鬧鐘每 10 分鐘以 `inputs.export=true` 只更新 rates.json、不發 Discord；三種模式：買外幣（數量×銀行賣出）、用台幣換（台幣÷賣出）、賣外幣（數量×銀行買入），現金／即期，附算式、30 天平均比較、現金 vs 即期差價 |
@@ -18,6 +18,9 @@
 | `docs/practice/` | 學 HLS 用的練習頁 |
 | `CHANGELOG.md` | **電腦版**的更新紀錄（發布 EXE 時當作說明） |
 | `.github/ci_smoke.py` | 電腦版的自動測試（在 Windows 上跑） |
+| `SECURITY.md` | 安全說明：資料外傳清單、本機服務防護、第三方元件指紋、自動安全測試；**改了會連網的功能要同步更新它和 `.github/net_test.py` 的 ALLOWED** |
+| `.github/net_test.py` | 網路流量測試（build.yml，Windows）：socket 層記錄所有連線，跑開視窗 15 秒、檢查更新、廣告清單、whisper、tiny 模型、AI（假金鑰），連到 ALLOWED 以外就失敗、擋發布 |
+| `.github/security_test.js` | 腳本隱私測試（security.yml，改腳本自動跑）：每個 @match／@include 網站開假網頁，監視 Cookie、密碼欄位、非 vh_ 的 localStorage、IndexedDB、navigator.credentials、對外連線；也核對 mux.js 的 @require #sha256 跟 jsDelivr 一樣 |
 | `.github/ffmpeg/build.sh` | 編迷你 ffmpeg（LGPL，只會接檔、換包裝） |
 
 ## 腳本的架構（`video-helper.user.js`）

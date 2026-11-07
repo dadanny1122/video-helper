@@ -1,0 +1,26 @@
+name: Security tests
+
+# 瀏覽器腳本的安全測試：改了腳本或測試就自動跑，也可以手動跑
+on:
+  push:
+    paths:
+      - 'video-helper.user.js'
+      - '.github/security_test.js'
+      - '.github/workflows/security.yml'
+  workflow_dispatch:
+
+jobs:
+  userscript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check mux.js fingerprint (jsDelivr == @require hash)
+        run: |
+          want=$(grep -o 'mux.min.js#sha256=[0-9a-f]*' video-helper.user.js | cut -d= -f2)
+          got=$(curl -sL https://cdn.jsdelivr.net/npm/mux.js@6.3.0/dist/mux.min.js | sha256sum | cut -d' ' -f1)
+          echo "::notice title=mux.js 指紋::腳本寫的 $want｜jsDelivr 實際 $got"
+          [ "$want" = "$got" ]
+      - name: Install Playwright
+        run: npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+      - name: Userscript privacy test
+        run: node .github/security_test.js video-helper.user.js

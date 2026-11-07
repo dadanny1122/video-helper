@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.18.0
+// @version      3.18.1
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -32,7 +32,7 @@
 // @match        *://*.vporn.com/*
 // @include      /^https?:\/\/([^\/]*\.)?xhamster\d*\.(com|desi|one)\//
 // @include      /^https?:\/\/([^\/]*\.)?missav[^\/]*\//
-// @require      https://cdn.jsdelivr.net/npm/mux.js@6.3.0/dist/mux.min.js
+// @require      https://cdn.jsdelivr.net/npm/mux.js@6.3.0/dist/mux.min.js#sha256=94cc4bb58e26b96e9160bd9fd7fe0eeae171f0ffb80086e570f8991e1f210ffa
 // @grant        GM_download
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue

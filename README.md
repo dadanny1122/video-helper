@@ -63,3 +63,7 @@
 - 電腦版下載使用 [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - 廣告網域清單使用 [StevenBlack/hosts](https://github.com/StevenBlack/hosts)（MIT）
 - 合併與轉 MP4 使用 [FFmpeg](https://ffmpeg.org/)（LGPL）
+
+## 安全
+
+哪些資料會離開你的電腦、會連到哪裡、怎麼自己驗證，寫在 [SECURITY.md](SECURITY.md)。
