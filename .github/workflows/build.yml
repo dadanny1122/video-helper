@@ -104,9 +104,15 @@ jobs:
         shell: bash
         run: |
           pip install -q pip-audit cyclonedx-bom
-          pip-audit -r requirements.txt --require-hashes --disable-pip -f markdown -o audit.md || { cat audit.md; echo "::error title=漏洞掃描::有套件有已知漏洞，先更新 requirements.txt"; exit 1; }
-          cat audit.md
-          echo "::notice title=漏洞掃描::$(grep -c '|' audit.md || true) 行報告，沒有已知漏洞"
+          set +e
+          pip-audit -r requirements.txt --require-hashes --disable-pip -f markdown > audit_raw.md 2> audit_err.txt
+          rc=$?
+          set -e
+          { echo "# 漏洞掃描（pip-audit）"; echo; echo "掃描時間：$(date -u +%Y-%m-%dT%H:%MZ)，套件清單：requirements.txt"; echo;
+            if [ -s audit_raw.md ]; then cat audit_raw.md; else echo "沒有已知漏洞（No known vulnerabilities found）"; fi; } > audit.md
+          cat audit.md audit_err.txt
+          if [ $rc -ne 0 ]; then echo "::error title=漏洞掃描::有套件有已知漏洞（或掃描失敗），先更新 requirements.txt"; exit 1; fi
+          echo "::notice title=漏洞掃描::沒有已知漏洞"
           # SBOM：這個版本用了哪些套件、哪個版本（CycloneDX 格式，附在發布裡）
           cyclonedx-py requirements requirements.txt -o sbom.cdx.json
           echo "::notice title=SBOM::$(python -c "import json;print(len(json.load(open('sbom.cdx.json'))['components']))") 個套件"
