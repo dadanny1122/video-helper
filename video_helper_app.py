@@ -20,6 +20,7 @@ Video Helper 電腦版
 """
 
 import os
+import re
 import sys
 import json
 import glob
@@ -85,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.19.0"
+VERSION = "1.20.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -151,6 +152,8 @@ def default_download_dir():
 DEFAULT_SETTINGS = {
     "download_dir": "",          # 空的 = 使用者的「下載」資料夾
     "default_quality": "最高",
+    "rate_limit_mbps": 0,             # 下載速度上限（Mbps），0＝不限制
+    "skip_downloaded": True,          # 批次、瀏覽器送來的：下載過（檔案還在）就跳過
     "keep_history": True,
     "keep_stats": True,               # 記錄下載統計（只存數字和網站名稱）
     "filename_template": DEFAULT_TEMPLATE,
@@ -562,6 +565,46 @@ def make_icon_image(size=64):
 # ======================================================================
 
 WAITING, RUNNING, DONE, FAILED, CANCELLED = "等待中", "下載中", "完成", "失敗", "取消"
+PAUSED = "暫停"
+
+
+# ---- 重複偵測：同一支影片（不管網址後面多了什麼參數）算同一個 ----
+VIDEO_ID_RULES = (
+    ("pornhub.com", r"[?&]viewkey=([A-Za-z0-9]+)"),
+    ("xvideos.com", r"/video\.?([a-z0-9]+)/"),
+    ("xnxx.com", r"/video-([a-z0-9]+)/"),
+    ("youporn.com", r"/watch/(\d+)"),
+    ("redtube.com", r"^/(\d+)"),
+    ("xhamster.com", r"-([A-Za-z0-9]+)/?$"),
+    ("tube8.com", r"/porn-video/(\d+)"),
+    ("youjizz.com", r"-(\d+)\.html"),
+    ("spankbang.com", r"^/([a-z0-9]+)/(?:video|play)/"),
+)
+
+
+def video_key(url):
+    """網址 → 「網站:影片編號」；認不出來就用「網域＋路徑」"""
+    try:
+        u = urllib.parse.urlparse(str(url).strip())
+    except Exception:
+        return str(url)
+    host = (u.hostname or "").lower()
+    for dom, rx in VIDEO_ID_RULES:
+        if host == dom or host.endswith("." + dom):
+            m = re.search(rx, u.path + ("?" + u.query if u.query else "") if "viewkey" in rx else u.path)
+            if m:
+                return f"{dom}:{m.group(1)}"
+            return f"{dom}:{u.path.rstrip('/')}"
+    return host.removeprefix("www.") + u.path.rstrip("/")
+
+
+def find_downloaded(history_items, url):
+    """下載紀錄裡有沒有同一支影片「下載完成、檔案還在」的；有就回傳那一筆"""
+    k = video_key(url)
+    for rec in history_items:
+        if rec.get("status") == DONE and rec.get("file") and video_key(rec.get("url", "")) == k and os.path.isfile(rec["file"]):
+            return rec
+    return None
 
 
 class TaskQueue:
@@ -588,8 +631,9 @@ class TaskQueue:
         return sum(t["status"] in statuses for t in self.tasks)
 
     def is_duplicate(self, url, height):
-        """同一個網址、同一個畫質已經在排隊或下載中"""
-        return any(t["url"] == url and t["fmt"]["height"] == height and t["status"] in (WAITING, RUNNING)
+        """同一支影片（網址參數不同也算）、同一個畫質已經在排隊、下載中或暫停"""
+        k = video_key(url)
+        return any(video_key(t["url"]) == k and t["fmt"]["height"] == height and t["status"] in (WAITING, RUNNING, PAUSED)
                    for t in self.tasks)
 
     def remove(self, tid):
@@ -609,7 +653,16 @@ class TaskQueue:
         return n
 
     def clear_finished(self):
-        self.tasks = [t for t in self.tasks if t["status"] in (WAITING, RUNNING)]
+        """清掉已結束的；暫停的留著（還要接著下載）"""
+        self.tasks = [t for t in self.tasks if t["status"] in (WAITING, RUNNING, PAUSED)]
+
+    def resume_paused(self):
+        n = 0
+        for t in self.tasks:
+            if t["status"] == PAUSED:
+                t["status"] = WAITING
+                n += 1
+        return n
 
 
 # ======================================================================
@@ -1274,6 +1327,37 @@ def analyze_media(media, height=None):
 # 下載（可取消）
 # ======================================================================
 
+class Paused(Exception):
+    """按了「暫停」：停下來但保留已下載的部分，之後可以接著下載"""
+
+
+class Throttle:
+    """下載速度上限（所有下載共用）：每秒最多放行 bps 位元組，超過就稍等一下"""
+
+    def __init__(self):
+        self.bps, self.allow, self.t = 0.0, 0.0, time.time()
+        self.lock = threading.Lock()
+
+    def set_mbps(self, mbps):
+        self.bps = max(0.0, float(mbps or 0)) * 1e6 / 8
+        self.allow, self.t = 0.0, time.time()
+
+    def wait(self, n):
+        if not self.bps:
+            return
+        with self.lock:
+            now = time.time()
+            self.allow = min(self.bps, self.allow + (now - self.t) * self.bps)   # 最多存 1 秒的額度
+            self.t = now
+            self.allow -= n
+            delay = -self.allow / self.bps if self.allow < 0 else 0
+        if delay > 0:
+            time.sleep(min(delay, 5))
+
+
+THROTTLE = Throttle()
+
+
 class Cancelled(Exception):
     pass
 
@@ -1323,7 +1407,7 @@ def _probe_size(url, headers):
 
 
 def parallel_download(url, headers, dest, parts=PARALLEL_PARTS, on_progress=None, cancel_event=None,
-                      touched=None):
+                      touched=None, keep_partials=None):
     """
     把一個檔案切成幾段同時下載，再接回去（內容跟一條線下載的一模一樣）。
     成功回傳 {"bytes", "start", "end"}；伺服器不支援分段就回傳 None（改用一般下載）。
@@ -1340,6 +1424,29 @@ def parallel_download(url, headers, dest, parts=PARALLEL_PARTS, on_progress=None
     step = -(-total // parts)
     ranges = [(i, i * step, min(total, (i + 1) * step) - 1) for i in range(parts) if i * step < total]
     got = [0] * len(ranges)
+    # 接著下載（暫停過）：分段的大小和段數一樣，才沿用上次已經下載的部分
+    info_path = dest + ".parts.json"
+    if touched is not None:
+        touched.add(info_path)
+    try:
+        prev = json.load(open(info_path, encoding="utf-8"))
+    except Exception:
+        prev = None
+    if prev == {"total": total, "parts": len(ranges)}:
+        for i, a, b in ranges:
+            p = f"{dest}.part{i}"
+            if os.path.isfile(p):
+                got[i] = min(os.path.getsize(p), b - a + 1)
+        if sum(got):
+            log.info("分段下載：接著上次的 %.1f MB 繼續", sum(got) / 1e6)
+    else:
+        for i, _, _ in ranges:
+            try:
+                os.remove(f"{dest}.part{i}")
+            except OSError:
+                pass
+    json.dump({"total": total, "parts": len(ranges)}, open(info_path, "w", encoding="utf-8"))
+    resumed = sum(got)
     lock = threading.Lock()
     errors = []
     start = time.time()
@@ -1351,7 +1458,7 @@ def parallel_download(url, headers, dest, parts=PARALLEL_PARTS, on_progress=None
             return
         last["t"] = now
         done = sum(got)
-        speed = done / max(0.01, now - start)
+        speed = (done - resumed) / max(0.01, now - start)
         on_progress(done, total, speed, (total - done) / speed if speed else None)
 
     def worker(i, a, b):
@@ -1359,7 +1466,8 @@ def parallel_download(url, headers, dest, parts=PARALLEL_PARTS, on_progress=None
         if touched is not None:
             touched.add(part)
         tries = 0
-        with open(part, "wb") as f:
+        with open(part, "ab" if got[i] else "wb") as f:
+            f.truncate(got[i])
             while a + got[i] <= b:
                 if cancel_event is not None and cancel_event.is_set():
                     return
@@ -1380,6 +1488,7 @@ def parallel_download(url, headers, dest, parts=PARALLEL_PARTS, on_progress=None
                             with lock:
                                 got[i] += len(chunk)
                                 report()
+                            THROTTLE.wait(len(chunk))
                     tries = 0
                 except Exception as e:
                     tries += 1
@@ -1395,6 +1504,8 @@ def parallel_download(url, headers, dest, parts=PARALLEL_PARTS, on_progress=None
         t.join()
     parts_files = [f"{dest}.part{i}" for i, _, _ in ranges]
     if cancel_event is not None and cancel_event.is_set():
+        if keep_partials and keep_partials():
+            raise Paused()
         raise Cancelled()
     if errors or sum(got) != total:
         for p in parts_files:
@@ -1414,25 +1525,26 @@ def parallel_download(url, headers, dest, parts=PARALLEL_PARTS, on_progress=None
                         break
                     out.write(buf)
     os.replace(tmp, dest)
-    for p in parts_files:
+    for p in parts_files + [info_path]:
         try:
             os.remove(p)
         except OSError:
             pass
     if on_progress:
-        on_progress(total, total, total / max(0.01, end - start), 0)
+        on_progress(total, total, (total - resumed) / max(0.01, end - start), 0)
     log.info("分段下載完成：%d 段，%.1f MB，%.1f 秒", len(ranges), total / 1e6, end - start)
     return {"bytes": total, "start": start, "end": end}
 
 
 def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_event=None,
-                 name_template=DEFAULT_TEMPLATE, stats=None):
+                 name_template=DEFAULT_TEMPLATE, stats=None, keep_partials=None):
     """
     下載一個影片，成功回傳 (檔案路徑, 警告)；警告平常是 None。
     fmt：collect_formats() 回傳的其中一個畫質
     cancel_event：設成 set() 就會停止，並丟出 Cancelled
     name_template：FILENAME_TEMPLATES 裡的名字
     stats：傳一個 dict 進來，下載完會填上實際的 bytes（總大小）和 seconds（下載花的秒數，不含轉檔）
+    keep_partials：停下來時呼叫；回傳 True（暫停）就保留已下載的部分、丟出 Paused，下次接著下載
     """
     touched = set()          # 這次下載碰過的檔案（取消時要清掉）
     final = {"path": None}
@@ -1483,6 +1595,7 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
         "progress_hooks": [hook],
         "postprocessor_hooks": [pp_hook],
         "concurrent_fragment_downloads": 6,
+        "continuedl": True,                     # 有暫停留下的 .part 就接著下載
         "retries": 10,
         "fragment_retries": 10,
         "merge_output_format": "mp4",
@@ -1490,6 +1603,10 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
     if FFMPEG:
         opts["ffmpeg_location"] = FFMPEG
         opts["postprocessors"] = [{"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"}]
+    if THROTTLE.bps:
+        opts["ratelimit"] = THROTTLE.bps                    # 速度上限（yt-dlp 自己下載的部分）
+    if stats is not None:
+        stats["touched"] = touched                          # 暫停的話，App 要知道留下哪些檔案
 
     media = fmt.get("media")
     if media:
@@ -1519,7 +1636,7 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
                 touched.add(path)
                 done = parallel_download(info["url"], {**(info.get("http_headers") or {})}, path,
                                          on_progress=on_progress, cancel_event=cancel_event,
-                                         touched=touched)
+                                         touched=touched, keep_partials=keep_partials)
                 if done:
                     clock["start"], clock["end"] = done["start"], done["end"]
                     sizes[path] = done["bytes"]
@@ -1528,7 +1645,10 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
                 ydl.process_ie_result(info, download=True)
     except BaseException as e:
         # yt-dlp 會把進度回呼裡丟出的例外包起來，所以也要檢查 cancel_event
-        cancelled = isinstance(e, Cancelled) or (cancel_event is not None and cancel_event.is_set())
+        cancelled = isinstance(e, (Cancelled, Paused)) or (cancel_event is not None and cancel_event.is_set())
+        if cancelled and keep_partials and keep_partials():
+            log.info("已暫停：%s（保留已下載的部分）", log_url(url))
+            raise Paused() from None
         if cancelled:
             n = cleanup_partials(touched, include_complete=True)
             log.info("已取消：%s（清掉 %d 個殘檔）", log_url(url), n)
@@ -1543,7 +1663,7 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
         n = cleanup_partials(touched)
         log.exception("下載失敗：%s（%s，清掉 %d 個暫存檔）", log_url(url), quality_label(fmt.get("height")), n)
         raise
-    if cancel_event is not None and cancel_event.is_set():
+    if cancel_event is not None and cancel_event.is_set() and not (keep_partials and keep_partials()):
         cleanup_partials(touched, include_complete=True)
         raise Cancelled()
     if stats is not None and clock["start"] and clock["end"]:
@@ -1974,6 +2094,9 @@ class App:
         self.batch_running = False     # 正在讀取多個網址
         self.queue = TaskQueue()
         self.cancel_event = None       # 目前下載的「取消開關」；None = 沒有在下載
+        self.stop_mode = "cancel"      # 停下來的原因：cancel（刪掉已下載的）／pause（保留，之後接著下載）
+        self.queue_paused = False      # 按了暫停：不自動開始下一個
+        THROTTLE.set_mbps(self.settings["rate_limit_mbps"])
         self.worker = None
         self.want_height = None        # 從紀錄重新下載時，想要的畫質
         # 真正做事的函式（測試時可以換成假的）
@@ -2167,6 +2290,8 @@ class App:
         qbar.pack(fill="x", **pad)
         self.btn_cancel = ttk.Button(qbar, text="■ 取消目前下載", command=self.cancel, state="disabled")
         self.btn_cancel.pack(side="left")
+        self.btn_pause = ttk.Button(qbar, text="⏸ 暫停", command=self.toggle_pause, state="disabled")
+        self.btn_pause.pack(side="left", padx=6)
         # 有失敗的才出現
         self.btn_retry = ttk.Button(qbar, text="↻ 重試失敗的", command=self.retry, state="disabled")
         # 不常用的放右鍵選單
@@ -2185,6 +2310,9 @@ class App:
         self.btn_batch.config(state="disabled" if self.batch_running else "normal")
         self.btn_dl.config(state="normal" if (self.formats and not self.analyzing) else "disabled")
         self.btn_cancel.config(state="normal" if self.cancel_event else "disabled")
+        paused = self.queue_paused or self.queue.count(PAUSED)
+        self.btn_pause.config(text="▶ 繼續" if paused else "⏸ 暫停",
+                              state="normal" if (paused or self.cancel_event or self.queue.count(WAITING)) else "disabled")
         failed = self.queue.count(FAILED)
         self.btn_retry.config(state="normal" if failed else "disabled")
         if failed and not self.btn_retry.winfo_manager():
@@ -2290,7 +2418,12 @@ class App:
             return
         f = self.formats[int(sel[0])]
         if self.queue.is_duplicate(self.url, f["height"]):
-            messagebox.showinfo("已經在佇列裡", "這部影片的這個畫質已經在排隊或下載中了。")
+            messagebox.showinfo("已經在佇列裡", "這部影片的這個畫質已經在排隊、下載中或暫停了。")
+            return
+        old = find_downloaded(self.history.items, self.url)
+        if old and not messagebox.askyesno(
+                "已經下載過了", f"這支影片 {old.get('time', '')} 下載過（{quality_label(old.get('height'))}）：\n"
+                                f"{old['file']}\n\n還要再下載一次嗎？"):
             return
         vals = self.tree.item(sel[0], "values")
         out = self.settings.download_dir
@@ -2366,6 +2499,9 @@ class App:
     def on_batch_item(self, data):
         task, mbps = data
         self.remember_speed(mbps)
+        if self.settings["skip_downloaded"] and find_downloaded(self.history.items, task["url"]):
+            self.status.config(text=f"略過（已經下載過）：{task['title'][:40]}")
+            return
         if not self.queue.is_duplicate(task["url"], task["fmt"]["height"]):
             self.enqueue(dict(task, out=self.settings.download_dir))
 
@@ -2399,8 +2535,9 @@ class App:
         return t
 
     def pump(self):
-        """沒有東西在下載、又有人在排隊 → 開始下一個"""
-        if self.queue.running():
+        """沒有東西在下載、又有人在排隊 → 開始下一個（按了暫停就不開始）"""
+        if self.queue.running() or self.queue_paused:
+            self.set_buttons()
             return
         t = self.queue.next_waiting()
         if not t:
@@ -2408,6 +2545,7 @@ class App:
             return
         t["status"] = RUNNING
         self.cancel_event = threading.Event()
+        self.stop_mode = "cancel"
         self.prog["value"] = 0
         self.status.config(text=f"準備下載：{t['title']}")
         self.refresh_queue()
@@ -2424,9 +2562,12 @@ class App:
                                       on_stage=lambda t: self.q.put(("progress_text", (tid, t))),
                                       cancel_event=cancel_event,
                                       name_template=self.settings["filename_template"],
-                                      stats=measured)
+                                      stats=measured, keep_partials=lambda: self.stop_mode == "pause")
             task["measured"] = measured
             self.q.put(("done", (tid, result)))
+        except Paused:
+            task["partials"] = sorted(measured.get("touched") or [])
+            self.q.put(("paused", tid))
         except Cancelled:
             self.q.put(("cancelled", tid))
         except Exception as e:
@@ -2435,7 +2576,7 @@ class App:
     def refresh_queue(self):
         sel = self.qtree.selection()
         self.qtree.delete(*self.qtree.get_children())
-        icon = {WAITING: "⏳ 等待中", DONE: "✅ 完成", FAILED: "❌ 失敗", CANCELLED: "■ 取消"}
+        icon = {WAITING: "⏳ 等待中", DONE: "✅ 完成", FAILED: "❌ 失敗", CANCELLED: "■ 取消", PAUSED: "⏸ 暫停"}
         for t in self.queue.tasks:
             st = f"⬇ {t['progress']:.0f}%" if t["status"] == RUNNING else icon.get(t["status"], t["status"])
             if t.get("note") and t["status"] == DONE:
@@ -2443,8 +2584,10 @@ class App:
             self.qtree.insert("", "end", iid=str(t["id"]), values=(t["title"], quality_label(t["fmt"]["height"]), st))
         if sel and self.qtree.exists(sel[0]):
             self.qtree.selection_set(sel[0])
-        w, r = self.queue.count(WAITING), self.queue.count(RUNNING)
-        self.qhead.config(text=f"下載佇列（依序下載）　下載中 {r}　排隊中 {w}")
+        w, r, p = self.queue.count(WAITING), self.queue.count(RUNNING), self.queue.count(PAUSED)
+        lim = self.settings["rate_limit_mbps"]
+        self.qhead.config(text=f"下載佇列（依序下載）　下載中 {r}　排隊中 {w}" + (f"　暫停 {p}" if p else "")
+                          + ("　⏸ 已暫停" if self.queue_paused else "") + (f"　速度上限 {lim:g} Mbps" if lim else ""))
 
     def cancel(self):
         t = self.queue.running()
@@ -2468,9 +2611,42 @@ class App:
         if t and t["status"] == RUNNING:
             messagebox.showinfo("下載中", "這個正在下載，要停止請按「■ 取消目前下載」。")
             return
+        if t and t["status"] == PAUSED and t.get("partials"):
+            cleanup_partials(t["partials"], include_complete=True)      # 暫停留下的半成品一起刪
         self.queue.remove(int(sel[0]))
         self.refresh_queue()
         self.set_buttons()
+
+    def toggle_pause(self):
+        """⏸ 暫停：停下目前的下載（保留已下載的部分）、不開始下一個；▶ 繼續：從停下的地方接著下載"""
+        if self.queue_paused or self.queue.count(PAUSED):
+            self.queue_paused = False
+            self.queue.resume_paused()
+            self.status.config(text="▶ 繼續下載")
+            self.refresh_queue()
+            self.pump()
+            return
+        self.queue_paused = True
+        if self.cancel_event:
+            self.stop_mode = "pause"
+            self.cancel_event.set()
+            self.status.config(text="暫停中…（已下載的部分會保留）")
+        else:
+            self.status.config(text="⏸ 已暫停：排隊中的不會開始，按「▶ 繼續」恢復")
+        self.refresh_queue()
+        self.set_buttons()
+
+    def on_paused(self, tid):
+        t = self.queue.get(tid)
+        if t:
+            t["status"] = PAUSED
+        self.cancel_event = None
+        self.worker = None
+        self.status.config(text="⏸ 已暫停，按「▶ 繼續」會從停下的地方接著下載")
+        self.refresh_queue()
+        self.set_buttons()
+        if self.tray:
+            self.tray.title = "Video Helper：已暫停"
 
     def queue_clear(self):
         self.queue.clear_finished()
@@ -2658,6 +2834,11 @@ class App:
         if self.queue.is_duplicate(url, f["height"]):
             rec.update(status=FAILED, error="已經在佇列裡了", title=title)
             return
+        old = find_downloaded(self.history.items, url) if self.settings["skip_downloaded"] else None
+        if old:
+            rec.update(status=FAILED, error=f"已經下載過了：{os.path.basename(old['file'])}", title=title)
+            self.status.config(text=f"🔗 略過（已經下載過）：{title[:40]}")
+            return
         t = self.enqueue({"url": url, "title": title, "fmt": f, "size": f["size"], "out": self.settings.download_dir})
         rec.update(task_id=t["id"], title=title, status=WAITING)
         self.status.config(text=f"🔗 從瀏覽器加入：{title}（{quality_label(f['height'])}）")
@@ -2794,6 +2975,9 @@ class App:
         for t in self.queue.tasks:
             if t["status"] == WAITING:
                 t["status"] = CANCELLED
+            if t["status"] == PAUSED and t.get("partials"):       # 結束程式：暫停的半成品刪掉（佇列不會保留）
+                cleanup_partials(t["partials"], include_complete=True)
+        self.stop_mode = "cancel"
         if self.cancel_event:
             self.cancel_event.set()
         if self.worker:
@@ -3265,6 +3449,20 @@ class App:
             row=1, column=1, sticky="w", padx=(110, 0))
         ttk.Button(f, text="💾 儲存", command=self.save_settings).grid(row=1, column=2)
 
+        ttk.Label(f, text="速度上限：").grid(row=2, column=0, sticky="w", pady=4)
+        self.rate_var = tk.StringVar(value=str(self.settings["rate_limit_mbps"] or "不限制"))
+        rate = ttk.Combobox(f, textvariable=self.rate_var, values=["不限制", "5", "10", "20", "50", "100"], width=10)
+        rate.grid(row=2, column=1, sticky="w", padx=6)
+        ttk.Label(f, text="Mbps（下載時不想卡到別人上網就設一下；可以直接打數字，馬上生效）", foreground="#555").grid(
+            row=2, column=1, sticky="w", padx=(110, 0))
+        rate.bind("<<ComboboxSelected>>", lambda e: self.apply_rate_limit())
+        rate.bind("<FocusOut>", lambda e: self.apply_rate_limit())
+        rate.bind("<Return>", lambda e: self.apply_rate_limit())
+        self.skip_var = tk.BooleanVar(value=bool(self.settings["skip_downloaded"]))
+        ttk.Checkbutton(f, text="批次、瀏覽器送來的影片：下載過（檔案還在）就自動跳過", variable=self.skip_var,
+                        command=lambda: (self.settings.__setitem__("skip_downloaded", bool(self.skip_var.get())),
+                                         self.settings.save())).grid(row=3, column=0, columnspan=3, sticky="w", pady=2)
+
         # --- 瀏覽器連動 ---
         c = box("瀏覽器連動（在影片網頁按「🖥 送到電腦版」）")
         c.pack(fill="x", pady=4)
@@ -3468,10 +3666,28 @@ class App:
         except Exception:
             pass
 
+    def apply_rate_limit(self):
+        txt = self.rate_var.get().strip()
+        try:
+            v = 0.0 if txt in ("", "不限制", "0") else float(txt)
+            if v < 0:
+                raise ValueError
+        except ValueError:
+            self.rate_var.set(str(self.settings["rate_limit_mbps"] or "不限制"))
+            return
+        self.settings["rate_limit_mbps"] = v
+        self.settings.save()
+        THROTTLE.set_mbps(v)
+        self.rate_var.set(f"{v:g}" if v else "不限制")
+        self.refresh_queue()
+
     def apply_settings_to_ui(self):
         """設定被匯入後，讓畫面上的選項跟著改"""
         self.dir_var.set(self.settings.download_dir)
         self.q_var.set(self.settings["default_quality"])
+        self.rate_var.set(str(self.settings["rate_limit_mbps"] or "不限制"))
+        self.skip_var.set(bool(self.settings["skip_downloaded"]))
+        THROTTLE.set_mbps(self.settings["rate_limit_mbps"])
         self.tpl_var.set(self.settings["filename_template"])
         self.keep_var.set(bool(self.settings["keep_history"]))
         self.keep_stats_var.set(bool(self.settings["keep_stats"]))

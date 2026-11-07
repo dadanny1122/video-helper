@@ -290,6 +290,18 @@ print("::notice title=安全分頁 元件::" + app.sec_comp.cget("text").replace
 assert app.settings["ai_usage"][_m]["classify"]["calls"] == _before + 1, "AI 使用紀錄沒記到"
 app.adv.withdraw(); r.update()
 
+# 7c. v1.20 暫停／繼續、速度上限、重複偵測的介面
+app.toggle_pause(); r.update()
+assert app.queue_paused and app.btn_pause.cget("text") == "▶ 繼續", "暫停按鈕沒反應"
+app.toggle_pause(); r.update()
+assert not app.queue_paused and app.btn_pause.cget("text") == "⏸ 暫停", "繼續按鈕沒反應"
+app.rate_var.set("25"); app.apply_rate_limit()
+assert abs(a.THROTTLE.bps - 25e6 / 8) < 1 and app.settings["rate_limit_mbps"] == 25, "速度上限沒生效"
+app.rate_var.set("不限制"); app.apply_rate_limit()
+assert a.THROTTLE.bps == 0
+assert a.video_key("https://www.pornhub.com/view_video.php?viewkey=x1&t=3") == a.video_key("https://cn.pornhub.com/view_video.php?viewkey=x1")
+print("::notice title=v1.20::暫停／繼續按鈕、速度上限、重複偵測 OK")
+
 # 8. 系統匣：關視窗 → 縮到系統匣 → 從系統匣打開 → 結束
 assert a.pystray is not None, "pystray 沒有裝進去"
 app.settings["close_action"] = "一律縮到系統匣"
