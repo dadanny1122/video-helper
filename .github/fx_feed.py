@@ -246,6 +246,20 @@ def vol_range(prices, m):
     return m * math.exp(-sd), m * math.exp(sd)
 
 
+HIST_DAYS = 250        # 歷史分位：看過去約一年
+
+
+def hist_range(long, m, lo=0.16, hi=0.84):
+    """歷史分位：過去約一年裡，每一段「5 個營業日」實際漲跌了多少，取第 16%～84%（68%）或 2.5%～97.5%（95%）
+    擂台回測（fx_backtest.py）證明它比「30 天波動度」準、範圍也比較窄"""
+    if not long or len(long) < HIST_DAYS + FC_DAYS:
+        return None
+    p = long[-(HIST_DAYS + FC_DAYS):]
+    outs = sorted(p[s + FC_DAYS] / p[s] for s in range(len(p) - FC_DAYS))
+    q = lambda f: outs[int(f * (len(outs) - 1))]
+    return m * q(lo), m * q(hi)
+
+
 def analog(long, recent_prices):
     """找過去 3 年裡，跟最近 10 天形狀最像的 20 段，看它們之後 5 天怎麼走"""
     if len(recent_prices) < W + 1 or len(long) < 200:
@@ -283,15 +297,24 @@ def forecasts(rates, hists):
         if not m or len(h) < 10:
             continue
         prices = [x[1] for x in h] + [m]
-        f = {"m": m, "range": vol_range(prices, m)}
-        sd = stats(prices)
-        if sd:
-            import math
-            k = sd * FC_DAYS ** 0.5
-            f["r95"] = (m * math.exp(-1.96 * k), m * math.exp(1.96 * k))
+        long = None
         if twd:
             try:
-                f["analog"] = analog(long_series(code, twd), prices)
+                long = long_series(code, twd)
+            except Exception as e:
+                print(f"::warning title=預報::{code} 讀不到長期資料：{e}")
+        # 範圍：優先用「歷史分位」（擂台證明比較準）；拿不到長期資料才退回 30 天波動度
+        f = {"m": m, "range": hist_range(long, m), "r95": hist_range(long, m, 0.025, 0.975), "how": "hist"}
+        if not f["range"]:
+            f.update(range=vol_range(prices, m), how="vol")
+            sd = stats(prices)
+            if sd:
+                import math
+                k = sd * FC_DAYS ** 0.5
+                f["r95"] = (m * math.exp(-1.96 * k), m * math.exp(1.96 * k))
+        if long:
+            try:
+                f["analog"] = analog(long, prices)
             except Exception as e:
                 print(f"::warning title=預報::{code} 相似走勢失敗：{e}")
         out[code] = f
@@ -402,7 +425,9 @@ def post_summary(base, rates, prev, hists, today, fcs=None, accuracy=""):
             if a:
                 ar.append(f"{code:<4}{pad(f'{a['up']}/{a['n']}', 7)}{pad(f'{a['mean']:+.2f}', 7)}"
                           f"{pad(f'{a['median']:+.2f}', 7)}{pad(f'{a['p25']:+.2f}', 7)}{pad(f'{a['p75']:+.2f}', 7)}")
-        lines += ["", f"**📐 {FC_DAYS} 個營業日價格區間**（依近 {DAYS} 天波動率）", "```", *fr, "```"]
+        how = ("歷史分位：過去約一年每段 5 日實際漲跌" if all(f.get("how") == "hist" for f in fcs.values())
+               else f"部分貨幣讀不到長期資料，改用近 {DAYS} 天波動率")
+        lines += ["", f"**📐 {FC_DAYS} 個營業日價格區間**（{how}）", "```", *fr, "```"]
         if len(ar) > 1:
             lines += [f"**🔁 歷史相似走勢**（近 {W} 日形狀 vs 過去 {LONG_YEARS} 年，取最像 {K} 段，之後 {FC_DAYS} 日報酬）",
                       "```", *ar, "```",
