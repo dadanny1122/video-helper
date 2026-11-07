@@ -187,7 +187,7 @@ jobs:
       # 指紋和簽章不在同一個地方，攻擊者就算換了發布頁的 EXE，也偽造不了 GitHub 的簽章
       - name: Sign build provenance
         if: steps.chk.outputs.exists != '1'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/VideoHelper.exe
       - name: Sign SBOM
