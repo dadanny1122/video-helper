@@ -85,7 +85,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.18.7"
+VERSION = "1.18.8"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -2599,8 +2599,10 @@ class App:
 
     def unpair_browsers(self):
         if messagebox.askyesno("取消所有配對", "確定要取消所有已配對的瀏覽器嗎？之後要用的話需要重新配對。"):
+            n = len(self.settings["bridge_tokens"] or [])
             self.bridge.unpair_all()
             self.refresh_bridge_label()
+            messagebox.showinfo("取消所有配對", f"✅ 已取消 {n} 個配對。\n瀏覽器下次「送到電腦版」時會要你重新輸入配對碼。")
 
     def stop_bridge(self):
         self.bridge.stop()
