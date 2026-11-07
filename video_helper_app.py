@@ -85,7 +85,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.18.4"
+VERSION = "1.18.5"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -168,11 +168,60 @@ DEFAULT_SETTINGS = {
 }
 
 
+# ---- 祕密資料（AI 金鑰）加密：用 Windows 內建的 DPAPI，只有「這台電腦的這個 Windows 帳號」解得開 ----
+#      設定檔被複製走、或同台電腦的其他帳號都讀不到；不是 Windows 時就照原樣存
+SECRET_KEYS = ("ai_key",)
+
+
+def _dpapi(data, encrypt):
+    import ctypes
+    from ctypes import wintypes
+
+    class BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+    buf = ctypes.create_string_buffer(data, len(data))
+    inp, out = BLOB(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char))), BLOB()
+    fn = ctypes.windll.crypt32.CryptProtectData if encrypt else ctypes.windll.crypt32.CryptUnprotectData
+    if not fn(ctypes.byref(inp), None, None, None, None, 0x1, ctypes.byref(out)):   # 0x1＝不跳任何視窗
+        raise OSError("DPAPI 失敗")
+    try:
+        return ctypes.string_at(out.pbData, out.cbData)
+    finally:
+        ctypes.windll.kernel32.LocalFree(out.pbData)
+
+
+def protect_secret(v):
+    if not v or not sys.platform.startswith("win") or str(v).startswith("dpapi:"):
+        return v
+    try:
+        import base64
+        return "dpapi:" + base64.b64encode(_dpapi(str(v).encode("utf-8"), True)).decode("ascii")
+    except Exception:
+        log.warning("金鑰加密失敗，照原樣儲存")
+        return v
+
+
+def unprotect_secret(v):
+    if not (isinstance(v, str) and v.startswith("dpapi:")):
+        return v
+    try:
+        import base64
+        return _dpapi(base64.b64decode(v[6:]), False).decode("utf-8")
+    except Exception:
+        log.warning("金鑰解不開（設定檔可能是從別台電腦複製來的），請重新輸入")
+        return ""
+
+
 class Settings:
     def __init__(self, path=None):
         self.path = path or os.path.join(data_dir(), "settings.json")
         self.data = dict(DEFAULT_SETTINGS)
         self.load()
+        for k in SECRET_KEYS:                       # 舊版存的是明文 → 換成加密的
+            v = self.data.get(k)
+            if v and not str(v).startswith("dpapi:") and protect_secret(v) != v:
+                self.data[k] = protect_secret(v)
+                self.save()
 
     def load(self):
         try:
@@ -196,10 +245,11 @@ class Settings:
             log.exception("儲存設定失敗")
 
     def __getitem__(self, k):
-        return self.data.get(k, DEFAULT_SETTINGS.get(k))
+        v = self.data.get(k, DEFAULT_SETTINGS.get(k))
+        return unprotect_secret(v) if k in SECRET_KEYS else v
 
     def __setitem__(self, k, v):
-        self.data[k] = v
+        self.data[k] = protect_secret(v) if k in SECRET_KEYS else v
 
     @property
     def download_dir(self):
@@ -1509,6 +1559,16 @@ def install_whisper(on_stage=None, on_progress=None, cancel_event=None):
     if not asset:
         raise RuntimeError("找不到 whisper.cpp 的 Windows 版下載檔，請回報作者（看到的檔名：" + ", ".join(seen[:12]) + "）")
     z = fetch_file(asset["browser_download_url"], os.path.join(whisper_dir(), WHISPER_ASSET), on_progress, cancel_event)
+    want = (asset.get("digest") or "").lower()         # GitHub 幫每個發布檔算好的指紋（sha256）
+    if want.startswith("sha256:"):
+        h = hashlib.sha256()
+        with open(z, "rb") as f:
+            for b in iter(lambda: f.read(1 << 20), b""):
+                h.update(b)
+        if h.hexdigest() != want[7:]:
+            os.remove(z)
+            raise RuntimeError("下載的聽寫程式指紋對不上（可能被竄改或下載壞掉），已刪除，請再試一次")
+        log.info("whisper.cpp 指紋相符：%s", want)
     import zipfile
     with zipfile.ZipFile(z) as zf:
         zf.extractall(os.path.join(whisper_dir(), rel.get("tag_name", "bin")))
