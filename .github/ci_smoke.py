@@ -60,7 +60,7 @@ fmts = [{"id": h, "height": h, "size": h * 100000, "exact": False, "audio": True
         for h in (1080, 720, 480)]
 def fake_analyze(url):
     return (url, 634, fmts, 20.0)
-def fake_download(url, fmt, out, on_progress=None, on_stage=None, cancel_event=None, name_template=None, stats=None):
+def fake_download(url, fmt, out, on_progress=None, on_stage=None, cancel_event=None, name_template=None, stats=None, keep_partials=None):
     if url.startswith("fail"):
         raise RuntimeError("HTTP 404")
     if url.startswith("slow"):
