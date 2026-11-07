@@ -85,7 +85,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.18.6"
+VERSION = "1.18.7"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -197,7 +197,7 @@ def protect_secret(v):
         import base64
         return "dpapi:" + base64.b64encode(_dpapi(str(v).encode("utf-8"), True)).decode("ascii")
     except Exception:
-        log.warning("金鑰加密失敗，照原樣儲存")
+        log.warning("金鑰加密失敗，這次先用明文存（下次儲存會再試加密）")
         return v
 
 
@@ -601,6 +601,14 @@ PAIR_MAX_FAILS = 5
 RATE_PER_MIN = 30
 
 
+def log_url(url):
+    """寫進錯誤日誌時只記網站名稱，不記完整網址（日誌不該變成觀看紀錄）"""
+    try:
+        return (urllib.parse.urlparse(url).hostname or "?").removeprefix("www.") + "/…"
+    except Exception:
+        return "?"
+
+
 def bridge_url_allowed(url, hosts=BRIDGE_HOSTS):
     try:
         u = urllib.parse.urlparse(str(url))
@@ -876,12 +884,17 @@ class Bridge:
                 origin = self.headers.get("Origin")
                 if origin and not origin.startswith(("chrome-extension://", "moz-extension://", "safari-web-extension://")):
                     return False                         # 一般網頁送來的 → 拒絕
+                if not origin and self.headers.get("X-VH") != "1":
+                    return False                         # 沒 Origin 也沒自訂標頭（網頁的 no-cors 請求）→ 拒絕，網站就測不出你有裝電腦版
                 return True
 
             def body(self):
                 if "application/json" not in (self.headers.get("Content-Type") or ""):
                     return None
-                n = int(self.headers.get("Content-Length") or 0)
+                try:
+                    n = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    return None
                 if n <= 0 or n > 10_000:
                     return None
                 try:
@@ -931,7 +944,7 @@ class Bridge:
                                  "title": str(data.get("title") or "")[:300]}
                     ticket = secrets.token_hex(8)
                     bridge.on_enqueue(ticket, url, h, media or None)
-                    log.info("瀏覽器送來：%s（%s）", url, quality_label(h) if h else "預設畫質")
+                    log.info("瀏覽器送來：%s（%s）", log_url(url), quality_label(h) if h else "預設畫質")
                     return self.send(200, {"ok": True, "ticket": ticket})
                 if self.path == "/classify":
                     if not bridge.token_ok(self.headers.get("X-VH-Token")):
@@ -1422,24 +1435,24 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
         cancelled = isinstance(e, Cancelled) or (cancel_event is not None and cancel_event.is_set())
         if cancelled:
             n = cleanup_partials(touched, include_complete=True)
-            log.info("已取消：%s（清掉 %d 個殘檔）", url, n)
+            log.info("已取消：%s（清掉 %d 個殘檔）", log_url(url), n)
             raise Cancelled() from None
         # 影片已經下載完，只是最後的修正／轉檔失敗 → 保留檔案，不要讓使用者白等
         if "Postprocessing" in str(e) and final["path"] and os.path.isfile(final["path"]):
             cleanup_partials(touched)
             if stats is not None and clock["start"] and clock["end"]:
                 stats.update(bytes=sum(sizes.values()), seconds=max(0.01, clock["end"] - clock["start"]))
-            log.warning("下載完成但轉檔失敗，保留原檔：%s → %s（%s）", url, final["path"], e)
+            log.warning("下載完成但轉檔失敗，保留原檔：%s（%s）", log_url(url), e)
             return final["path"], "下載完成，但轉檔失敗；檔案還是可以播放（建議用 VLC）"
         n = cleanup_partials(touched)
-        log.exception("下載失敗：%s（%s，清掉 %d 個暫存檔）", url, quality_label(fmt.get("height")), n)
+        log.exception("下載失敗：%s（%s，清掉 %d 個暫存檔）", log_url(url), quality_label(fmt.get("height")), n)
         raise
     if cancel_event is not None and cancel_event.is_set():
         cleanup_partials(touched, include_complete=True)
         raise Cancelled()
     if stats is not None and clock["start"] and clock["end"]:
         stats.update(bytes=sum(sizes.values()), seconds=max(0.01, clock["end"] - clock["start"]))
-    log.info("下載完成：%s → %s", url, final["path"])
+    log.info("下載完成：%s", log_url(url))
     return final["path"], None
 
 
@@ -1567,11 +1580,13 @@ def install_whisper(on_stage=None, on_progress=None, cancel_event=None):
         raise RuntimeError("找不到 whisper.cpp 的 Windows 版下載檔，請回報作者（看到的檔名：" + ", ".join(seen[:12]) + "）")
     z = fetch_file(asset["browser_download_url"], os.path.join(whisper_dir(), WHISPER_ASSET), on_progress, cancel_event)
     want = (asset.get("digest") or "").lower()         # GitHub 幫每個發布檔算好的指紋（sha256）
-    if want.startswith("sha256:"):
-        if file_sha256(z) != want[7:]:
-            os.remove(z)
-            raise RuntimeError("下載的聽寫程式指紋對不上（可能被竄改或下載壞掉），已刪除，請再試一次")
-        log.info("whisper.cpp 指紋相符：%s", want)
+    if not want.startswith("sha256:"):
+        os.remove(z)
+        raise RuntimeError("GitHub 沒有提供聽寫程式的指紋，為了安全不使用，請回報作者")
+    if file_sha256(z) != want[7:]:
+        os.remove(z)
+        raise RuntimeError("下載的聽寫程式指紋對不上（可能被竄改或下載壞掉），已刪除，請再試一次")
+    log.info("whisper.cpp 指紋相符：%s", want)
     import zipfile
     with zipfile.ZipFile(z) as zf:
         zf.extractall(os.path.join(whisper_dir(), rel.get("tag_name", "bin")))
@@ -1595,10 +1610,21 @@ def ensure_model(name, on_stage=None, on_progress=None, cancel_event=None):
         raise RuntimeError(f"不認得的模型：{name}")
     want, size = MODEL_SHA256[name]
     path = os.path.join(whisper_dir(), f"ggml-{name}.bin")
+    mark = path + ".ok"                                 # 核對過的記號：大小＋修改時間；檔案一動就重新核對
     if os.path.isfile(path):
-        if os.path.getsize(path) == size:
+        st = os.stat(path)
+        stamp = f"{want}:{st.st_size}:{int(st.st_mtime)}"
+        try:
+            if open(mark, encoding="utf-8").read() == stamp:
+                return path
+        except OSError:
+            pass
+        if on_stage:
+            on_stage("核對模型指紋…")
+        if st.st_size == size and file_sha256(path) == want:
+            open(mark, "w", encoding="utf-8").write(stamp)
             return path
-        os.remove(path)                                 # 大小不對＝壞掉或被換掉 → 重新下載
+        os.remove(path)                                 # 指紋不對＝壞掉或被換掉 → 重新下載
     last = None
     for tpl in MODEL_URLS:
         if on_stage:
@@ -1610,6 +1636,8 @@ def ensure_model(name, on_stage=None, on_progress=None, cancel_event=None):
             if file_sha256(path) != want:
                 os.remove(path)
                 raise RuntimeError("模型指紋對不上（可能被竄改或下載壞掉），已刪除")
+            st = os.stat(path)
+            open(mark, "w", encoding="utf-8").write(f"{want}:{st.st_size}:{int(st.st_mtime)}")
             log.info("模型 %s 指紋相符", name)
             return path
         except Cancelled:
@@ -2065,7 +2093,7 @@ class App:
         try:
             self.q.put(("analyzed", (url,) + self.analyze_fn(url)))
         except Exception as e:
-            log.exception("讀取失敗：%s", url)
+            log.exception("讀取失敗：%s", log_url(url))
             self.q.put(("analyze_error", f"讀取失敗：{e}"))
 
     def remember_speed(self, mbps):
@@ -2188,7 +2216,7 @@ class App:
                 self.q.put(("batch_item", ({"url": url, "title": title, "fmt": f, "size": f["size"]}, mbps)))
                 ok += 1
             except Exception as e:
-                log.exception("批次讀取失敗：%s", url)
+                log.exception("批次讀取失敗：%s", log_url(url))
                 self.q.put(("batch_item_error", (url, str(e))))
                 fail += 1
         self.q.put(("batch_done", (ok, fail)))
@@ -2473,11 +2501,11 @@ class App:
                             self.q.put(("remote_analyzed", (ticket, url, h, title, fmts, mbps)))
                             return
                     except Exception:
-                        log.exception("瀏覽器給的影片位址讀不到，改開網頁：%s", url)
+                        log.exception("瀏覽器給的影片位址讀不到，改開網頁：%s", log_url(url))
                 title, dur, fmts, mbps = self.analyze_fn(url)
                 self.q.put(("remote_analyzed", (ticket, url, h, title, fmts, mbps)))
             except Exception as e:
-                log.exception("瀏覽器送來的網址讀取失敗：%s", url)
+                log.exception("瀏覽器送來的網址讀取失敗：%s", log_url(url))
                 self.q.put(("remote_failed", (ticket, f"讀取失敗：{e}")))
         threading.Thread(target=work, daemon=True).start()
 
@@ -2886,7 +2914,7 @@ class App:
         except Cancelled:
             self.q.put(("sub_error", "已取消"))
         except Exception as e:
-            log.exception("AI 字幕失敗：%s", video)
+            log.exception("AI 字幕失敗")
             self.q.put(("sub_error", str(e)))
 
     def _sub_alive(self):

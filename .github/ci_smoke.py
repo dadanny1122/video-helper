@@ -127,8 +127,10 @@ assert app.q_var.get() == "480", "匯入後畫面沒有更新"
 import json, urllib.request, urllib.error
 port = app.bridge.start()
 assert port, "連動服務沒有啟動"
-def call(method, path, body=None, token=None, origin="chrome-extension://test"):
-    h = {"Origin": origin}
+def call(method, path, body=None, token=None, origin="chrome-extension://test", xvh=True):
+    h = {"Origin": origin} if origin else {}
+    if xvh:
+        h["X-VH"] = "1"
     if body is not None:
         h["Content-Type"] = "application/json"
     if token:
@@ -141,6 +143,9 @@ def call(method, path, body=None, token=None, origin="chrome-extension://test"):
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read() or b"{}")
 assert call("GET", "/ping", origin="https://evil.example")[0] == 403, "一般網頁應該被拒絕"
+assert call("GET", "/ping", origin=None, xvh=False)[0] == 403, "沒 Origin 也沒自訂標頭（網頁 no-cors）應該被拒絕"
+assert call("GET", "/ping", origin=None)[0] == 200, "腳本（帶自訂標頭）應該可以"
+assert call("POST", "/pair", {"code": "x"}, origin=None, xvh=False)[0] == 403
 code = app.bridge.new_pair_code()
 st, dd = call("POST", "/pair", {"code": code})
 assert st == 200 and dd.get("token"), "配對失敗"

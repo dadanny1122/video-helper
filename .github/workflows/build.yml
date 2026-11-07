@@ -118,10 +118,9 @@ jobs:
           python -c "import json, tempfile, os, video_helper_app as v; p = os.path.join(tempfile.mkdtemp(), 's.json'); json.dump({'ai_key': 'sk-ant-test-123'}, open(p, 'w')); s = v.Settings(p); raw = json.load(open(p))['ai_key']; print('::notice title=DPAPI::stored as ' + raw[:12] + '...'); assert raw.startswith('dpapi:') and s['ai_key'] == 'sk-ant-test-123', raw; s['ai_key'] = 'new-key'; s.save(); assert v.Settings(p)['ai_key'] == 'new-key'; print('ok')"
 
       # AI 字幕：真的下載 whisper.cpp ＋ 最小模型，用 Windows 內建語音念一句英文，看聽不聽得出來
-      # 網路偶爾不穩，失敗只警告、不擋發布
+      # 失敗就不發布（獨立稽核建議：安全說明寫了「每次發布都跑」，就要真的擋）
       - name: AI subtitle test (real whisper.cpp)
         if: steps.chk.outputs.exists != '1'
-        continue-on-error: true
         timeout-minutes: 15
         shell: pwsh
         env:

@@ -30,12 +30,16 @@ const MONITOR = `
   const idb = indexedDB.open.bind(indexedDB);
   indexedDB.open = (...a) => { hit('開 IndexedDB', a[0]); return idb(...a); };
   if (indexedDB.databases) { const dbs = indexedDB.databases.bind(indexedDB); indexedDB.databases = () => { hit('列出 IndexedDB'); return dbs(); }; }
+  if (window.cookieStore) { const g = cookieStore.get.bind(cookieStore), ga = cookieStore.getAll.bind(cookieStore);
+    cookieStore.get = (...a) => { hit('讀 Cookie（cookieStore）'); return g(...a); };
+    cookieStore.getAll = (...a) => { hit('讀 Cookie（cookieStore）'); return ga(...a); }; }
   if (navigator.credentials) navigator.credentials.get = () => { hit('讀瀏覽器存的帳號密碼'); return Promise.resolve(null); };
   // 假的 GM_*：記下腳本要連到哪裡
   window.__vhXhr = [];
   window.GM_xmlhttpRequest = o => { window.__vhXhr.push(o.url); setTimeout(() => o.onerror && o.onerror({}), 0); return { abort() {} }; };
   window.GM_download = o => { window.__vhXhr.push(o.url); };
-  const store = {};
+  try { Storage.prototype.setItem.call(localStorage, 'vh_bridgeToken', '"SECRET-BRIDGE-TOKEN"'); } catch (e) {}   // 舊版（3.18.1 以前）留下的
+  const store = { bridgeToken: 'SECRET-BRIDGE-TOKEN' };   // 假裝已經配對過：密碼不能出現在網站讀得到的地方
   window.GM_getValue = (k, d) => (k in store ? store[k] : d);
   window.GM_setValue = (k, v) => { store[k] = v; };
   window.GM_registerMenuCommand = () => {};
@@ -74,9 +78,12 @@ const page = host => `<!doctype html><html><head><title>test video</title>
     await p.goto(`https://${host}/test`);
     await p.waitForTimeout(2500);
     // 把介面上的按鈕都點一遍（打開盾牌、選單），多跑一點程式碼
-    for (const el of await p.$$('.vh-ui button, .vh-ui [role=button]')) { try { await el.click({ timeout: 300 }); } catch (e) {} }
+    for (let round = 0; round < 2; round++)          // 介面是 div／span 做的：每個看得到的元件都點一下（盾牌 → 選單 → 選單裡的按鈕）
+      for (const el of await p.$$('.vh-ui *')) { try { if (await el.isVisible()) await el.click({ timeout: 200, force: true }); } catch (e) {} }
     await p.waitForTimeout(800);
     const hits = await p.evaluate(() => window.__vhHits);
+    const leak = await p.evaluate(() => { const out = []; for (let i = 0; i < localStorage.length; i++) { const k = Storage.prototype.key.call(localStorage, i); if ((Storage.prototype.getItem.call(localStorage, k) || '').includes('SECRET-BRIDGE-TOKEN')) out.push(k); } return out; });
+    if (leak.length) hits.push('配對密碼存在網站的 localStorage：' + leak.join(','));
     const xhr = (await p.evaluate(() => window.__vhXhr)).map(u => { try { return new URL(u, location.href).hostname; } catch (e) { return u; } })
       .filter(h => !(h === domain || h.endsWith('.' + domain) || h === '127.0.0.1'));
     const ui = await p.$$eval('.vh-ui', els => els.length);

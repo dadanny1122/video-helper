@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.18.1
+// @version      3.18.2
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -118,15 +118,20 @@
 
   // ---- 設定（存在暴力猴裡，所有網站共用）----
   // 主要存在暴力猴裡（所有網站共用），同時在網站的 localStorage 留一份備份
+  // 祕密（配對密碼）只存在暴力猴裡：網站的 localStorage 網站自己和廣告都讀得到
+  const SECRET = new Set(['bridgeToken']);
+  try { for (const k of SECRET) localStorage.removeItem('vh_' + k); } catch (e) {}   // 清掉舊版留下的
   const store = {
     get(k, d) {
       try { const v = gmGetValue(k); if (v !== undefined) return v; } catch (e) {}
-      try { const b = localStorage.getItem('vh_' + k); if (b !== null) return JSON.parse(b); } catch (e) {}
+      if (!SECRET.has(k)) {
+        try { const b = localStorage.getItem('vh_' + k); if (b !== null) return JSON.parse(b); } catch (e) {}
+      }
       return d;
     },
     set(k, v) {
       try { gmSetValue(k, v); } catch (e) {}
-      try { localStorage.setItem('vh_' + k, JSON.stringify(v)); } catch (e) {}
+      if (!SECRET.has(k)) { try { localStorage.setItem('vh_' + k, JSON.stringify(v)); } catch (e) {} }
     },
   };
   const settings = store.get('settings', {});
@@ -1989,7 +1994,7 @@
 
   function bridgeReq(method, port, path, body, token) {
     return new Promise(resolve => {
-      const headers = {};
+      const headers = { 'X-VH': '1' };              // 自訂標頭：一般網頁要送這個會被瀏覽器先問過電腦版（而電腦版不答應）
       if (body) headers['Content-Type'] = 'application/json';
       if (token) headers['X-VH-Token'] = token;
       gmXhr({
