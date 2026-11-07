@@ -64,6 +64,20 @@
 | mux.js（瀏覽器腳本） | jsDelivr，固定版本 6.3.0 | `@require` 附 SHA-256（支援的腳本管理器會自動核對）；自動測試核對它跟 npm 官方檔案一樣 |
 | 檢查更新 | GitHub | **只通知有新版，不會自動下載或執行** |
 
+## 4.5 供應鏈安全（打包 EXE 時）
+
+| 做法 | 擋什麼 | 自己驗證 |
+|---|---|---|
+| 套件版本＋指紋寫死（`requirements.txt`，`pip install --require-hashes`） | 打包時裝到被換掉的套件 | 看 `requirements.txt` |
+| 每次發布先跑 `pip-audit` 掃已知漏洞（CVE），有就不發布 | 用到有已知漏洞的版本 | 發布頁附的 `audit.md` |
+| SBOM（`sbom.cdx.json`，CycloneDX 格式） | 不知道用了什麼 | 發布頁附件 |
+| **GitHub 發布簽章**（artifact attestation，Sigstore） | 有人換掉發布頁的 EXE 和指紋：簽章是 GitHub 用「這個 repo 的這次打包」身分簽的，不在發布頁上，偽造不了 | `gh attestation verify VideoHelper.exe -R dadanny1122/video-helper`，或看 https://github.com/dadanny1122/video-helper/attestations |
+| Dependabot | 套件出新版或修漏洞時沒跟上 | 自動開 PR |
+
+沒做的：Windows 程式碼簽章（Authenticode，讓 Windows 不跳「不明發行者」），要付費憑證。
+
+電腦版「⚙ 進階設定」→「🔒 安全」可以直接看：已配對的瀏覽器（可以單獨取消）、AI 使用次數和字數、這次開著時連過的網站、日誌大小（可清空、可設自動刪除）、各元件版本和 SHA-256。
+
 ## 5. 自動安全測試（每次發布都跑，結果公開）
 
 在 GitHub 的「Actions」頁面可以看到每次的結果：

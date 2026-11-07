@@ -1,0 +1,11 @@
+# 電腦版打包用的套件（GitHub Actions 打包 EXE 時裝）
+# 改這個檔之後：pip-compile --generate-hashes --allow-unsafe --strip-extras -o requirements.txt requirements.in
+# requirements.txt 寫死每個套件的版本和指紋（sha256），被換掉就裝不起來；Dependabot 有新版會自動開 PR
+yt-dlp
+pystray
+pillow
+pyinstaller
+truststore
+# PyInstaller 在 Windows 才需要的（在 Linux 產生清單時不會自動加進來）
+pefile!=2024.8.26
+pywin32-ctypes

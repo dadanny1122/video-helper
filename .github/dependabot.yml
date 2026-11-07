@@ -1,0 +1,15 @@
+# 供應鏈安全：套件或 GitHub Actions 有新版、有漏洞修正時，自動開 PR 更新
+# （yt-dlp 常常要跟著網站改版更新，所以每週檢查）
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

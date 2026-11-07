@@ -10,6 +10,7 @@ on:
       - '.github/ci_smoke.py'
       - '.github/ffmpeg/**'
       - '.github/discord_notify.py'
+      - 'requirements.txt'
       - 'CHANGELOG.md'
   workflow_dispatch:
 
@@ -58,6 +59,10 @@ jobs:
   build:
     needs: ffmpeg
     runs-on: windows-latest
+    permissions:
+      contents: write
+      id-token: write          # 發布簽章（GitHub 用這個身分證明 EXE 是這個 repo 打包的）
+      attestations: write
     steps:
       - uses: actions/checkout@v4
 
@@ -88,9 +93,23 @@ jobs:
           python-version: '3.12'
 
       # 不裝 imageio-ffmpeg（那是 88 MB 的完整版），改用上面編的迷你版
-      - name: Install packages
+      # 供應鏈安全：版本和指紋都寫死在 requirements.txt，被換掉就裝不起來
+      - name: Install packages (pinned + hash-checked)
         if: steps.chk.outputs.exists != '1'
-        run: pip install yt-dlp pystray pillow pyinstaller truststore
+        run: pip install --require-hashes --no-deps -r requirements.txt
+
+      # 漏洞掃描：已知漏洞（CVE）資料庫裡有我們用的版本就不發布
+      - name: Vulnerability scan (pip-audit)
+        if: steps.chk.outputs.exists != '1'
+        shell: bash
+        run: |
+          pip install -q pip-audit cyclonedx-bom
+          pip-audit -r requirements.txt --require-hashes --disable-pip -f markdown -o audit.md || { cat audit.md; echo "::error title=漏洞掃描::有套件有已知漏洞，先更新 requirements.txt"; exit 1; }
+          cat audit.md
+          echo "::notice title=漏洞掃描::$(grep -c '|' audit.md || true) 行報告，沒有已知漏洞"
+          # SBOM：這個版本用了哪些套件、哪個版本（CycloneDX 格式，附在發布裡）
+          cyclonedx-py requirements requirements.txt -o sbom.cdx.json
+          echo "::notice title=SBOM::$(python -c "import json;print(len(json.load(open('sbom.cdx.json'))['components']))") 個套件"
 
       - name: Smoke test (window, tabs, history, bridge, mini ffmpeg on Windows)
         if: steps.chk.outputs.exists != '1'
@@ -158,6 +177,20 @@ jobs:
           ls -la dist/VideoHelper.exe
           echo "::notice title=EXE size::$(stat -c %s dist/VideoHelper.exe) bytes"
 
+      # 發布簽章：GitHub 用 Sigstore 簽一張「這個 EXE 是 dadanny1122/video-helper 這次的程式碼在 GitHub Actions 打包的」證明
+      # 指紋和簽章不在同一個地方，攻擊者就算換了發布頁的 EXE，也偽造不了 GitHub 的簽章
+      - name: Sign build provenance
+        if: steps.chk.outputs.exists != '1'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/VideoHelper.exe
+      - name: Sign SBOM
+        if: steps.chk.outputs.exists != '1'
+        uses: actions/attest-sbom@v2
+        with:
+          subject-path: dist/VideoHelper.exe
+          sbom-path: sbom.cdx.json
+
       - name: Release notes from CHANGELOG.md
         if: steps.chk.outputs.exists != '1'
         shell: bash
@@ -173,7 +206,10 @@ jobs:
           import hashlib
           sha = hashlib.sha256(open("dist/VideoHelper.exe", "rb").read()).hexdigest()
           body = ((m.group(1).strip() if m else "") + "\n\n下載 VideoHelper.exe 雙擊即可使用。"
-                  + "\n\n🔒 檔案指紋（SHA-256）：`" + sha + "`\n確認下載的檔案沒被換掉：在檔案所在資料夾開命令提示字元，輸入 `certutil -hashfile VideoHelper.exe SHA256`，結果要一模一樣。")
+                  + "\n\n🔒 檔案指紋（SHA-256）：`" + sha + "`"
+                  + "\n確認沒被換掉（任選一種）：① `certutil -hashfile VideoHelper.exe SHA256` 結果一模一樣；"
+                  + "② 驗 GitHub 簽章（最可靠）：`gh attestation verify VideoHelper.exe -R dadanny1122/video-helper`"
+                  + "\n附件：`sbom.cdx.json`＝用了哪些套件和版本、`audit.md`＝漏洞掃描結果")
           open("release_notes.md", "w", encoding="utf-8").write(body.strip())
           PY
           wc -c release_notes.md
@@ -185,7 +221,10 @@ jobs:
           tag_name: v${{ steps.ver.outputs.v }}
           name: Video Helper v${{ steps.ver.outputs.v }}
           body_path: release_notes.md
-          files: dist/VideoHelper.exe
+          files: |
+            dist/VideoHelper.exe
+            sbom.cdx.json
+            audit.md
 
       - name: Post the update to Discord
         if: steps.chk.outputs.exists != '1'

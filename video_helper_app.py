@@ -85,7 +85,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.18.8"
+VERSION = "1.19.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -158,6 +158,9 @@ DEFAULT_SETTINGS = {
     "last_version": "",               # 上次執行的版本（版本變了就自動備份）
     "bridge_enabled": False,          # 瀏覽器連動（配對後才會打開）
     "bridge_tokens": [],              # 已配對的瀏覽器（只存雜湊值，不存原本的密碼）
+    "bridge_meta": {},                # 雜湊值 → {"paired", "last", "uses", "ua"}（給「🔒 安全」分頁看）
+    "ai_usage": {},                   # 月份 → {"classify"/"translate": {"calls", "in", "out"}}（只記次數和字數，不記內容）
+    "log_keep_days": 14,              # 錯誤日誌超過幾天自動刪掉（0＝不刪）
     "mbps": 0,                   # 上次量到的網速
     "setup_seen": False,         # 看過「安裝擋廣告」了（第一次打開才自動切過去）
     "ai_key": "",                # AI 判斷廣告網域用的 API 金鑰（只存在這台電腦，不會匯出）
@@ -166,6 +169,61 @@ DEFAULT_SETTINGS = {
     "sub_model": "快（small，約 190 MB）",
     "sub_translate": True,       # 有 AI 金鑰就翻成中文
 }
+
+
+# ---- 外部連線紀錄（給「🔒 安全」分頁看）：在最底層記下這次開著時連過哪些網站（只記網域、次數、時間，不存檔）----
+NET_SEEN = {}
+_NET_LOCK = threading.Lock()
+
+
+def _install_net_log():
+    import socket
+    if getattr(socket.getaddrinfo, "_vh", False):
+        return
+    orig = socket.getaddrinfo
+
+    def getaddrinfo(host, *a, **k):
+        try:
+            h = str(host).lower().rstrip(".")
+            if h and h not in ("localhost", "127.0.0.1", "::1"):
+                now = time.time()
+                with _NET_LOCK:
+                    e = NET_SEEN.setdefault(h, {"n": 0, "first": now})
+                    e["n"] += 1
+                    e["last"] = now
+        except Exception:
+            pass
+        return orig(host, *a, **k)
+    getaddrinfo._vh = True
+    socket.getaddrinfo = getaddrinfo
+
+
+_install_net_log()
+
+
+def browser_name(ua):
+    """User-Agent → 「Chrome（Windows）」這種好認的名字（只存這個，不存整串）"""
+    ua = ua or ""
+    b = next((n for k, n in (("Edg/", "Edge"), ("OPR/", "Opera"), ("Firefox/", "Firefox"), ("Chrome/", "Chrome"),
+                             ("Safari/", "Safari")) if k in ua), "瀏覽器")
+    o = next((n for k, n in (("Windows", "Windows"), ("Android", "Android"), ("iPhone", "iPhone"), ("iPad", "iPad"),
+                             ("Mac OS", "Mac"), ("Linux", "Linux")) if k in ua), "")
+    return f"{b}（{o}）" if o else b
+
+
+def clean_old_logs(days):
+    """錯誤日誌超過 days 天沒更新就刪掉；回傳刪了幾個"""
+    if not days:
+        return 0
+    n, base = 0, os.path.join(data_dir(), "video_helper.log")
+    for p in [base] + [f"{base}.{i}" for i in range(1, 5)]:
+        try:
+            if os.path.isfile(p) and time.time() - os.path.getmtime(p) > days * 86400:
+                os.remove(p)
+                n += 1
+        except OSError:
+            pass
+    return n
 
 
 # ---- 祕密資料（AI 金鑰）加密：用 Windows 內建的 DPAPI，只有「這台電腦的這個 Windows 帳號」解得開 ----
@@ -404,7 +462,7 @@ class Stats:
 
 BACKUP_KIND = "VideoHelper-backup"
 # 不放進備份檔的：自動產生的值，以及配對密碼（不能跟著備份檔到處跑）
-NOT_EXPORTED = ("mbps", "last_version", "bridge_enabled", "bridge_tokens", "ai_key", "ai_cache")
+NOT_EXPORTED = ("mbps", "last_version", "bridge_enabled", "bridge_tokens", "bridge_meta", "ai_key", "ai_cache", "ai_usage")
 CLOSE_CHOICES = ["下載中才詢問", "一律縮到系統匣", "直接結束"]
 
 
@@ -564,6 +622,11 @@ def setup_log():
         return lg
     lg.setLevel(logging.INFO)
     path = os.path.join(data_dir(), "video_helper.log")
+    try:                                         # 太舊的日誌先刪掉（「🔒 安全」可以設幾天）
+        days = json.load(open(os.path.join(data_dir(), "settings.json"), encoding="utf-8")).get("log_keep_days", 14)
+        clean_old_logs(int(days or 0))
+    except Exception:
+        clean_old_logs(14)
     h = RotatingFileHandler(path, maxBytes=1_000_000, backupCount=2, encoding="utf-8")   # 最多約 3 MB
     h.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
     lg.addHandler(h)
@@ -647,6 +710,17 @@ def ai_prompt(site, domains):
         "網域：\n" + "\n".join(domains))
 
 
+AI_USAGE_HOOK = None          # App 設定：AI 每次回答後呼叫 hook(種類, usage)（只記字數，不記內容）
+
+
+def note_ai_usage(kind, data):
+    try:
+        if AI_USAGE_HOOK:
+            AI_USAGE_HOOK(kind, data.get("usage") or {})
+    except Exception:
+        pass
+
+
 def parse_ai_json(text):
     """從 AI 的回答裡挖出 JSON 陣列（有時候會多包一層 ```）"""
     i, j = text.find("["), text.rfind("]")
@@ -664,6 +738,7 @@ def ai_classify(key, site, domains, timeout=40):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
+            note_ai_usage("classify", data)
     except urllib.error.HTTPError as e:
         msg = {401: "API 金鑰不對", 403: "這個金鑰沒有權限", 429: "問太快了或額度用完，等一下再試",
                529: "AI 伺服器太忙，等一下再試"}.get(e.code, f"AI 伺服器回應錯誤（{e.code}）")
@@ -818,7 +893,7 @@ class Bridge:
             self.pair_burned = False
             return self.pair_code
 
-    def try_pair(self, code):
+    def try_pair(self, code, ua=""):
         with self.lock:
             if self.pair_burned:
                 return None, "猜錯太多次，配對碼已作廢，請在電腦版重新按「配對」"
@@ -836,6 +911,9 @@ class Bridge:
             tokens = list(self.settings["bridge_tokens"] or [])
             tokens.append(hash_token(token))
             self.settings["bridge_tokens"] = tokens[-10:]   # 最多記 10 個瀏覽器
+            meta = {h: m for h, m in (self.settings["bridge_meta"] or {}).items() if h in self.settings["bridge_tokens"]}
+            meta[hash_token(token)] = {"paired": time.time(), "last": 0, "uses": 0, "ua": browser_name(ua)}
+            self.settings["bridge_meta"] = meta
             self.settings.save()
             log.info("瀏覽器配對成功（目前 %d 個）", len(self.settings["bridge_tokens"]))
             return token, None
@@ -844,10 +922,28 @@ class Bridge:
         if not token:
             return False
         h = hash_token(token)
-        return any(hmac.compare_digest(h, x) for x in (self.settings["bridge_tokens"] or []))
+        ok = any(hmac.compare_digest(h, x) for x in (self.settings["bridge_tokens"] or []))
+        if ok:                                           # 記「最後一次使用」（給「🔒 安全」分頁看；一分鐘最多存一次檔）
+            meta = dict(self.settings["bridge_meta"] or {})
+            m = dict(meta.get(h) or {"paired": 0, "ua": "（舊版配對）"})
+            m["uses"] = m.get("uses", 0) + 1
+            save = time.time() - m.get("last", 0) > 60
+            m["last"] = time.time()
+            meta[h] = m
+            self.settings["bridge_meta"] = meta
+            if save:
+                self.settings.save()
+        return ok
+
+    def unpair(self, h):
+        """取消單一個配對"""
+        self.settings["bridge_tokens"] = [x for x in (self.settings["bridge_tokens"] or []) if x != h]
+        self.settings["bridge_meta"] = {k: v for k, v in (self.settings["bridge_meta"] or {}).items() if k != h}
+        self.settings.save()
 
     def unpair_all(self):
         self.settings["bridge_tokens"] = []
+        self.settings["bridge_meta"] = {}
         self.settings.save()
 
     def rate_ok(self):
@@ -923,7 +1019,7 @@ class Bridge:
                 if not isinstance(data, dict):
                     return self.send(400, {"error": "格式不對"})
                 if self.path == "/pair":
-                    token, err = bridge.try_pair(data.get("code", ""))
+                    token, err = bridge.try_pair(data.get("code", ""), self.headers.get("User-Agent", ""))
                     return self.send(200, {"token": token}) if token else self.send(403, {"error": err})
                 if self.path == "/enqueue":
                     if not bridge.token_ok(self.headers.get("X-VH-Token")):
@@ -1743,6 +1839,7 @@ def ai_translate(key, lines, src, timeout=90):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
+            note_ai_usage("translate", data)
     except urllib.error.HTTPError as e:
         raise RuntimeError({401: "API 金鑰不對", 429: "AI 額度用完或問太快"}.get(e.code, f"AI 伺服器錯誤（{e.code}）")) from None
     text = "".join(c.get("text", "") for c in data.get("content", []) if c.get("type") == "text")
@@ -1815,11 +1912,52 @@ def make_subtitles(video, lang="auto", model="small-q5_1", key="", on_stage=None
     return res
 
 
+def component_report():
+    """「🔒 安全」分頁的元件清單：版本＋SHA-256（在背景算）"""
+    rows = []
+
+    def add(name, ver, path=None):
+        sha = ""
+        try:
+            if path and os.path.isfile(path):
+                sha = file_sha256(path)
+        except OSError:
+            pass
+        rows.append(f"{name:<16}{ver}" + (f"\n{'':<16}{sha}" if sha else ""))
+    add("Video Helper", VERSION + ("（EXE）" if getattr(sys, "frozen", False) else "（原始碼執行）"),
+        sys.executable if getattr(sys, "frozen", False) else None)
+    add("Python", sys.version.split()[0])
+    add("yt-dlp", getattr(getattr(yt_dlp, "version", None), "__version__", "?"))
+    try:
+        import truststore
+        add("truststore", getattr(truststore, "__version__", "?"))
+    except Exception:
+        add("truststore", "沒有")
+    if FFMPEG:
+        try:
+            v = subprocess.run([FFMPEG, "-version"], capture_output=True, text=True, timeout=10, **_popen_kw()).stdout.split()[2]
+        except Exception:
+            v = "?"
+        add("ffmpeg", v, FFMPEG)
+    else:
+        add("ffmpeg", "沒有")
+    exe = find_whisper() if os.path.isdir(os.path.join(data_dir(), "whisper")) or os.environ.get("VIDEO_HELPER_WHISPER") else None
+    add("whisper.cpp", os.path.basename(os.path.dirname(os.path.dirname(exe))) if exe else "還沒下載", exe)
+    for name, (want, size) in MODEL_SHA256.items():
+        p = os.path.join(data_dir(), "whisper", f"ggml-{name}.bin")
+        if os.path.isfile(p):
+            ok = os.path.isfile(p + ".ok") and open(p + ".ok", encoding="utf-8").read().startswith(want)
+            rows.append(f"{'模型 ' + name:<16}{'✅ 指紋核對過' if ok else '⚠ 下次使用時會核對'}\n{'':<16}{want}")
+    return "\n".join(rows)
+
+
 class App:
     def __init__(self, root):
         self.root = root
         self.q = queue.Queue()
         self.settings = Settings()
+        global AI_USAGE_HOOK
+        AI_USAGE_HOOK = self.note_ai_usage
         self.history = History()
         self.stats = Stats()
         self.auto_backup = auto_backup_on_upgrade(self.settings, self.history)
@@ -2840,6 +2978,149 @@ class App:
             self.refresh_history()
 
     # ------------------------------------------------------------------
+    # 🔒 安全（資安控制中心）：讓使用者自己看得到程式的安全狀態
+    # ------------------------------------------------------------------
+
+    def note_ai_usage(self, kind, usage):
+        """AI 每次回答後記一筆（只記次數、字數；在背景執行緒呼叫，存檔很快）"""
+        month = time.strftime("%Y-%m")
+        u = dict(self.settings["ai_usage"] or {})
+        m = dict(u.get(month) or {})
+        k = dict(m.get(kind) or {"calls": 0, "in": 0, "out": 0})
+        k["calls"] += 1
+        k["in"] += int(usage.get("input_tokens") or 0)
+        k["out"] += int(usage.get("output_tokens") or 0)
+        m[kind] = k
+        u[month] = m
+        self.settings["ai_usage"] = dict(sorted(u.items())[-12:])     # 只留 12 個月
+        self.settings.save()
+
+    def build_security_tab(self, page):
+        canvas = tk.Canvas(page, highlightthickness=0)
+        bar = ttk.Scrollbar(page, orient="vertical", command=canvas.yview)
+        f = ttk.Frame(canvas)
+        f.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=f, anchor="nw")
+        canvas.configure(yscrollcommand=bar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        bar.pack(side="right", fill="y")
+        self.sec_frame = f
+        top = ttk.Frame(f)
+        top.pack(fill="x")
+        ttk.Label(top, text="這裡可以看到：誰配對過、AI 用了多少、連過哪些網站、用的元件和指紋。",
+                  foreground="#555").pack(side="left")
+        ttk.Button(top, text="↻ 重新整理", command=self.refresh_security).pack(side="right")
+        self.sec_body = ttk.Frame(f)
+        self.sec_body.pack(fill="both", expand=True)
+        self.adv.bind("<Map>", lambda e: self.refresh_security() if e.widget is self.adv else None, add="+")
+
+    def _sec_section(self, title, note=""):
+        ttk.Label(self.sec_body, text=title, font=("", 10, "bold")).pack(anchor="w", pady=(12, 2))
+        if note:
+            ttk.Label(self.sec_body, text=note, foreground="#666", wraplength=690, justify="left").pack(anchor="w")
+        box = ttk.Frame(self.sec_body)
+        box.pack(fill="x", anchor="w")
+        return box
+
+    def refresh_security(self):
+        if not getattr(self, "sec_body", None):
+            return
+        for w in self.sec_body.winfo_children():
+            w.destroy()
+        fmt = lambda t: time.strftime("%Y-%m-%d %H:%M", time.localtime(t)) if t else "—"
+
+        # 1. 已配對的瀏覽器
+        box = self._sec_section("🔗 已配對的瀏覽器",
+                                "只存密碼的雜湊值（看不到原本的密碼）。不認得的就按「取消」，那個瀏覽器就不能再送影片過來。")
+        tokens = list(self.settings["bridge_tokens"] or [])
+        meta = self.settings["bridge_meta"] or {}
+        if not tokens:
+            ttk.Label(box, text="（沒有）").pack(anchor="w")
+        for h in tokens:
+            m = meta.get(h) or {"ua": "（舊版配對，沒有紀錄）"}
+            row = ttk.Frame(box)
+            row.pack(fill="x", anchor="w", pady=1)
+            ttk.Label(row, text=f"• {m.get('ua', '?')}｜配對 {fmt(m.get('paired'))}｜最後使用 {fmt(m.get('last'))}"
+                                f"｜用過 {m.get('uses', 0)} 次｜編號 {h[:8]}").pack(side="left")
+            ttk.Button(row, text="取消", command=lambda h=h: (self.bridge.unpair(h), self.refresh_bridge_label(),
+                                                             self.refresh_security())).pack(side="left", padx=6)
+        st = "開著（127.0.0.1:%s，只有這台電腦連得到）" % self.bridge.port if self.bridge.server else "關閉"
+        ttk.Label(box, text=f"連線服務：{st}", foreground="#555").pack(anchor="w", pady=(4, 0))
+
+        # 2. AI 使用紀錄
+        box = self._sec_section("🤖 AI 使用紀錄",
+                                "只記次數和字數（token），不記送了什麼內容。費用照 Anthropic 官網的價格算。")
+        u = self.settings["ai_usage"] or {}
+        if not u:
+            ttk.Label(box, text="（還沒用過）" + ("" if (self.settings["ai_key"] or "").strip() else "，也沒填 AI 金鑰：完全不會連到 AI")).pack(anchor="w")
+        names = {"classify": "判斷廣告網域", "translate": "翻譯字幕"}
+        for month, m in sorted(u.items(), reverse=True)[:6]:
+            parts = [f"{names.get(k, k)} {v['calls']} 次（送 {v['in']:,}／收 {v['out']:,} token）" for k, v in m.items()]
+            ttk.Label(box, text=f"• {month}：" + "；".join(parts)).pack(anchor="w")
+
+        # 3. 外部連線
+        box = self._sec_section("🌐 這次開著時連過的網站",
+                                "在程式最底層記錄，只記網域和次數，關掉程式就清空（不存檔）。"
+                                "正常會看到：影片網站和它的影片伺服器、github.com（檢查更新、廣告清單）、"
+                                "huggingface.co（AI 字幕模型）、api.anthropic.com（有填金鑰才會）。")
+        with _NET_LOCK:
+            seen = sorted(NET_SEEN.items(), key=lambda x: -x[1]["n"])
+        if not seen:
+            ttk.Label(box, text="（還沒連過任何網站）").pack(anchor="w")
+        known = ("github.com", "githubusercontent.com", "huggingface.co", "hf.co", "hf-mirror.com", "anthropic.com")
+        for h, e in seen[:40]:
+            tag = "" if any(h == d or h.endswith("." + d) for d in known) or bridge_url_allowed("https://" + h + "/", BRIDGE_HOSTS + BRIDGE_MEDIA_HOSTS) else "　← 不在常見清單，可以查一下是什麼"
+            ttk.Label(box, text=f"• {h}　{e['n']} 次｜最後 {time.strftime('%H:%M:%S', time.localtime(e['last']))}{tag}").pack(anchor="w")
+
+        # 4. 錯誤日誌
+        box = self._sec_section("📄 錯誤日誌",
+                                "只記網站名稱和錯誤訊息，不記完整影片網址和檔名。日誌只在這台電腦上，不會上傳。")
+        logp = os.path.join(data_dir(), "video_helper.log")
+        size = sum(os.path.getsize(p) for p in [logp, logp + ".1", logp + ".2"] if os.path.isfile(p))
+        row = ttk.Frame(box)
+        row.pack(anchor="w")
+        ttk.Label(row, text=f"目前 {fmt_size(size)}｜超過").pack(side="left")
+        keep = ttk.Combobox(row, values=["3", "7", "14", "30", "0"], width=4, state="readonly")
+        keep.set(str(self.settings["log_keep_days"]))
+        keep.pack(side="left", padx=4)
+        ttk.Label(row, text="天沒更新就自動刪（0＝不刪）").pack(side="left")
+        keep.bind("<<ComboboxSelected>>", lambda e: (self.settings.__setitem__("log_keep_days", int(keep.get())), self.settings.save()))
+        ttk.Button(row, text="🗑 現在清空", command=self.clear_logs).pack(side="left", padx=10)
+
+        # 5. 元件和指紋
+        box = self._sec_section("🧩 用到的元件和指紋（SHA-256）",
+                                "可以跟 GitHub 發布頁、SECURITY.md 對照。EXE 另外有 GitHub 簽章，"
+                                "用 gh attestation verify VideoHelper.exe -R dadanny1122/video-helper 驗證。")
+        self.sec_comp = ttk.Label(box, text="計算中…", justify="left", font=("Consolas", 9))
+        self.sec_comp.pack(anchor="w")
+        ttk.Button(box, text="打開 GitHub 簽章紀錄", command=lambda: webbrowser.open(
+            "https://github.com/dadanny1122/video-helper/attestations")).pack(anchor="w", pady=4)
+        threading.Thread(target=lambda: self.q.put(("sec_components", component_report())), daemon=True).start()
+
+    def on_sec_components(self, text):
+        if getattr(self, "sec_comp", None) is not None and self.sec_comp.winfo_exists():
+            self.sec_comp.config(text=text)
+
+    def clear_logs(self):
+        if not messagebox.askyesno("清空錯誤日誌", "確定要清空錯誤日誌嗎？（出問題要回報時，日誌可以幫忙找原因）"):
+            return
+        base = os.path.join(data_dir(), "video_helper.log")
+        for h in log.handlers:
+            if isinstance(h, RotatingFileHandler):
+                h.acquire()
+                try:
+                    h.stream.seek(0)
+                    h.stream.truncate()
+                finally:
+                    h.release()
+        for p in (base + ".1", base + ".2"):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        self.refresh_security()
+
+    # ------------------------------------------------------------------
     # AI 字幕
     # ------------------------------------------------------------------
 
@@ -3008,7 +3289,7 @@ class App:
         nb = self.adv_nb = ttk.Notebook(win)
         nb.pack(fill="both", expand=True)
         pages = {}
-        for key, text in (("prog", "檔名與程式"), ("link", "瀏覽器連動"), ("backup", "備份與更新"),
+        for key, text in (("prog", "檔名與程式"), ("link", "瀏覽器連動"), ("security", "🔒 安全"), ("backup", "備份與更新"),
                           ("debug", "問題排查"), ("ai", "廣告判斷"), ("stats", "統計")):
             pages[key] = ttk.Frame(nb, padding=(12, 10))
             nb.add(pages[key], text=f"  {text}  ")
@@ -3052,6 +3333,8 @@ class App:
         row.pack(anchor="w", pady=10)
         ttk.Button(row, text="取消所有配對", command=self.unpair_browsers).pack(side="left")
         ttk.Button(row, text="關閉服務", command=self.stop_bridge).pack(side="left", padx=8)
+
+        self.build_security_tab(pages["security"])
 
         # --- 備份與更新 ---
         b = pages["backup"]
