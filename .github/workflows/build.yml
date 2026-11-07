@@ -30,7 +30,7 @@ jobs:
 
       - name: Reuse a previous build
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ffmpeg-win
           key: ffmpeg-win-${{ env.FFMPEG_TAG }}-${{ hashFiles('.github/ffmpeg/build.sh') }}
