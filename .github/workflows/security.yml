@@ -6,6 +6,9 @@ on:
     paths:
       - 'video-helper.user.js'
       - '.github/security_test.js'
+      - '.github/attack_test.js'
+      - '.github/attack_bridge.py'
+      - 'video_helper_app.py'
       - '.github/workflows/security.yml'
   workflow_dispatch:
 
@@ -24,3 +27,9 @@ jobs:
         run: npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
       - name: Userscript privacy test
         run: node .github/security_test.js video-helper.user.js
+      # 攻擊模擬：接上真的電腦版連線服務，腳本走真的配對流程；網站用各種方法偷配對密碼、冒充腳本
+      - name: Pairing-token attack simulation
+        run: |
+          sudo apt-get install -y -q python3-tk >/dev/null
+          pip install -q yt-dlp truststore
+          PYTHON=python3 node .github/attack_test.js video-helper.user.js

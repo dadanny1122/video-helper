@@ -21,6 +21,7 @@
 | `SECURITY.md` | 安全說明：資料外傳清單、本機服務防護、第三方元件指紋、自動安全測試；**改了會連網的功能要同步更新它和 `.github/net_test.py` 的 ALLOWED** |
 | `.github/net_test.py` | 網路流量測試（build.yml，Windows）：socket 層記錄所有連線，跑開視窗 15 秒、檢查更新、廣告清單、whisper、tiny 模型、AI（假金鑰），連到 ALLOWED 以外就失敗、擋發布 |
 | `.github/security_test.js` | 腳本隱私測試（security.yml，改腳本自動跑）：每個 @match／@include 網站開假網頁，監視 Cookie、密碼欄位、非 vh_ 的 localStorage、IndexedDB、navigator.credentials、對外連線；也核對 mux.js 的 @require #sha256 跟 jsDelivr 一樣 |
+| `.github/attack_test.js`＋`attack_bridge.py` | 配對密碼攻擊模擬（security.yml）：attack_bridge.py 只啟動真的 Bridge（印 port、配對碼，收到的 enqueue 寫檔）；Playwright 假 Pornhub 頁（flashvars）＋假暴力猴（GM_* 包在閉包、Map 存值、跨界資料用 NONCE XOR 加密，模擬擴充功能邊界）；網站埋陷阱（Object.prototype setter、換 JSON.parse/stringify/prompt/String.replace/Set.has）→ 腳本真配對送 1 筆 → 網站翻 storage/cookie/DOM/window/陷阱找密碼、三種方式冒充 → 要找不到且電腦版只收 1 筆。腳本處理密碼一律用 `SAFE`（啟動時存的原版 JSON/prompt）、headers 一次寫成物件、`isSecret()` 不用 Set |
 | `.github/ffmpeg/build.sh` | 編迷你 ffmpeg（LGPL，只會接檔、換包裝） |
 
 ## 腳本的架構（`video-helper.user.js`）

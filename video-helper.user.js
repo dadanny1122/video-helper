@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.18.2
+// @version      3.18.3
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -71,6 +71,19 @@
 
   const PW = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
+  // ---- 處理「配對密碼」時用的內建函式：一啟動就存一份原版 ----
+  // 腳本跑在網頁裡（@inject-into page），網站之後可以把 JSON.parse、prompt 之類的換掉偷看內容；
+  // 腳本比網站的程式早執行，所以先存起來的一定是原版（攻擊模擬測試：.github/attack_test.js）
+  const SAFE = (() => {
+    const apply = Reflect.apply, parse = JSON.parse, stringify = JSON.stringify, prompt = window.prompt;
+    return {
+      parse: t => apply(parse, JSON, [t]),
+      stringify: v => apply(stringify, JSON, [v]),
+      prompt: (msg) => apply(prompt, window, [msg]),
+      digits: t => { let o = ''; t = '' + t; for (let i = 0; i < t.length; i++) { const c = t[i]; if (c >= '0' && c <= '9') o += c; } return o; },
+    };
+  })();
+
   // ---- 相容不同的腳本管理器 ----
   // 電腦：暴力猴（GM_xxx 舊寫法）；iPhone：Safari 的 Userscripts 等（多半只有 GM.xxx 新寫法）
   // 每個功能：先用舊寫法 → 沒有就用新寫法 → 再沒有就用瀏覽器內建的方法頂替
@@ -119,19 +132,19 @@
   // ---- 設定（存在暴力猴裡，所有網站共用）----
   // 主要存在暴力猴裡（所有網站共用），同時在網站的 localStorage 留一份備份
   // 祕密（配對密碼）只存在暴力猴裡：網站的 localStorage 網站自己和廣告都讀得到
-  const SECRET = new Set(['bridgeToken']);
-  try { for (const k of SECRET) localStorage.removeItem('vh_' + k); } catch (e) {}   // 清掉舊版留下的
+  const isSecret = k => k === 'bridgeToken';       // 不用 Set.has：網站可以把它換掉騙腳本
+  try { localStorage.removeItem('vh_bridgeToken'); } catch (e) {}   // 清掉舊版留下的
   const store = {
     get(k, d) {
       try { const v = gmGetValue(k); if (v !== undefined) return v; } catch (e) {}
-      if (!SECRET.has(k)) {
+      if (!isSecret(k)) {
         try { const b = localStorage.getItem('vh_' + k); if (b !== null) return JSON.parse(b); } catch (e) {}
       }
       return d;
     },
     set(k, v) {
       try { gmSetValue(k, v); } catch (e) {}
-      if (!SECRET.has(k)) { try { localStorage.setItem('vh_' + k, JSON.stringify(v)); } catch (e) {} }
+      if (!isSecret(k)) { try { localStorage.setItem('vh_' + k, JSON.stringify(v)); } catch (e) {} }
     },
   };
   const settings = store.get('settings', {});
@@ -1994,13 +2007,15 @@
 
   function bridgeReq(method, port, path, body, token) {
     return new Promise(resolve => {
-      const headers = { 'X-VH': '1' };              // 自訂標頭：一般網頁要送這個會被瀏覽器先問過電腦版（而電腦版不答應）
-      if (body) headers['Content-Type'] = 'application/json';
-      if (token) headers['X-VH-Token'] = token;
+      // 一次寫好整個物件（不要 headers[x] = 密碼：網站可以在原型上埋 setter 攔截）
+      // X-VH：自訂標頭，一般網頁要送這個會被瀏覽器先問過電腦版（而電腦版不答應）
+      const headers = body
+        ? (token ? { 'X-VH': '1', 'Content-Type': 'application/json', 'X-VH-Token': token } : { 'X-VH': '1', 'Content-Type': 'application/json' })
+        : (token ? { 'X-VH': '1', 'X-VH-Token': token } : { 'X-VH': '1' });
       gmXhr({
         method, url: `http://127.0.0.1:${port}${path}`, headers, timeout: 3000,
-        data: body ? JSON.stringify(body) : undefined,
-        onload: r => { let d = {}; try { d = JSON.parse(r.responseText || '{}'); } catch (e) {} resolve({ status: r.status, data: d }); },
+        data: body ? SAFE.stringify(body) : undefined,
+        onload: r => { let d = {}; try { d = SAFE.parse(r.responseText || '{}'); } catch (e) {} resolve({ status: r.status, data: d }); },
         onerror: () => resolve({ status: 0, data: {} }),
         ontimeout: () => resolve({ status: 0, data: {} }),
       });
@@ -2020,9 +2035,9 @@
   async function bridgeCall(port, path, body) {
     let r = await bridgeReq('POST', port, path, body, store.get('bridgeToken', ''));
     if (r.status === 401) {
-      const code = prompt('第一次使用，請輸入電腦版顯示的 6 位數配對碼：\n（電腦版 →「③ 設定」→「🔗 配對瀏覽器…」）');
+      const code = SAFE.prompt('第一次使用，請輸入電腦版顯示的 6 位數配對碼：\n（電腦版 →「③ 設定」→「🔗 配對瀏覽器…」）');
       if (!code) throw new Error('已取消配對');
-      const p = await bridgeReq('POST', port, '/pair', { code: code.replace(/\s/g, '') });
+      const p = await bridgeReq('POST', port, '/pair', { code: SAFE.digits(code) });
       if (p.status !== 200 || !p.data.token) throw new Error(p.data.error || '配對失敗');
       store.set('bridgeToken', p.data.token);
       r = await bridgeReq('POST', port, path, body, p.data.token);
