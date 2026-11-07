@@ -636,6 +636,13 @@ def main(path):
     if os.environ.get("PREVIEW") == "true" or not hook:
         print("::notice title=預覽 價格::" + json.dumps(e, ensure_ascii=False)[:2500])
         print("::notice title=預覽 分析::" + json.dumps(ae, ensure_ascii=False)[:2500])
+        if os.environ.get("SUMMARY") == "true":            # 預覽總結的價格區間（看新算法對不對）
+            for code, f in forecasts(rates, hists).items():
+                r, r95 = f.get("range"), f.get("r95")
+                print(f"::notice title=預覽 5 日區間 {code}::算法={f.get('how')}｜現價 {fmt(f['m'])}｜68% {fmt(r[0])}～{fmt(r[1])}"
+                      + (f"｜95% {fmt(r95[0])}～{fmt(r95[1])}" if r95 else "") + f"｜vol 舊算法 68% 寬 "
+                      + (lambda v: f"{(v[1] - v[0]) / f['m'] * 100:.2f}%" if v else "—")(vol_range([x[1] for x in hists.get(code) or []] + [f['m']], f['m']))
+                      + f"｜新算法寬 {(r[1] - r[0]) / f['m'] * 100:.2f}%" if r else "")
         return
     base, abase = hook.split("?")[0], ahook.split("?")[0]
     call("POST", base, {"username": "Video Helper 匯率", "embeds": [e]})
