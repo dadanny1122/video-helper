@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.21.0"
+VERSION = "1.21.1"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -1715,7 +1715,17 @@ MODEL_SHA256 = {
     "small-q5_1": ("ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb", 190085487),
     "large-v3-turbo-q5_0": ("394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2", 574041195),
     "tiny": ("be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21", 77691713),   # 自動測試用
+    # 人聲偵測（VAD，Silero）：先找出「真的有人在說話」的段落，喘息、音樂、沒人說話的地方不給 Whisper 聽 → 不會幻聽
+    "vad": ("29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf", 885098),
 }
+MODEL_SOURCES = {   # 不在 ggerganov/whisper.cpp 的模型：名稱 → (檔名, 網址們)
+    "vad": ("ggml-silero-v5.1.2.bin", ("https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin",
+                                       "https://hf-mirror.com/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin")),
+}
+
+
+def model_path(name):
+    return os.path.join(whisper_dir(), MODEL_SOURCES[name][0] if name in MODEL_SOURCES else f"ggml-{name}.bin")
 SUB_LANGS = {"自動偵測": "auto", "日文": "ja", "英文": "en", "韓文": "ko", "中文": "zh"}
 SUB_BATCH = 80                                  # 翻譯一次送幾句
 
@@ -1828,7 +1838,7 @@ def ensure_model(name, on_stage=None, on_progress=None, cancel_event=None):
     if name not in MODEL_SHA256:
         raise RuntimeError(f"不認得的模型：{name}")
     want, size = MODEL_SHA256[name]
-    path = os.path.join(whisper_dir(), f"ggml-{name}.bin")
+    path = model_path(name)
     mark = path + ".ok"                                 # 核對過的記號：大小＋修改時間；檔案一動就重新核對
     if os.path.isfile(path):
         st = os.stat(path)
@@ -1845,11 +1855,12 @@ def ensure_model(name, on_stage=None, on_progress=None, cancel_event=None):
             return path
         os.remove(path)                                 # 指紋不對＝壞掉或被換掉 → 重新下載
     last = None
-    for tpl in MODEL_URLS:
+    urls = MODEL_SOURCES[name][1] if name in MODEL_SOURCES else [t.format(name) for t in MODEL_URLS]
+    for url in urls:
         if on_stage:
             on_stage(f"第一次使用這個模型：下載 {name}（只要下載一次）…")
         try:
-            fetch_file(tpl.format(name), path, on_progress, cancel_event)
+            fetch_file(url, path, on_progress, cancel_event)
             if on_stage:
                 on_stage("核對模型指紋…")
             if file_sha256(path) != want:
@@ -1863,7 +1874,7 @@ def ensure_model(name, on_stage=None, on_progress=None, cancel_event=None):
             raise
         except Exception as e:
             last = e
-            log.warning("模型下載失敗 %s：%s", tpl, e)
+            log.warning("模型下載失敗 %s：%s", url, e)
     raise RuntimeError(f"模型下載失敗（{last}）")
 
 
@@ -1883,12 +1894,16 @@ def extract_audio(video, wav, ffmpeg=None):
     return wav
 
 
+WHISPER_FALLBACKS = [0]       # 防幻聽選項失敗、退回基本模式的次數（自動測試檢查要是 0）
+
+
 def _mmss(sec):
     sec = int(sec)
     return f"{sec // 3600}:{sec % 3600 // 60:02d}:{sec % 60:02d}" if sec >= 3600 else f"{sec // 60}:{sec % 60:02d}"
 
 
-def run_whisper(exe, model, wav, lang, out_base, on_progress=None, cancel_event=None, on_text=None, fast=False):
+def run_whisper(exe, model, wav, lang, out_base, on_progress=None, cancel_event=None, on_text=None, fast=False,
+                vad=None, careful=True):
     """回傳 (srt 路徑, 偵測到的語言)。進度用「聽到第幾秒」算（whisper 每聽完一句就印一行 [時間 --> 時間] 文字）"""
     import re
     import time
@@ -1896,6 +1911,10 @@ def run_whisper(exe, model, wav, lang, out_base, on_progress=None, cancel_event=
     cmd = [exe, "-m", model, "-f", wav, "-l", lang, "-osrt", "-of", out_base, "-t", threads]
     if fast:
         cmd += ["-bs", "1", "-bo", "1"]                  # 只想一種答案（不比較 5 種）：快約 2 倍，準度差一點點
+    if careful:                                          # 防幻聽：不讓前一句帶著下一句跑、不輸出「非說話」的記號
+        cmd += ["-mc", "0", "-sns"]
+    if vad:                                              # 只聽有人說話的段落
+        cmd += ["--vad", "--vad-model", vad]
     total = max(1.0, (os.path.getsize(wav) - 44) / 32000)   # 16kHz × 2 位元組 ＝ 每秒 32000
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                          errors="ignore", **_popen_kw())
@@ -1926,8 +1945,48 @@ def run_whisper(exe, model, wav, lang, out_base, on_progress=None, cancel_event=
     if cancel_event is not None and cancel_event.is_set():
         raise Cancelled()
     if p.returncode != 0 or not os.path.isfile(out_base + ".srt"):
+        if careful or vad:                               # 舊版 whisper.cpp 不認得新選項 → 不加選項再試一次
+            WHISPER_FALLBACKS[0] += 1
+            log.warning("whisper 加防幻聽選項失敗，改用基本模式：%s", " ".join(tail)[-200:])
+            return run_whisper(exe, model, wav, lang, out_base, on_progress, cancel_event, on_text, fast, None, False)
         raise RuntimeError("AI 聽寫失敗：" + " ".join(tail)[-200:])
     return out_base + ".srt", detected
+
+
+# Whisper 很常見的幻聽（訓練資料裡的影片片尾字幕）：句子裡有這些就刪
+HALLU_PHRASES = ("amara.org", "字幕由", "字幕提供", "請不吝點贊", "请不吝点赞", "訂閱轉發", "订阅转发", "打賞支持", "打赏支持",
+                 "明鏡與點點", "明镜与点点", "優優獨播", "优优独播", "thanks for watching", "thank you for watching",
+                 "please subscribe", "ご視聴ありがとうございました", "チャンネル登録", "시청해주셔서")
+HALLU_EXACT = ("謝謝觀看", "谢谢观看", "謝謝大家", "谢谢大家", "中文字幕", "字幕", "you", "thank you", "bye")
+
+
+def _norm(t):
+    return re.sub(r"[\s\W_]+", "", t.lower())
+
+
+def _tm_join(a, b):
+    return a.split(" --> ")[0] + " --> " + b.split(" --> ")[1]
+
+
+def clean_hallucinations(entries):
+    """去掉 Whisper 的幻聽：片尾字幕型的句子、一個詞一直重複、同一句連續重複、某一句佔了大半"""
+    from collections import Counter
+    exact = {_norm(x) for x in HALLU_EXACT}
+    out = []
+    for tm, txt in entries:
+        t = re.sub(r"(\S{1,6}?)(?:[\s，,、。]*\1){3,}", r"\1\1", txt.strip())   # 「小小小小小小」→「小小」
+        n = _norm(t)
+        if not n or n in exact or any(p in t.lower() for p in HALLU_PHRASES):
+            continue
+        if out and _norm(out[-1][1]) == n:                  # 同一句連續出現 → 合併成一條（時間拉長）
+            out[-1] = (_tm_join(out[-1][0], tm), out[-1][1])
+            continue
+        out.append((tm, t))
+    if len(out) >= 8:                                       # 某一句佔了 4 成以上 → 幾乎一定是幻聽
+        top, cnt = Counter(_norm(t) for _, t in out).most_common(1)[0]
+        if cnt / len(out) > 0.4:
+            out = [e for e in out if _norm(e[1]) != top]
+    return out
 
 
 def parse_srt(text):
@@ -2034,6 +2093,13 @@ def make_subtitles(video, lang="auto", model="small-q5_1", key="", on_stage=None
         raise RuntimeError("找不到影片檔")
     exe = install_whisper(on_stage, on_progress, cancel_event)
     mpath = ensure_model(model, on_stage, on_progress, cancel_event)
+    try:
+        vad = ensure_model("vad", on_stage, on_progress, cancel_event)
+    except Cancelled:
+        raise
+    except Exception as e:                                  # 下載不到就算了，照樣聽寫（只是比較容易幻聽）
+        log.warning("人聲偵測模型下載失敗：%s", e)
+        vad = None
     base = os.path.splitext(video)[0]
     tmp = os.path.join(whisper_dir(), f"audio-{os.getpid()}-{threading.get_ident()}")
     try:
@@ -2043,8 +2109,11 @@ def make_subtitles(video, lang="auto", model="small-q5_1", key="", on_stage=None
         if on_stage:
             on_stage("AI 聽寫中（在你的電腦上跑，影片越長越久）…")
         srt, detected = run_whisper(exe, mpath, tmp + ".wav", lang, tmp, on_progress, cancel_event,
-                                    on_text, fast=model.startswith("small"))
-        entries = parse_srt(open(srt, encoding="utf-8", errors="ignore").read())
+                                    on_text, fast=model.startswith("small"), vad=vad)
+        raw = parse_srt(open(srt, encoding="utf-8", errors="ignore").read())
+        entries = clean_hallucinations(raw)
+        if len(raw) != len(entries):
+            log.info("AI 字幕：清掉 %d 條幻聽／重複", len(raw) - len(entries))
     finally:
         for ext in (".wav", ".srt"):
             try:
@@ -2052,7 +2121,7 @@ def make_subtitles(video, lang="auto", model="small-q5_1", key="", on_stage=None
             except OSError:
                 pass
     if not entries:
-        raise RuntimeError("沒聽到任何說話聲")
+        raise RuntimeError("影片裡幾乎沒有人說話（或只有喘息、音樂），所以沒有做出字幕")
     res = {"lang": detected, "zh": None, "dual": None, "count": len(entries)}
     if detected == "zh":
         res["orig"] = write_subs(entries, base, fmts)
@@ -2100,8 +2169,8 @@ def component_report():
     exe = find_whisper() if os.path.isdir(os.path.join(data_dir(), "whisper")) or os.environ.get("VIDEO_HELPER_WHISPER") else None
     add("whisper.cpp", os.path.basename(os.path.dirname(os.path.dirname(exe))) if exe else "還沒下載", exe)
     for name, (want, size) in MODEL_SHA256.items():
-        p = os.path.join(data_dir(), "whisper", f"ggml-{name}.bin")
-        if os.path.isfile(p):
+        p = model_path(name) if os.path.isdir(os.path.join(data_dir(), "whisper")) else ""
+        if p and os.path.isfile(p):
             ok = os.path.isfile(p + ".ok") and open(p + ".ok", encoding="utf-8").read().startswith(want)
             rows.append(f"{'模型 ' + name:<16}{'✅ 指紋核對過' if ok else '⚠ 下次使用時會核對'}\n{'':<16}{want}")
     return "\n".join(rows)

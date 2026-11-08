@@ -156,7 +156,7 @@ jobs:
           Add-Type -AssemblyName System.Speech
           $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
           $s.SetOutputToWaveFile("$PWD\speech.wav"); $s.Speak("Hello world. This is a subtitle test."); $s.Dispose()
-          python -c "import video_helper_app as v; r = v.make_subtitles('speech.wav', 'en', 'tiny'); t = open(r['orig'], encoding='utf-8-sig').read(); print('::notice title=AI subtitle::' + t.replace(chr(10), ' | ')); assert 'hello' in t.lower(), t"
+          python -c "import video_helper_app as v; r = v.make_subtitles('speech.wav', 'en', 'tiny'); t = open(r['orig'], encoding='utf-8-sig').read(); print('::notice title=AI subtitle::' + t.replace(chr(10), ' | ')); assert 'hello' in t.lower(), t; assert v.WHISPER_FALLBACKS[0] == 0, '防幻聽選項（VAD）沒生效'; print('::notice title=防幻聽::人聲偵測＋防重複選項有生效')"
 
       # Pillow 只用來畫系統匣圖示，用不到的圖片格式（AVIF、WebP…）不包進去
       - name: Build exe
