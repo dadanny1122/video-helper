@@ -302,6 +302,25 @@ assert a.THROTTLE.bps == 0
 assert a.video_key("https://www.pornhub.com/view_video.php?viewkey=x1&t=3") == a.video_key("https://cn.pornhub.com/view_video.php?viewkey=x1")
 print("::notice title=v1.20::暫停／繼續按鈕、速度上限、重複偵測 OK")
 
+# 7d. v1.21 AI 字幕視窗：單部、多部都打得開（格式、雙語選項都在）
+_v1 = os.path.join(d, "sub_a.mp4"); _v2 = os.path.join(d, "sub_b.mp4")
+for _p in (_v1, _v2):
+    open(_p, "wb").write(b"x")
+app.subtitle_dialog(video=_v1); r.update()
+assert app.sub_win.winfo_exists(), "AI 字幕視窗打不開"
+app.sub_win.destroy(); r.update()
+app.history.add(url="https://example.com/a", title="a", file=_v1, status=a.DONE, height=720)
+app.history.add(url="https://example.com/b", title="b", file=_v2, status=a.DONE, height=720)
+app.refresh_history(); r.update()
+app.htree.selection_set(("0", "1")); r.update()
+app.subtitle_dialog(); r.update()
+_texts = [w.cget("text") for w in app.sub_win.winfo_children()[0].winfo_children() if isinstance(w, a.ttk.Label)]
+assert any("共 2 部" in t for t in _texts), _texts
+app.sub_win.destroy(); r.update()
+open(_v1[:-4] + ".srt", "w").write("1")
+assert a.has_subtitles(_v1) and not a.has_subtitles(_v2)
+print("::notice title=v1.21::AI 字幕視窗（單部、多選 2 部）、有沒有字幕的判斷 OK")
+
 # 8. 系統匣：關視窗 → 縮到系統匣 → 從系統匣打開 → 結束
 assert a.pystray is not None, "pystray 沒有裝進去"
 app.settings["close_action"] = "一律縮到系統匣"

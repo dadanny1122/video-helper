@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.20.0"
+VERSION = "1.21.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -171,6 +171,9 @@ DEFAULT_SETTINGS = {
     "sub_lang": "自動偵測",      # AI 字幕：影片說的語言
     "sub_model": "快（small，約 190 MB）",
     "sub_translate": True,       # 有 AI 金鑰就翻成中文
+    "sub_format": "SRT（最通用）",
+    "sub_dual": False,           # 另外做一份「中文＋原文」雙語字幕
+    "sub_skip_done": True,       # 批次：已經有字幕的跳過
 }
 
 
@@ -1946,6 +1949,36 @@ def write_srt(entries, path):
     return path
 
 
+def write_vtt(entries, path):
+    """WebVTT：網頁播放器、手機常用；時間的逗號換成點"""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("WEBVTT\n\n")
+        for n, (tm, txt) in enumerate(entries, 1):
+            f.write(f"{n}\n{tm.replace(',', '.')}\n{txt}\n\n")
+    return path
+
+
+SUB_FORMATS = {"SRT（最通用）": ("srt",), "VTT（網頁、手機）": ("vtt",), "兩種都要": ("srt", "vtt")}
+
+
+def write_subs(entries, base, fmts=("srt",)):
+    """依格式寫出字幕；回傳第一個（主要的）檔案路徑"""
+    out = []
+    for ext in fmts:
+        out.append(write_srt(entries, base + ".srt") if ext == "srt" else write_vtt(entries, base + ".vtt"))
+    return out[0]
+
+
+def bilingual(zh, orig):
+    """雙語：上面中文、下面原文（時間用同一份）"""
+    return [(tm, f"{z}\n{o}") for (tm, z), (_, o) in zip(zh, orig)]
+
+
+def has_subtitles(video):
+    base = os.path.splitext(video)[0]
+    return any(os.path.isfile(base + ext) for ext in (".srt", ".vtt")) or bool(glob.glob(glob.escape(base) + ".*.srt"))
+
+
 def ai_translate(key, lines, src, timeout=90):
     """一批字幕 → 繁體中文（只送文字，不送影片、聲音）"""
     numbered = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(lines))
@@ -1993,9 +2026,10 @@ def translate_entries(key, entries, src, on_progress=None, cancel_event=None, tr
 
 
 def make_subtitles(video, lang="auto", model="small-q5_1", key="", on_stage=None, on_progress=None,
-                   cancel_event=None, translate_fn=None, on_text=None):
-    """影片 → 同資料夾的字幕檔。回傳 {"orig": 原文字幕, "zh": 中文字幕或 None, "lang": 語言}
-    中文字幕取名「影片名.srt」：VLC、PotPlayer、電影與電視 打開影片會自動載入"""
+                   cancel_event=None, translate_fn=None, on_text=None, fmts=("srt",), dual=False):
+    """影片 → 同資料夾的字幕檔。回傳 {"orig": 原文字幕, "zh": 中文字幕或 None, "dual": 雙語或 None, "lang": 語言}
+    中文字幕取名「影片名.srt」：VLC、PotPlayer、電影與電視 打開影片會自動載入
+    fmts：("srt",)／("vtt",)／("srt", "vtt")；dual：有翻譯時另外做一份「中文＋原文」的雙語字幕"""
     if not os.path.isfile(video):
         raise RuntimeError("找不到影片檔")
     exe = install_whisper(on_stage, on_progress, cancel_event)
@@ -2019,16 +2053,18 @@ def make_subtitles(video, lang="auto", model="small-q5_1", key="", on_stage=None
                 pass
     if not entries:
         raise RuntimeError("沒聽到任何說話聲")
-    res = {"lang": detected, "zh": None, "count": len(entries)}
+    res = {"lang": detected, "zh": None, "dual": None, "count": len(entries)}
     if detected == "zh":
-        res["orig"] = write_srt(entries, base + ".srt")
+        res["orig"] = write_subs(entries, base, fmts)
         return res
-    res["orig"] = write_srt(entries, f"{base}.{detected}.srt")
+    res["orig"] = write_subs(entries, f"{base}.{detected}", fmts)
     if key:
         if on_stage:
             on_stage(f"翻成中文（只送字幕文字，共 {len(entries)} 句）…")
-        res["zh"] = write_srt(translate_entries(key, entries, detected, on_progress, cancel_event, translate_fn),
-                              base + ".srt")
+        zh = translate_entries(key, entries, detected, on_progress, cancel_event, translate_fn)
+        res["zh"] = write_subs(zh, base, fmts)
+        if dual:
+            res["dual"] = write_subs(bilingual(zh, entries), f"{base}.雙語", fmts)
     return res
 
 
@@ -3053,7 +3089,7 @@ class App:
     def build_history(self, parent):
         pad = {"padx": 10, "pady": 6}
         cols = ("time", "title", "quality", "status")
-        self.htree = ttk.Treeview(parent, columns=cols, show="headings", selectmode="browse")
+        self.htree = ttk.Treeview(parent, columns=cols, show="headings", selectmode="extended")   # 可以 Ctrl／Shift 多選（批次字幕）
         for c, name, w, anchor in (("time", "時間", 130, "center"), ("title", "標題", 380, "w"),
                                    ("quality", "畫質", 70, "center"), ("status", "狀態", 70, "center")):
             self.htree.heading(c, text=name)
@@ -3309,11 +3345,17 @@ class App:
     # ------------------------------------------------------------------
 
     def subtitle_dialog(self, video=None):
-        if video is None:
-            _, r = self.selected_history()
-            video = r.get("file") if r else None
-        if not (video and os.path.isfile(video)):
-            messagebox.showinfo("AI 字幕", "請先在清單裡選一支「已下載完成、檔案還在」的影片。")
+        """一部或多部（下載紀錄可以 Ctrl／Shift 多選）一起做字幕，一部接一部"""
+        if video:
+            videos = [video]
+        else:
+            videos = []
+            for iid in self.htree.selection():
+                r = self.history.items[int(iid)]
+                if r.get("file") and os.path.isfile(r["file"]) and r["file"] not in videos:
+                    videos.append(r["file"])
+        if not videos:
+            messagebox.showinfo("AI 字幕", "請先在清單裡選「已下載完成、檔案還在」的影片（按住 Ctrl 或 Shift 可以一次選很多部）。")
             return
         if getattr(self, "sub_win", None) is not None and self.sub_win.winfo_exists():
             self.sub_win.lift()
@@ -3323,7 +3365,8 @@ class App:
         w.resizable(False, False)
         f = ttk.Frame(w, padding=14)
         f.pack(fill="both")
-        ttk.Label(f, text=os.path.basename(video), font=("", 10, "bold"), wraplength=440).grid(row=0, column=0, columnspan=2, sticky="w")
+        head = os.path.basename(videos[0]) if len(videos) == 1 else f"共 {len(videos)} 部影片（一部接一部做）"
+        ttk.Label(f, text=head, font=("", 10, "bold"), wraplength=440).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(f, text="影片說的語言").grid(row=1, column=0, sticky="w", pady=(10, 2))
         lang = ttk.Combobox(f, values=list(SUB_LANGS), state="readonly", width=24)
         lang.set(self.settings["sub_lang"] if self.settings["sub_lang"] in SUB_LANGS else "自動偵測")
@@ -3332,26 +3375,39 @@ class App:
         model = ttk.Combobox(f, values=list(SUB_MODELS), state="readonly", width=24)
         model.set(self.settings["sub_model"] if self.settings["sub_model"] in SUB_MODELS else next(iter(SUB_MODELS)))
         model.grid(row=2, column=1, sticky="w", pady=2)
+        ttk.Label(f, text="字幕格式").grid(row=3, column=0, sticky="w", pady=2)
+        fmt = ttk.Combobox(f, values=list(SUB_FORMATS), state="readonly", width=24)
+        fmt.set(self.settings["sub_format"] if self.settings["sub_format"] in SUB_FORMATS else next(iter(SUB_FORMATS)))
+        fmt.grid(row=3, column=1, sticky="w", pady=2)
         key = (self.settings["ai_key"] or "").strip()
         tr = tk.BooleanVar(value=bool(key) and self.settings["sub_translate"])
+        dual = tk.BooleanVar(value=bool(self.settings["sub_dual"]))
         cb = ttk.Checkbutton(f, text="翻成繁體中文" + ("" if key else "（要先在 ⚙ 進階設定 填 AI 金鑰）"), variable=tr)
-        cb.grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 2))
+        cb.grid(row=4, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        cb2 = ttk.Checkbutton(f, text="另外做一份「中文＋原文」雙語字幕（學語言用）", variable=dual)
+        cb2.grid(row=5, column=0, columnspan=2, sticky="w", padx=(20, 0))
+        sync = lambda *_: cb2.state(["!disabled"] if tr.get() else ["disabled"])
+        tr.trace_add("write", sync)
+        sync()
         if not key:
             cb.state(["disabled"])
+        skip = tk.BooleanVar(value=bool(self.settings["sub_skip_done"]))
+        if len(videos) > 1:
+            ttk.Checkbutton(f, text="已經有字幕的影片跳過", variable=skip).grid(row=6, column=0, columnspan=2, sticky="w")
         ttk.Label(f, foreground="#666", wraplength=440, justify="left", text=(
             "• 聽寫完全在你的電腦上跑，影片和聲音不會上傳。\n"
             "• 第一次用會下載聽寫程式和模型（只要一次）。沒有顯示卡的電腦，1 小時影片「快」約 10～20 分鐘，「準」慢 3～5 倍。\n"
             "• 影片本來就是中文：語言選「中文」，不用翻譯。\n"
             "• 翻中文時只把字幕文字送給 AI（用你的金鑰，會花一點點額度）。\n"
-            "• 字幕存在影片旁邊，同名的 .srt；VLC、PotPlayer 打開影片會自動載入。")).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 6))
+            "• 字幕存在影片旁邊、跟影片同名；VLC、PotPlayer 打開影片會自動載入。雙語字幕叫「影片.雙語.srt」，在播放器的字幕選單切換。")).grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 6))
         self.sub_stage = ttk.Label(f, text="")
-        self.sub_stage.grid(row=5, column=0, columnspan=2, sticky="w")
+        self.sub_stage.grid(row=8, column=0, columnspan=2, sticky="w")
         self.sub_bar = ttk.Progressbar(f, length=440, maximum=100)
-        self.sub_bar.grid(row=6, column=0, columnspan=2, pady=4)
+        self.sub_bar.grid(row=9, column=0, columnspan=2, pady=4)
         self.sub_info = ttk.Label(f, text="", foreground="#555", wraplength=440, justify="left")
-        self.sub_info.grid(row=7, column=0, columnspan=2, sticky="w")
+        self.sub_info.grid(row=10, column=0, columnspan=2, sticky="w")
         btns = ttk.Frame(f)
-        btns.grid(row=9, column=0, columnspan=2, sticky="e", pady=(6, 0))
+        btns.grid(row=11, column=0, columnspan=2, sticky="e", pady=(6, 0))
         self.sub_cancel = threading.Event()
         go = ttk.Button(btns, text="開始")
         stop = ttk.Button(btns, text="取消", command=lambda: (self.sub_cancel.set(), None) if self.sub_running else w.destroy())
@@ -3360,29 +3416,45 @@ class App:
         self.sub_running = False
 
         def start():
-            self.settings["sub_lang"], self.settings["sub_model"] = lang.get(), model.get()
+            self.settings["sub_lang"], self.settings["sub_model"], self.settings["sub_format"] = lang.get(), model.get(), fmt.get()
+            self.settings["sub_dual"], self.settings["sub_skip_done"] = bool(dual.get()), bool(skip.get())
             if key:
                 self.settings["sub_translate"] = tr.get()
             self.settings.save()
             go.state(["disabled"])
             self.sub_running = True
-            args = (video, SUB_LANGS[lang.get()], SUB_MODELS[model.get()], key if tr.get() else "")
-            threading.Thread(target=self._subtitle_worker, args=args, daemon=True).start()
+            todo = [v for v in videos if not (len(videos) > 1 and skip.get() and has_subtitles(v))]
+            opts = dict(lang=SUB_LANGS[lang.get()], model=SUB_MODELS[model.get()], key=key if tr.get() else "",
+                        fmts=SUB_FORMATS[fmt.get()], dual=bool(tr.get() and dual.get()))
+            threading.Thread(target=self._subtitle_worker, args=(todo, len(videos) - len(todo), opts), daemon=True).start()
         go.config(command=start)
 
-    def _subtitle_worker(self, video, lang, model, key):
+    def _subtitle_worker(self, videos, skipped, opts):
         def prog(got, total):
             self.q.put(("sub_progress", (got, total)))
-        try:
-            res = make_subtitles(video, lang, model, key, on_stage=lambda t: self.q.put(("sub_stage", t)),
-                                 on_progress=prog, cancel_event=self.sub_cancel,
-                                 on_text=lambda t: self.q.put(("sub_text", t)))
-            self.q.put(("sub_done", res))
-        except Cancelled:
+        results, errors = [], []
+        for i, video in enumerate(videos, 1):
+            tag = f"（{i}/{len(videos)}）{os.path.basename(video)[:30]}｜" if len(videos) > 1 else ""
+            if self.sub_cancel.is_set():
+                break
+            try:
+                results.append(make_subtitles(video, opts["lang"], opts["model"], opts["key"],
+                                              on_stage=lambda t, tag=tag: self.q.put(("sub_stage", tag + t)),
+                                              on_progress=prog, cancel_event=self.sub_cancel,
+                                              on_text=lambda t: self.q.put(("sub_text", t)),
+                                              fmts=opts["fmts"], dual=opts["dual"]))
+            except Cancelled:
+                break
+            except Exception as e:
+                log.exception("AI 字幕失敗")
+                errors.append(f"{os.path.basename(video)[:40]}：{e}")
+        if self.sub_cancel.is_set() and not results:
             self.q.put(("sub_error", "已取消"))
-        except Exception as e:
-            log.exception("AI 字幕失敗")
-            self.q.put(("sub_error", str(e)))
+        elif len(videos) == 1 and errors:
+            self.q.put(("sub_error", errors[0].split("：", 1)[-1]))
+        else:
+            self.q.put(("sub_done", {"results": results, "errors": errors, "skipped": skipped,
+                                     "cancelled": self.sub_cancel.is_set()}))
 
     def _sub_alive(self):
         return getattr(self, "sub_win", None) is not None and self.sub_win.winfo_exists()
@@ -3404,15 +3476,29 @@ class App:
             if total > 1000:                                   # 下載中（聽寫的進度是千分比，total＝1000）：顯示 MB
                 self.sub_stage.config(text=self.sub_stage.cget("text").split("｜")[0] + f"｜{fmt_size(got)} / {fmt_size(total)}")
 
-    def on_sub_done(self, res):
+    def on_sub_done(self, data):
         self.sub_running = False
         if self._sub_alive():
             self.sub_win.destroy()
-        msg = f"完成！共 {res['count']} 句，語言：{res['lang']}\n\n原文字幕：{res['orig']}"
-        if res.get("zh"):
-            msg += f"\n中文字幕：{res['zh']}"
+        rs, errs = data["results"], data["errors"]
+        if len(rs) == 1 and not errs and not data["skipped"]:
+            res = rs[0]
+            msg = f"完成！共 {res['count']} 句，語言：{res['lang']}\n\n原文字幕：{res['orig']}"
+            if res.get("zh"):
+                msg += f"\n中文字幕：{res['zh']}"
+            if res.get("dual"):
+                msg += f"\n雙語字幕：{res['dual']}"
+        else:
+            msg = (f"完成 {len(rs)} 部" + (f"、跳過 {data['skipped']} 部（已經有字幕）" if data["skipped"] else "")
+                   + (f"、失敗 {len(errs)} 部" if errs else "") + ("（中途取消）" if data["cancelled"] else "") + "。")
+            if errs:
+                msg += "\n\n失敗的：\n" + "\n".join(errs[:8])
+        if not rs:
+            messagebox.showinfo("AI 字幕", msg)
+            return
+        last = rs[-1]
         if messagebox.askyesno("AI 字幕", msg + "\n\n要打開檔案位置嗎？"):
-            open_path(res.get("zh") or res["orig"], select=True)
+            open_path(last.get("zh") or last["orig"], select=True)
 
     def on_sub_error(self, msg):
         self.sub_running = False
