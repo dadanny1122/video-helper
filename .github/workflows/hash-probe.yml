@@ -1,0 +1,16 @@
+name: Whisper probe (temporary)
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: windows-latest
+    steps:
+      - shell: bash
+        run: |
+          curl -s "https://huggingface.co/api/models/ggml-org/whisper-vad/tree/main" | python -c "
+          import json,sys
+          for f in json.load(sys.stdin):
+              if f['path'].endswith('.bin'): print('::notice title=vad::' + f['path'] + ' ' + f.get('lfs',{}).get('oid','') + ' ' + str(f.get('lfs',{}).get('size','')))"
+          curl -sL -o vad.bin https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin && echo "::notice title=vad real::$(sha256sum vad.bin) $(stat -c %s vad.bin)"
+          url=$(curl -s https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest | python -c "import json,sys;d=json.load(sys.stdin);print(d['tag_name']);[print(a['browser_download_url']) for a in d['assets'] if a['name']=='whisper-bin-x64.zip']" | tail -1)
+          curl -sL -o w.zip "$url" && unzip -q w.zip -d w && exe=$(find w -name whisper-cli.exe | head -1)
+          "$exe" -h 2>&1 | grep -i "vad\|suppress\|max-context\|no-speech\|entropy\|prompt" | sed 's/^/::notice title=flags::/'
