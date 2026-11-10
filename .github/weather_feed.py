@@ -445,7 +445,8 @@ def main(path):
                      # 給即時介面的「查某個時間」和 Discord /天氣 用：未來 2 天每 3 小時的預報、每小時氣溫
                      "blocks": {l: [[b[0].isoformat(), b[1].isoformat(), b[2], b[3]] for b in v["blocks"]] for l, v in sp.items()},
                      "temps": {l: [[k.isoformat(), t] for k, t in sorted(v["temp"].items())] for l, v in sp.items()},
-                     "warnings": wn or {}}
+                     "warnings": wn or {},
+                     "quake": (state.get("dash") or {}).get("quake")}   # 地震那邊寫的，保留
     if not preview:
         state["last"] = datetime.now(TW).strftime("%Y-%m-%d %H:%M")
         json.dump(state, open(path, "w", encoding="utf-8"), ensure_ascii=False)
