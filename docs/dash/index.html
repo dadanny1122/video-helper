@@ -163,6 +163,7 @@ async function weather() {
       return x === k(0) ? '今天' : x === k(1) ? '明天' : x === k(2) ? '後天' : x.slice(5); };
     body('weather', `<div class="meta">更新：${esc(d.updated)}（每小時）｜降雨機率是 3 小時一段</div>
       ${hz.length ? `<div class="meta" style="color:#e53935;font-weight:600">⛈ 特報：${hz.map(esc).join('、')}</div>` : ''}
+      ${d.aqi ? `<div class="meta">🌫 空氣品質（AQI）：${Object.entries(d.aqi).map(([n, v]) => `${esc(n.split('（')[0])} ${v.icon}${v.aqi}`).join('　')}</div>` : ''}
       ${d.quake ? `<div class="meta">🌏 最近地震：<a href="${esc(d.quake.url || '#')}" target="_blank" rel="noopener">${esc(d.quake.text || d.quake.title)}</a></div>` : ''}
       <div class="meta" style="color:var(--fg)">${wet.length ? '☔ 今天要帶傘：' + wet.map(esc).join('、') : '☀ 今天剩下的時段降雨機率都低於 70%'}</div>
       <table><tr><th>地點</th><th>現在天氣</th><th class="num">現在降雨</th><th class="num">今天最可能下雨</th><th class="num">氣溫</th></tr>${rows}</table>

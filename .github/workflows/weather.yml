@@ -35,6 +35,7 @@ jobs:
           CWA_API_KEY: ${{ secrets.CWA_API_KEY }}
           DISCORD_WEATHER_WEBHOOK: ${{ secrets.DISCORD_WEATHER_WEBHOOK }}
           DISCORD_QUAKE_WEBHOOK: ${{ secrets.DISCORD_QUAKE_WEBHOOK }}
+          MOENV_API_KEY: ${{ secrets.MOENV_API_KEY }}
           MODE: ${{ inputs.mode }}
           PREVIEW: ${{ inputs.preview }}
           PYTHONIOENCODING: utf-8

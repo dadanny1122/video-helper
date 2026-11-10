@@ -291,6 +291,59 @@ def check_alerts(fc, state):
     return hits
 
 
+# ---- 🌫 空氣品質（環境部 aqx_p_432，每小時更新；要免費申請的 MOENV_API_KEY）----
+AQI_SITES = {"大園": "大園", "青埔（中壢）": "中壢", "土城": "土城", "台北101（信義）": "松山",
+             "竹科（新竹東區）": "新竹", "竹北": "湖口"}          # 地點 → 最近的測站
+AQI_ALERT, AQI_CLEAR = 151, 100                                  # ≥151 紅色（對所有人不健康）提醒；降到 ≤100 才解除
+
+
+def aqi_level(v):
+    for lim, name, ic in ((50, "良好", "🟢"), (100, "普通", "🟡"), (150, "敏感族群不健康", "🟠"),
+                          (200, "不健康", "🔴"), (300, "非常不健康", "🟣")):
+        if v <= lim:
+            return name, ic
+    return "危害", "🟤"
+
+
+def aqi():
+    key = os.environ.get("MOENV_API_KEY", "").strip()
+    if not key:
+        return None
+    url = "https://data.moenv.gov.tw/api/v2/aqx_p_432?" + urllib.parse.urlencode({"api_key": key, "format": "json", "limit": 1000})
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "VideoHelper-WeatherBot/1.0"}), timeout=30) as r:
+        d = json.loads(r.read())
+    rows = d.get("records", d) if isinstance(d, dict) else d
+    by = {str(x.get("sitename", "")).strip(): x for x in rows if isinstance(x, dict)}
+    out = {}
+    for spot, site in AQI_SITES.items():
+        x = by.get(site)
+        try:
+            v = int(float(x.get("aqi")))
+        except Exception:
+            continue
+        lv, ic = aqi_level(v)
+        out[spot] = {"site": site, "aqi": v, "level": lv, "icon": ic, "pollutant": (x.get("pollutant") or "").strip(),
+                     "time": (x.get("publishtime") or "")[-8:-3] or (x.get("publishtime") or "")}
+    return out
+
+
+def aqi_line(aq):
+    return "　".join(f"{s.split('（')[0]} {v['icon']}{v['aqi']}" for s, v in aq.items())
+
+
+def aqi_alerts(aq, state):
+    on = state.setdefault("aqi_alert", {})
+    msgs = []
+    for spot, v in aq.items():
+        if v["aqi"] >= AQI_ALERT and not on.get(spot):
+            on[spot] = True
+            msgs.append(f"{v['icon']} **{spot}**（{v['site']}測站）AQI **{v['aqi']}**｜{v['level']}" + (f"｜主要：{v['pollutant']}" if v["pollutant"] else ""))
+        elif v["aqi"] <= AQI_CLEAR and on.get(spot):
+            on[spot] = False
+            msgs.append(f"🟢 {spot} 空氣好轉，AQI {v['aqi']}（{v['level']}）")
+    return msgs
+
+
 # ---- 🌏 地震：氣象署地震報告（E-A0015-001 顯著有感、E-A0016-001 小區域有感）----
 QUAKE_DS = ("E-A0015-001", "E-A0016-001")
 MY_COUNTIES = ("桃園市", "新北市", "臺北市", "新竹市", "新竹縣")   # 你那 6 個地點所在的縣市
@@ -395,9 +448,19 @@ def main(path):
     sp = spots_forecast()
     print("::notice title=氣象 地點::" + "｜".join(
         f"{l} " + ",".join(f"{b[0].hour:02d}:{b[2]}%" for b in v["blocks"][:4]) for l, v in sp.items()))
+    try:
+        aq = aqi()
+    except Exception as e:
+        print(f"::warning title=空氣品質::讀不到：{e}")
+        aq = None
+    if aq:
+        print("::notice title=空氣品質::" + aqi_line(aq))
     if mode == "daily":
         fc = parse(fetch())
         embeds = [timetable_embed(sp)] + ([daily_embed(fc)] if len(fc) >= 10 else [])
+        if aq:
+            embeds[0]["description"] += "\n\n🌫 **空氣品質（AQI）**　" + aqi_line(aq) + \
+                "\n🟢良好 🟡普通 🟠敏感族群不健康 🔴不健康 🟣非常不健康｜資料：環境部（最近的測站）"
         if preview:
             for e in embeds:
                 print("::notice title=預覽 每日::" + json.dumps(e, ensure_ascii=False)[:3000])
@@ -415,6 +478,15 @@ def main(path):
                  "color": 0xC62828, "description": "\n".join(wmsgs) + "\n\n資料：中央氣象署 天氣特報"}
             if preview:
                 print("::notice title=預覽 特報::" + json.dumps(e, ensure_ascii=False)[:2000])
+            else:
+                call(hook, {"username": "Video Helper 氣象", "embeds": [e]})
+    if aq:
+        am = aqi_alerts(aq, state)
+        if am:
+            e = {"title": "🌫 空氣品質提醒", "url": "https://airtw.moenv.gov.tw/", "color": 0xC62828,
+                 "description": "\n".join(am) + f"\n\nAQI ≥ {AQI_ALERT}（紅色）＝對所有人都不健康，少出門、戴口罩\n資料：環境部 空氣品質監測"}
+            if preview:
+                print("::notice title=預覽 空氣::" + json.dumps(e, ensure_ascii=False)[:1500])
             else:
                 call(hook, {"username": "Video Helper 氣象", "embeds": [e]})
     msgs = mutation_alerts(sp, state)
@@ -446,7 +518,8 @@ def main(path):
                      "blocks": {l: [[b[0].isoformat(), b[1].isoformat(), b[2], b[3]] for b in v["blocks"]] for l, v in sp.items()},
                      "temps": {l: [[k.isoformat(), t] for k, t in sorted(v["temp"].items())] for l, v in sp.items()},
                      "warnings": wn or {},
-                     "quake": (state.get("dash") or {}).get("quake")}   # 地震那邊寫的，保留
+                     "quake": (state.get("dash") or {}).get("quake"),   # 地震那邊寫的，保留
+                     "aqi": aq or (state.get("dash") or {}).get("aqi")}
     if not preview:
         state["last"] = datetime.now(TW).strftime("%Y-%m-%d %H:%M")
         json.dump(state, open(path, "w", encoding="utf-8"), ensure_ascii=False)
