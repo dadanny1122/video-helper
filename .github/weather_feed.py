@@ -11,6 +11,7 @@
 """
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -290,6 +291,94 @@ def check_alerts(fc, state):
     return hits
 
 
+# ---- 🌏 地震：氣象署地震報告（E-A0015-001 顯著有感、E-A0016-001 小區域有感）----
+QUAKE_DS = ("E-A0015-001", "E-A0016-001")
+MY_COUNTIES = ("桃園市", "新北市", "臺北市", "新竹市", "新竹縣")   # 你那 6 個地點所在的縣市
+QUAKE_SMALL_MIN = 3        # 小區域地震：你的縣市震度 ≥ 3 級才通知（顯著有感地震全部通知）
+
+
+def lvl(s):
+    """「4級」「5弱」「5強」→ 可以比大小的數字"""
+    m = re.match(r"(\d)\s*(弱|強)?", str(s or ""))
+    if not m:
+        return 0
+    return int(m.group(1)) + (0.5 if m.group(2) == "強" else 0)
+
+
+def quakes():
+    key = os.environ.get("CWA_API_KEY", "").strip()
+    out = []
+    for ds in QUAKE_DS:
+        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/{ds}?" + urllib.parse.urlencode(
+            {"Authorization": key, "format": "JSON", "limit": 5})
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "VideoHelper-WeatherBot/1.0"}), timeout=30) as r:
+            for e in json.loads(r.read())["records"]["Earthquake"]:
+                e["_ds"] = ds
+                out.append(e)
+    return out
+
+
+def quake_id(e):
+    return str(e.get("Web") or f'{e.get("EarthquakeNo")}-{e.get("EarthquakeInfo", {}).get("OriginTime")}')
+
+
+def quake_embed(e):
+    info = e.get("EarthquakeInfo", {})
+    mag = (info.get("EarthquakeMagnitude") or {}).get("MagnitudeValue")
+    areas = (e.get("Intensity") or {}).get("ShakingArea") or []
+    county = {}
+    for a in areas:
+        c, v = a.get("CountyName"), a.get("AreaIntensity")
+        if c and lvl(v) > lvl(county.get(c)):
+            county[c] = v
+    mine = [f"**{c}** {county[c]}" if lvl(county[c]) >= 3 else f"{c} {county[c]}" for c in MY_COUNTIES if c in county]
+    top = max((lvl(v) for v in county.values()), default=0)
+    color = 0xB71C1C if top >= 5 else 0xE65100 if top >= 4 else 0xF9A825 if top >= 3 else 0x2E7D32
+    t = (info.get("OriginTime") or "")[5:16].replace("T", " ")
+    kind = "顯著有感地震" if e["_ds"] == "E-A0015-001" else "小區域有感地震"
+    desc = [e.get("ReportContent", ""), "",
+            f"🕐 {t}｜規模 **{mag}**｜深度 {info.get('FocalDepth')} 公里",
+            f"📍 {(info.get('Epicenter') or {}).get('Location', '').replace('  ', ' ')}",
+            f"🏠 你常去的地方：{'、'.join(mine) if mine else '沒有感覺（不在有感範圍）'}",
+            "", "震度 3 級以上會加粗｜資料：中央氣象署 地震報告（地震後約 5～10 分鐘發布）"]
+    emb = {"title": f"🌏 {kind}｜最大震度 {max(county.values(), key=lvl) if county else '—'}", "url": e.get("Web"),
+           "color": color, "description": "\n".join(desc)}
+    if e.get("ReportImageURI"):
+        emb["image"] = {"url": e["ReportImageURI"]}
+    return emb, max((lvl(county[c]) for c in MY_COUNTIES if c in county), default=0)
+
+
+def quake_main(state, hook, preview):
+    seen = state.setdefault("quake_seen", [])
+    first = not seen and not preview                 # 預覽模式：全部印出來看格式
+    try:
+        qs = quakes()
+    except Exception as ex:
+        print(f"::warning title=地震::讀不到地震報告：{ex}")
+        return
+    new = [e for e in sorted(qs, key=lambda e: e.get("EarthquakeInfo", {}).get("OriginTime", "")) if quake_id(e) not in seen]
+    sent = 0
+    for e in new:
+        seen.append(quake_id(e))
+        if first:                                    # 第一次跑：只記住現有的，不把舊地震全部發出來
+            continue
+        emb, mine = quake_embed(e)
+        if e["_ds"] == "E-A0016-001" and mine < QUAKE_SMALL_MIN:
+            continue                                 # 別的地方的小地震，不吵你
+        sent += 1
+        if preview:
+            print("::notice title=預覽 地震::" + json.dumps(emb, ensure_ascii=False)[:2500])
+        else:
+            call(hook, {"username": "Video Helper 地震", "embeds": [emb]})
+    state["quake_seen"] = seen[-60:]
+    latest = max(qs, key=lambda e: e.get("EarthquakeInfo", {}).get("OriginTime", ""), default=None)
+    if latest:                                       # 給即時介面：最近一次地震
+        emb, _ = quake_embed(latest)
+        state.setdefault("dash", {})["quake"] = {"title": emb["title"], "text": latest.get("ReportContent", ""),
+                                                  "url": latest.get("Web"), "time": latest["EarthquakeInfo"].get("OriginTime")}
+    print(f"::notice title=地震::報告 {len(qs)} 筆、新的 {len(new)} 筆、發出 {sent} 則" + ("（第一次跑，只記住不發）" if first else ""))
+
+
 def main(path):
     try:
         state = json.load(open(path, encoding="utf-8"))
@@ -298,6 +387,11 @@ def main(path):
     mode = os.environ.get("MODE", "check")
     hook = os.environ.get("DISCORD_WEATHER_WEBHOOK", "").strip()
     preview = os.environ.get("PREVIEW") == "true" or not hook
+    if mode == "quake":                              # 🌏 地震：鬧鐘每 5 分鐘叫一次，只看地震（很快）
+        quake_main(state, os.environ.get("DISCORD_QUAKE_WEBHOOK", "").strip() or hook, preview)
+        if not preview:
+            json.dump(state, open(path, "w", encoding="utf-8"), ensure_ascii=False)
+        return
     sp = spots_forecast()
     print("::notice title=氣象 地點::" + "｜".join(
         f"{l} " + ",".join(f"{b[0].hour:02d}:{b[2]}%" for b in v["blocks"][:4]) for l, v in sp.items()))

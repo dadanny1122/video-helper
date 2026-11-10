@@ -2,13 +2,14 @@ name: Weather to Discord
 
 # 中央氣象署 → Discord #每日氣象
 #   外部鬧鐘（cron-job.org）：每天 7:00 叫 mode=daily（🗓 降雨時間表＋全台總覽）；每小時叫 mode=check（⚡ 降雨突變提醒）
+#   每 5 分鐘叫 mode=quake（🌏 地震報告；有 DISCORD_QUAKE_WEBHOOK 就發到那個頻道，沒有就發在 #每日氣象）
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'daily＝每日時間表＋全台總覽；check＝降雨突變提醒'
+        description: 'daily＝每日時間表＋全台總覽；check＝降雨突變提醒；quake＝地震（鬧鐘每 5 分鐘）'
         type: choice
-        options: [check, daily, probe]
+        options: [check, daily, quake, probe]
         default: check
       preview:
         description: '只預覽（印在 Actions 頁面），不發到 Discord'
@@ -33,6 +34,7 @@ jobs:
         env:
           CWA_API_KEY: ${{ secrets.CWA_API_KEY }}
           DISCORD_WEATHER_WEBHOOK: ${{ secrets.DISCORD_WEATHER_WEBHOOK }}
+          DISCORD_QUAKE_WEBHOOK: ${{ secrets.DISCORD_QUAKE_WEBHOOK }}
           MODE: ${{ inputs.mode }}
           PREVIEW: ${{ inputs.preview }}
           PYTHONIOENCODING: utf-8
