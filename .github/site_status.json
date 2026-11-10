@@ -12,11 +12,11 @@
   "why": "伺服器：xnxx-cdn.com"
  },
  "YouPorn": {
-  "status": "ok",
-  "why": "有：['mediaDefinitions', 'mediaDefinition', 'playervars', 'videoUrl']｜伺服器：ypncdn.com"
+  "status": "blocked",
+  "why": "首頁找不到影片連結"
  },
  "RedTube": {
-  "status": "ok",
-  "why": "有：['mediaDefinitions', 'mediaDefinition', 'playervars', 'videoUrl']｜伺服器：rdtcdn.com"
+  "status": "blocked",
+  "why": "首頁找不到影片連結"
  }
 }
