@@ -1,0 +1,51 @@
+name: Life info (oil price, invoice)
+
+# ⛽ 中油油價（每週一生效）、🧾 統一發票中獎號碼（單數月 25 日 13:30 開獎）→ Discord
+# 每天早上 7 點多、下午 2 點多各看一次，有新的才發；遲到幾小時沒關係，所以用 GitHub 自己的排程
+on:
+  schedule:
+    - cron: '23 23 * * *'     # 台灣 07:23
+    - cron: '17 6 * * *'      # 台灣 14:17
+  workflow_dispatch:
+    inputs:
+      preview:
+        description: '只預覽（印在 Actions 頁面），不發到 Discord'
+        type: boolean
+        default: false
+      number:
+        description: '（測試用）對獎號碼'
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: life
+  cancel-in-progress: false
+
+jobs:
+  life:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Fetch and post
+        env:
+          DISCORD_LIFE_WEBHOOK: ${{ secrets.DISCORD_LIFE_WEBHOOK }}
+          DISCORD_WEATHER_WEBHOOK: ${{ secrets.DISCORD_WEATHER_WEBHOOK }}
+          PREVIEW: ${{ inputs.preview }}
+          TEST_NUMBER: ${{ inputs.number }}
+          PYTHONIOENCODING: utf-8
+        run: python3 .github/life_feed.py .github/life_state.json
+      - name: Remember
+        if: ${{ inputs.preview != true }}
+        run: |
+          [ -f .github/life_state.json ] || exit 0
+          git add .github/life_state.json
+          git diff --cached --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          git commit -m "記住最新油價和發票號碼"
+          for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 5; done
