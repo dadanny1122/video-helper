@@ -60,6 +60,12 @@ const COMMANDS = [
         choices: [{ name: '今天', value: '0' }, { name: '明天', value: '1' }, { name: '後天', value: '2' }] }] },
   { name: 'arena', name_localizations: { 'zh-TW': '擂台' }, type: 1,
     description: 'Which FX forecast method is most accurate', description_localizations: { 'zh-TW': '匯率預報擂台：哪種預報方法比較準（每週六更新）' } },
+  { name: 'invoice', name_localizations: { 'zh-TW': '對獎' }, type: 1,
+    description: 'Check a receipt lottery number', description_localizations: { 'zh-TW': '統一發票對獎（最近兩期）' },
+    options: [{ type: 3, name: 'number', name_localizations: { 'zh-TW': '號碼' }, description: '8-digit number',
+      description_localizations: { 'zh-TW': '發票號碼（8 碼數字，英文字母不用打；只打末 3 碼也可以先看）' }, required: true, min_length: 3, max_length: 12 }] },
+  { name: 'oil', name_localizations: { 'zh-TW': '油價' }, type: 1,
+    description: 'CPC fuel prices this week', description_localizations: { 'zh-TW': '這週中油油價、跟上週比' } },
   { name: 'status', name_localizations: { 'zh-TW': '狀態' }, type: 1,
     description: 'Are the bots running?', description_localizations: { 'zh-TW': '各個機器人有沒有正常在跑' } },
 ];
@@ -108,6 +114,44 @@ async function cmdRate(i) {
       `現金　買 ${rf(r.cash_buy)}／賣 ${rf(r.cash_sell)}\n即期　買 ${rf(r.spot_buy)}／賣 ${rf(r.spot_sell)}\n` +
       `💵 1 萬台幣換現鈔 → **${nf(got, DIG(c))} ${CCY[c]}**\n\n🏦 台銀掛牌：${d.quote_time || '—'}｜更新：${d.updated}\n` +
       `📎 [今日各時段牌價](https://rate.bot.com.tw/xrt/quote/day/${c})｜[🧮 計算機](${CALC})｜[📊 即時介面](${DASH})` });
+}
+
+// ---- /對獎、/油價（讀 .github/life_state.json）----
+const PRIZE = { 8: '頭獎 20 萬', 7: '二獎 4 萬', 6: '三獎 1 萬', 5: '四獎 4 千', 4: '五獎 1 千', 3: '六獎 200 元' };
+async function cmdInvoice(i) {
+  const num = String(opt(i, 'number') || '').replace(/\D/g, '');
+  if (num.length < 3) return reply({ title: '🧾 對獎', description: '請打發票號碼的數字（至少末 3 碼）' }, 64);
+  const d = await getJson('.github/life_state.json');
+  const periods = (d.invoice || []).slice(0, 2);                       // 能領的只有最近兩期
+  const lines = [];
+  for (const v of periods) {
+    let hit = '';
+    if (num.length === 8 && num === v.special) hit = '🏆 特別獎 1,000 萬！';
+    else if (num.length === 8 && num === v.grand) hit = '🥇 特獎 200 萬！';
+    else {
+      let best = 0;
+      for (const f of v.first) { let k = 0; while (k < Math.min(8, num.length) && num[num.length - 1 - k] === f[f.length - 1 - k]) k++; best = Math.max(best, k); }
+      if (best >= 3) hit = num.length < 8 && best === num.length ? `🎫 末 ${best} 碼有中（打完整 8 碼才知道是幾獎）` : `🎉 ${PRIZE[best]}`;
+      else if ((v.extra || []).includes(num.slice(-3))) hit = '🎉 增開六獎 200 元';
+      else if (num.length < 8 && (num === v.special.slice(-num.length) || num === v.grand.slice(-num.length)))
+        hit = '👀 末幾碼跟特別獎／特獎一樣，打完整 8 碼確認';
+    }
+    lines.push(`**${v.period}**：${hit || '沒有中'}`);
+  }
+  return reply({ title: `🧾 對獎：${num}`, url: periods[0] && periods[0].link,
+    description: lines.join('\n') + '\n\n只對最近兩期（還能領獎的）。中了記得在期限內兌獎！\n資料：財政部（每單數月 25 日開獎）' }, 64);   // 只有你看得到
+}
+
+async function cmdOil() {
+  const d = await getJson('.github/life_state.json');
+  const o = d.oil || {};
+  const rows = Object.entries(o.prices || {}).map(([n, p]) => {
+    const q = (o.prev || {})[n];
+    const diff = q == null ? '' : Math.abs(p - q) < 0.005 ? '　持平' : `　${p > q ? '🔺' : '🔻'} ${(p - q > 0 ? '+' : '') + (p - q).toFixed(1)}`;
+    return `${n.padEnd(6, '　')} ${p.toFixed(1)} 元${diff}`;
+  });
+  return reply({ title: `⛽ 中油油價（${o.date || '?'} 起）`, url: 'https://www.cpc.com.tw/historyprice.aspx?n=2890',
+    description: '```\n' + rows.join('\n') + '\n```每公升，中油直營站；跟上週比\n資料：台灣中油｜更新：' + (d.updated || '?') });
 }
 
 // ---- /擂台 ----
@@ -230,6 +274,8 @@ export default {
       if (i.type === 2 && i.data.name === 'rate') return await cmdRate(i);
       if (i.type === 2 && i.data.name === 'rank') return await cmdRank();
       if (i.type === 2 && i.data.name === 'arena') return await cmdArena();
+      if (i.type === 2 && i.data.name === 'invoice') return await cmdInvoice(i);
+      if (i.type === 2 && i.data.name === 'oil') return await cmdOil();
       if (i.type === 2 && i.data.name === 'status') return await cmdStatus(env);
       if (i.type === 2 && i.data.name === 'weather') return await cmdWeather(i);
     } catch (e) {
