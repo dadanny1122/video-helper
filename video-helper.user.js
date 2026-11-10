@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.18.3
+// @version      3.19.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -148,7 +148,8 @@
     },
   };
   const settings = store.get('settings', {});
-  const isOn = name => settings[name] !== false;   // 預設全部開啟
+  // 預設全部開啟；有標 defaultOff 的（老闆鍵、分頁偽裝）預設關閉，要自己打開
+  const isOn = name => (name in settings ? settings[name] !== false : !(MODULES[name] && MODULES[name].defaultOff));
 
   // ---- 網址判斷 ----
   const DANGER_EXT = /\.(exe|msi|apk|bat|cmd|scr|vbs|ps1|jar|dmg|pkg|com)$/i;
@@ -633,10 +634,10 @@
    * 第二層：網站轉接器
    * ================================================================== */
 
-  const ALL = ['security', 'saveData', 'autoSkip', 'videoStatus', 'estimator', 'listLabels', 'download'];
+  const ALL = ['security', 'saveData', 'autoSkip', 'videoStatus', 'estimator', 'listLabels', 'download', 'bossKey', 'disguise'];
 
   // 只擋廣告、不下載的網站共用的功能清單
-  const ADBLOCK_ONLY = ['security', 'saveData', 'hideAds', 'autoSkip', 'videoStatus', 'estimator', 'listLabels'];
+  const ADBLOCK_ONLY = ['security', 'saveData', 'hideAds', 'autoSkip', 'videoStatus', 'estimator', 'listLabels', 'bossKey', 'disguise'];
   const TUBE_LIMITS = ['不提供下載', '剛加入，還沒有這個網站專屬的擋廣告規則；有漏掉的廣告請回報'];
 
   const SITES = [
@@ -1064,6 +1065,7 @@
           if (nav) nav.addEventListener('navigate', e => {
             const url = e.destination && e.destination.url;
             if (!url || !e.cancelable) return;
+            if (shared.bossUrl && url === shared.bossUrl) return;   // 老闆鍵自己要跳的，放行
             if (isDangerous(url)) { e.preventDefault(); ui.report('擋下危險檔案下載', null); }
             else if (isAd(url) || (!e.userInitiated && isAdTarget(url))) { e.preventDefault(); ui.report('擋下自動跳轉', unwrap(url)); }
           });
@@ -1385,6 +1387,75 @@
     },
 
     /* ---------- 自動略過廣告 ---------- */
+    /* ---------- 老闆鍵：Esc 快速按兩下 → 靜音、暫停、跳到安全網頁 ----------
+     * 在影片播放器的 iframe 裡按也有效（early：每個 frame 都裝）
+     * 用 location.replace：按「上一頁」不會回到影片，直接回到更早的網頁 */
+    bossKey: {
+      label: '老闆鍵（Esc 快速按兩下：靜音、暫停、跳到安全網頁）',
+      defaultOff: true,
+      early: true,
+      run() {
+        const target = () => store.get('bossUrl', 'https://www.google.com/');
+        let last = 0;
+        const go = () => {
+          for (const v of document.querySelectorAll('video, audio')) { try { v.muted = true; v.pause(); } catch (e) {} }
+          try { document.title = ''; } catch (e) {}
+          const url = new URL(target()).href;
+          shared.bossUrl = url;                                    // 先報備，「擋自動跳轉」才不會攔下來
+          try { (IS_TOP ? location : window.top.location).replace(url); } catch (e) { location.replace(url); }
+        };
+        window.addEventListener('keydown', e => {
+          if (e.key !== 'Escape' || e.repeat) return;
+          const now = Date.now();
+          if (now - last < 450) { e.stopImmediatePropagation(); go(); }
+          last = now;
+        }, true);
+        if (IS_TOP) {
+          try {
+            gmMenu('🚨 老闆鍵要跳到的網頁…', () => {
+              const u = prompt('按兩下 Esc 要跳到哪個網頁？', target());
+              if (u && /^https?:\/\//.test(u.trim())) store.set('bossUrl', u.trim());
+            });
+          } catch (e) {}
+        }
+      },
+    },
+
+    /* ---------- 分頁偽裝：分頁標題、小圖示換成看起來像在寫文件 ---------- */
+    disguise: {
+      label: '分頁偽裝（標題、小圖示換成「未命名文件」）',
+      defaultOff: true,
+      early: true,
+      run() {
+        if (!IS_TOP) return;
+        const TITLE = '未命名文件';
+        const ICON = 'data:image/svg+xml,' + encodeURIComponent(
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3 1h7l3 3v11H3z" fill="#4285f4"/>' +
+          '<path d="M10 1v3h3" fill="#a1c2fa"/><path d="M5 7h6M5 9h6M5 11h4" stroke="#fff" stroke-width="1"/></svg>');
+        let busy = false;
+        const apply = () => {
+          if (busy) return;
+          busy = true;
+          try {
+            if (document.title !== TITLE) document.title = TITLE;
+            const head = document.head || document.documentElement;
+            for (const l of document.querySelectorAll('link[rel~="icon"]')) if (!l.dataset.vh) l.remove();
+            if (!document.querySelector('link[data-vh="icon"]') && head) {
+              const l = document.createElement('link');
+              l.rel = 'icon'; l.href = ICON; l.dataset.vh = 'icon';
+              head.appendChild(l);
+            }
+          } finally { busy = false; }
+        };
+        apply();
+        // 網站改標題或換小圖示就改回來（只在真的有變時才處理，不拖慢網頁）
+        new MutationObserver(ms => {
+          if (document.title !== TITLE || ms.some(m => [...m.addedNodes].some(n => n.nodeName === 'LINK' && !n.dataset.vh))) apply();
+        }).observe(document, { childList: true, subtree: true, characterData: true });   // 用 document：腳本啟動時網頁可能還沒建好
+        document.addEventListener('DOMContentLoaded', apply);
+      },
+    },
+
     autoSkip: {
       label: '自動略過影片前廣告',
       run() {
@@ -2403,7 +2474,11 @@
   }
 
   // 要早啟動的（安全防護）
-  for (const name of active) if (MODULES[name].early) MODULES[name].run();
+  // 每個都包起來：一個功能出錯，不會讓其他功能（例如安全防護）跟著停掉
+  for (const name of active) {
+    if (!MODULES[name].early) continue;
+    try { MODULES[name].run(); } catch (e) { console.warn('[Video Helper]', name, e); }
+  }
 
   // 網頁載入完成後啟動其他功能（只在主頁面）
   function startLate() {

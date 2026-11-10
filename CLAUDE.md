@@ -32,7 +32,8 @@
   - `ALL`＝全部功能含下載；`ADBLOCK_ONLY`＝只擋廣告（沒有下載）
   - 專屬規則（`rules`）：`hide`（藏元素）、`blockInlineScript`、`blockTimeout`、`blockListeners`、`renameKeys`、`setGlobals`、`pruneCallArgs`（網站呼叫播放器函式時刪掉設定裡的廣告清單，例：YouJizz 的 fluidPlayer vastOptions）；參考 uBlock Origin 規則庫用自己的程式重寫
   - `adPath`：網站自己網域上的廣告路徑；`ownDomains`：網站自己的影片伺服器（不要封鎖）
-- `MODULES`：功能本體（security、saveData、hideAds、autoSkip、videoStatus、estimator、listLabels、download）
+- `MODULES`：功能本體（security、saveData、hideAds、autoSkip、videoStatus、estimator、listLabels、download、bossKey、disguise）；`defaultOff: true` 的預設關閉（`isOn`）；early 模組每個都包 try（一個出錯不拖垮安全防護）
+  - v3.19.0 `bossKey`：Esc 450ms 內按兩下 → 靜音暫停、`location.replace(store bossUrl，預設 Google)`；先設 `shared.bossUrl`，security 的 navigate 攔截看到就放行；early＝iframe 裡也有效；gmMenu 可改網址。`disguise`：標題「未命名文件」＋SVG 文件圖示，MutationObserver 觀察 `document`（document-start 時 documentElement 還是 null）
 - 找影片：`findPhSources`（Pornhub：flashvars）、`findXvSources`（XVideos／XNXX：setVideoHLS）、`findAyloSources`（YouPorn／RedTube：mediaDefinitions）、`findYjSources`（YouJizz：dataEncodings）、`findSbSources`（SpankBang：stream_data，讀不到 → 交給電腦版）、Tube8 用 `findAyloSources`、`findXhSources`（xHamster：window.initials；網址被加密成 16 進位字，`xhDecodeHex` 解開＝第 1 位元組選算法 1～7、第 2～5 位元組是 seed、其餘 XOR，跟 yt-dlp 同法；網站換新算法時解不出來 → 退回「交給電腦版」）
 - **相容層**（v3.17.0）：不要直接呼叫 GM_xxx，一律用 `gmXhr`、`gmDownload`、`gmClip`、`gmMenu`、`gmGetValue`、`gmSetValue`、`gmInfo`（先用暴力猴的 GM_xxx → 沒有就用新式 GM.xxx → 再沒有就用 fetch／下載連結／navigator.clipboard 頂替），讓 iPhone Safari 的 Userscripts 等其他管理器也能跑
 - 「🖥 送到電腦版」：`sendToDesktop` → 電腦版 `127.0.0.1:47321～47325`，要先 6 位數配對；會一起送影片真正的位址（網站會擋程式開網頁，例如 Pornhub 回 410）
