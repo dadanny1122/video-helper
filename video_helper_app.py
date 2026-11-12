@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.21.1"
+VERSION = "1.22.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -569,6 +569,8 @@ def make_icon_image(size=64):
 
 WAITING, RUNNING, DONE, FAILED, CANCELLED = "等待中", "下載中", "完成", "失敗", "取消"
 PAUSED = "暫停"
+RETRY_WAIT = "等重試"          # 失敗了，但程式判斷可以自動重試，正在等時間到
+NEEDS_ACTION = "需要處理"      # 重試也沒用（影片被移除、要登入…），等使用者決定
 
 
 # ---- 重複偵測：同一支影片（不管網址後面多了什麼參數）算同一個 ----
@@ -636,7 +638,8 @@ class TaskQueue:
     def is_duplicate(self, url, height):
         """同一支影片（網址參數不同也算）、同一個畫質已經在排隊、下載中或暫停"""
         k = video_key(url)
-        return any(video_key(t["url"]) == k and t["fmt"]["height"] == height and t["status"] in (WAITING, RUNNING, PAUSED)
+        return any(video_key(t["url"]) == k and t["fmt"]["height"] == height
+                   and t["status"] in (WAITING, RUNNING, PAUSED, RETRY_WAIT)
                    for t in self.tasks)
 
     def remove(self, tid):
@@ -650,14 +653,24 @@ class TaskQueue:
     def retry_failed(self):
         n = 0
         for t in self.tasks:
-            if t["status"] == FAILED:
-                t.update(status=WAITING, progress=0, note="")
+            if t["status"] in (FAILED, NEEDS_ACTION):
+                t.update(status=WAITING, progress=0, note="", tries=0)
+                n += 1
+        return n
+
+    def due_retries(self, now=None):
+        """「等重試」時間到了 → 放回等待中；回傳放回幾個"""
+        now = now or time.time()
+        n = 0
+        for t in self.tasks:
+            if t["status"] == RETRY_WAIT and now >= t.get("retry_at", 0):
+                t["status"] = WAITING
                 n += 1
         return n
 
     def clear_finished(self):
         """清掉已結束的；暫停的留著（還要接著下載）"""
-        self.tasks = [t for t in self.tasks if t["status"] in (WAITING, RUNNING, PAUSED)]
+        self.tasks = [t for t in self.tasks if t["status"] in (WAITING, RUNNING, PAUSED, RETRY_WAIT)]
 
     def resume_paused(self):
         n = 0
@@ -1329,6 +1342,103 @@ def analyze_media(media, height=None):
 # ======================================================================
 # 下載（可取消）
 # ======================================================================
+
+# ======================================================================
+# 自動化核心：錯誤分類器＋自適應重試
+#   失敗時先弄清楚「是哪一種錯」，再決定要不要自動重試、等多久：
+#   ・429（太頻繁）／5xx（伺服器掛了）／斷線逾時 → 自動重試：等的時間一次比一次久（指數退避）
+#     並加一點隨機（抖動），避免大家同時重打；429 有 Retry-After 就照網站說的等
+#   ・403／404／網址錯 → 重試也沒用，標成「需要處理」，不盲目重打
+#   ・硬碟滿了 → 整個佇列暫停、保留已完成的，等使用者清出空間
+#   每個決定都寫進 decisions.jsonl（只記網站名稱，不記網址）
+# ======================================================================
+RETRY_MAX = 3                 # 可重試的錯誤最多自動重試幾次
+RETRY_CAP = 900               # 最長等 15 分鐘
+
+ERROR_RULES = (
+    # (代號, 比對規則, 顯示名稱, 能不能自動重試, 基本等待秒數, 給使用者的提示)
+    ("disk_full", r"no space left|errno 28|空間不足|disk full",
+     "硬碟空間不足", False, 0, "清出空間後按「▶ 繼續」"),
+    ("http_429", r"\b429\b|too many requests",
+     "請求太頻繁（429）", True, 90, ""),
+    ("http_403", r"\b40[13]\b|\b410\b|forbidden|login required|需要登入",
+     "網站拒絕存取（403）", False, 0, "可能是地區限制、要登入，或網站擋下載；稍後或換個網路再試"),
+    ("http_404", r"\b404\b|not found|video unavailable|content unavailable|has been removed|private video|已被移除|影片不存在",
+     "影片不存在（404）", False, 0, "影片可能被刪除或設為私人，確認網頁還開得開嗎"),
+    ("invalid_url", r"unsupported url|is not a valid url|不支援的網站|找不到影片",
+     "網址有問題", False, 0, "確認網址是支援的網站、開得出影片頁"),
+    ("http_5xx", r"\b50[0-4]\b|internal server error|bad gateway|service unavailable|gateway timeout",
+     "網站伺服器出錯（5xx）", True, 45, ""),
+    ("timeout", r"timed? ?out|逾時|timeout",
+     "連線逾時", True, 25, ""),
+    ("network", r"connection (reset|refused|aborted)|getaddrinfo|name resolution|network is unreachable|"
+                r"remote end closed|incomplete ?read|eof occurred|ssl|連不上",
+     "網路不穩", True, 25, ""),
+    ("ffmpeg", r"ffmpeg|轉檔",
+     "影片處理失敗", False, 0, "原始檔已保留；把錯誤日誌回報給作者"),
+)
+
+
+def classify_error(msg):
+    """錯誤訊息 → {kind, label, retry, base, hint}；認不出來的保守重試 1 次"""
+    low = str(msg).lower()
+    for kind, pat, label, retry, base, hint in ERROR_RULES:
+        if re.search(pat, low):
+            return {"kind": kind, "label": label, "retry": retry, "base": base, "hint": hint,
+                    "max": RETRY_MAX}
+    return {"kind": "unknown", "label": "不明錯誤", "retry": True, "base": 30, "hint": "", "max": 1}
+
+
+def retry_wait_seconds(info, tries, msg=""):
+    """第 tries 次重試要等幾秒：Retry-After 優先，否則 基本秒數 × 2^(次數-1) × 抖動"""
+    import random
+    m = re.search(r"retry[- ]after[:\s]+(\d+)", str(msg).lower())
+    if info["kind"] == "http_429" and m:
+        return min(RETRY_CAP, max(5, int(m.group(1)))) + random.uniform(0, 5)
+    return min(RETRY_CAP, info["base"] * 2 ** (max(0, tries - 1)) * random.uniform(0.8, 1.2))
+
+
+class NetHealth:
+    """整體網路健康：連續好幾個任務都因為網路掛掉 → 暫緩開始新任務（冷卻），成功一次就歸零"""
+    BAD_KINDS = ("timeout", "network", "http_5xx")
+
+    def __init__(self):
+        self.fails, self.hold_until = 0, 0.0
+
+    def ok(self):
+        self.fails, self.hold_until = 0, 0.0
+
+    def bad(self, kind):
+        if kind not in self.BAD_KINDS:
+            return 0
+        import random
+        self.fails += 1
+        if self.fails < 3:
+            return 0
+        hold = min(600, 60 * 2 ** (self.fails - 3)) * random.uniform(0.8, 1.2)
+        self.hold_until = time.time() + hold
+        return hold
+
+    def holding(self):
+        return max(0, self.hold_until - time.time())
+
+
+NET = NetHealth()
+
+
+def decision_log(**ev):
+    """自動決策的結構化紀錄（JSON，一行一筆；只記網站名稱，不記網址）"""
+    try:
+        p = os.path.join(data_dir(), "decisions.jsonl")
+        ev = {"time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), **ev}
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+        if os.path.getsize(p) > 400_000:               # 太大就留後半
+            lines = open(p, encoding="utf-8").read().splitlines()[-1500:]
+            open(p, "w", encoding="utf-8").write("\n".join(lines) + "\n")
+    except Exception:
+        pass
+
 
 class Paused(Exception):
     """按了「暫停」：停下來但保留已下載的部分，之後可以接著下載"""
@@ -2258,6 +2368,12 @@ class App:
                 getattr(self, "on_" + kind)(data)
         except queue.Empty:
             pass
+        self._tick = getattr(self, "_tick", 0) + 1
+        if self._tick % 10 == 0:                       # 約每 1 秒：把「等重試」時間到的放回佇列
+            if not self.queue_paused and self.queue.due_retries():
+                self.refresh_queue()
+            if not self.queue.running() and (self.queue.next_waiting() or None) is not None:
+                self.pump()
         self.root.after(100, self.poll)
 
     # ------------------------------------------------------------------
@@ -2418,7 +2534,7 @@ class App:
         paused = self.queue_paused or self.queue.count(PAUSED)
         self.btn_pause.config(text="▶ 繼續" if paused else "⏸ 暫停",
                               state="normal" if (paused or self.cancel_event or self.queue.count(WAITING)) else "disabled")
-        failed = self.queue.count(FAILED)
+        failed = self.queue.count(FAILED, NEEDS_ACTION)
         self.btn_retry.config(state="normal" if failed else "disabled")
         if failed and not self.btn_retry.winfo_manager():
             self.btn_retry.pack(side="left", padx=6)
@@ -2640,12 +2756,17 @@ class App:
         return t
 
     def pump(self):
-        """沒有東西在下載、又有人在排隊 → 開始下一個（按了暫停就不開始）"""
+        """沒有東西在下載、又有人在排隊 → 開始下一個（按了暫停、或網路連續出錯在冷卻中就不開始）"""
         if self.queue.running() or self.queue_paused:
             self.set_buttons()
             return
         t = self.queue.next_waiting()
         if not t:
+            self.set_buttons()
+            return
+        hold = NET.holding()
+        if hold > 0:
+            self.status.config(text=f"🌐 網路連續出錯，暫緩 {int(hold)} 秒再繼續（成功一次就恢復正常）")
             self.set_buttons()
             return
         t["status"] = RUNNING
@@ -2681,9 +2802,12 @@ class App:
     def refresh_queue(self):
         sel = self.qtree.selection()
         self.qtree.delete(*self.qtree.get_children())
-        icon = {WAITING: "⏳ 等待中", DONE: "✅ 完成", FAILED: "❌ 失敗", CANCELLED: "■ 取消", PAUSED: "⏸ 暫停"}
+        icon = {WAITING: "⏳ 等待中", DONE: "✅ 完成", FAILED: "❌ 失敗", CANCELLED: "■ 取消", PAUSED: "⏸ 暫停",
+                NEEDS_ACTION: "✋ 需要處理"}
         for t in self.queue.tasks:
             st = f"⬇ {t['progress']:.0f}%" if t["status"] == RUNNING else icon.get(t["status"], t["status"])
+            if t["status"] == RETRY_WAIT:
+                st = f"🔁 {max(0, int(t.get('retry_at', 0) - time.time()))} 秒後重試（{t.get('tries', 1)}/{RETRY_MAX}）"
             if t.get("note") and t["status"] == DONE:
                 st = "⚠ 完成（轉檔失敗）"
             self.qtree.insert("", "end", iid=str(t["id"]), values=(t["title"], quality_label(t["fmt"]["height"]), st))
@@ -2784,7 +2908,7 @@ class App:
         tid, text = data
         self.status.config(text=text)
 
-    def finish_task(self, tid, status, file=None, error=None):
+    def finish_task(self, tid, status, file=None, error=None, history_status=None):
         t = self.queue.get(tid)
         for rec in self.remote.values():           # 瀏覽器那邊查得到最後的結果
             if rec.get("task_id") == tid:
@@ -2795,14 +2919,15 @@ class App:
                 t["progress"] = 100
             if self.settings["keep_history"]:
                 self.history.add(title=t["title"], url=t["url"], height=t["fmt"]["height"],
-                                 status=status, file=file or "", size=t.get("size") or 0, error=error or "")
+                                 status=history_status or status, file=file or "", size=t.get("size") or 0,
+                                 error=error or "")
                 self.refresh_history()
         self.cancel_event = None
         self.worker = None
         self.refresh_queue()
         self.pump()                   # 換下一個
         self.set_buttons()
-        if self.is_hidden() and t and status in (DONE, FAILED) and not self.quitting:
+        if self.is_hidden() and t and status in (DONE, FAILED, NEEDS_ACTION) and not self.quitting:
             self.notify(("✅ 下載完成：" if status == DONE else "❌ 下載失敗：") + t["title"][:60])
             if not self.queue.running() and not self.queue.next_waiting():
                 self.notify("佇列裡的影片都處理完了")
@@ -2817,6 +2942,9 @@ class App:
             self.settings["mbps"] = self.mbps
             self.settings.save()
         t = self.queue.get(tid)
+        NET.ok()
+        if t:
+            t["tries"] = 0
         if t and warning:
             t["note"] = warning
         m = (t or {}).get("measured") or {}
@@ -2835,8 +2963,54 @@ class App:
 
     def on_download_error(self, data):
         tid, msg = data
-        self.status.config(text="❌ 下載失敗：" + msg[:160] + "　→ 可以按「↻ 重試失敗的」")
-        self.finish_task(tid, FAILED, error=msg[:500])
+        t = self.queue.get(tid)
+        info = classify_error(msg)
+        site = site_of(t["url"]) if t else "?"
+        hold = NET.bad(info["kind"])
+
+        # 硬碟滿了：整個佇列暫停、任務放回等待中，等使用者清空間
+        if info["kind"] == "disk_full":
+            if t:
+                t.update(status=WAITING, progress=0, note="")
+            self.queue_paused = True
+            self.cancel_event = None
+            self.worker = None
+            decision_log(site=site, kind=info["kind"], action="pause_queue")
+            self.status.config(text="💾 硬碟空間不足：佇列已暫停。清出空間後按「▶ 繼續」")
+            if self.is_hidden() and not self.quitting:
+                self.notify("💾 硬碟空間不足，下載已暫停")
+            self.refresh_queue()
+            self.set_buttons()
+            return
+
+        # 可自動重試：排進「等重試」，時間到自動繼續（指數退避＋抖動；429 照 Retry-After）
+        tries = (t.get("tries", 0) if t else 0) + 1
+        if t and info["retry"] and tries <= info["max"]:
+            wait = retry_wait_seconds(info, tries, msg)
+            t.update(status=RETRY_WAIT, tries=tries, retry_at=time.time() + wait,
+                     note=f"{info['label']}，{int(wait)} 秒後自動重試（第 {tries}/{info['max']} 次）")
+            decision_log(site=site, kind=info["kind"], action="retry", wait=round(wait), tries=tries,
+                         net_hold=round(hold))
+            self.status.config(text=f"🔁 {info['label']}：{int(wait)} 秒後自動重試（第 {tries}/{info['max']} 次）")
+            self.cancel_event = None
+            self.worker = None
+            self.refresh_queue()
+            self.pump()                                 # 這個在等，先下載下一個
+            self.set_buttons()
+            return
+
+        # 重試也沒用（403／404／網址錯…）→ 需要處理；重試次數用完 → 失敗
+        if not info["retry"] and info["kind"] != "unknown":
+            decision_log(site=site, kind=info["kind"], action="needs_user")
+            note = f"{info['label']}。{info['hint']}"
+            self.status.config(text=f"✋ {note}")
+            if t:
+                t["note"] = note
+            self.finish_task(tid, NEEDS_ACTION, error=f"{info['label']}：{msg[:300]}", history_status=FAILED)
+            return
+        decision_log(site=site, kind=info["kind"], action="give_up", tries=tries - 1)
+        self.status.config(text=f"❌ {info['label']}：自動重試 {tries - 1} 次都失敗　→ 可以按「↻ 重試失敗的」")
+        self.finish_task(tid, FAILED, error=f"{info['label']}（自動重試 {tries - 1} 次）：{msg[:300]}")
 
     # ----- 瀏覽器連動 -----
 

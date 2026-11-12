@@ -60,9 +60,15 @@ fmts = [{"id": h, "height": h, "size": h * 100000, "exact": False, "audio": True
         for h in (1080, 720, 480)]
 def fake_analyze(url):
     return (url, 634, fmts, 20.0)
+fail_counts = {}
 def fake_download(url, fmt, out, on_progress=None, on_stage=None, cancel_event=None, name_template=None, stats=None, keep_partials=None):
     if url.startswith("fail"):
         raise RuntimeError("HTTP 404")
+    if url.startswith("f429") or url.startswith("fdisk"):          # 第一次失敗、第二次成功（測自動重試）
+        fail_counts[url] = fail_counts.get(url, 0) + 1
+        if fail_counts[url] == 1:
+            raise RuntimeError("HTTP Error 429: Too Many Requests; Retry-After: 1" if url.startswith("f429")
+                               else "[Errno 28] No space left on device")
     if url.startswith("slow"):
         while not cancel_event.is_set():
             on_progress(1, 10, 1e6, 5); time.sleep(0.05)
@@ -89,14 +95,15 @@ wait(lambda: t_slow["status"] == a.RUNNING)
 assert str(app.btn_cancel["state"]) == "normal", "下載中取消按鈕應該可以按"
 app.cancel_event.set()
 wait(lambda: t_slow["status"] == a.CANCELLED)
-assert [t["status"] for t in (t_ok, t_fail, t_slow)] == [a.DONE, a.FAILED, a.CANCELLED], "佇列狀態不對"
+assert [t["status"] for t in (t_ok, t_fail, t_slow)] == [a.DONE, a.NEEDS_ACTION, a.CANCELLED], \
+    "佇列狀態不對（404 應該是「需要處理」，不是傻傻重試）"
 assert str(app.btn_retry["state"]) == "normal", "有失敗的應該可以重試"
 assert app.btn_retry.winfo_manager() == "pack", "有失敗的應該出現「重試」按鈕"
 assert [x["status"] for x in app.history.items] == ["取消", "失敗", "完成"], "下載紀錄不對"
 assert len(app.qtree.get_children()) == 3 and len(app.htree.get_children()) == 3, "表格沒有顯示"
 
 app.retry()
-wait(lambda: t_fail["status"] == a.FAILED and app.cancel_event is None)
+wait(lambda: t_fail["status"] == a.NEEDS_ACTION and app.cancel_event is None)
 
 # 4. 一次加入多個網址
 app.start_batch(["okA", "okB"])
@@ -320,6 +327,21 @@ app.sub_win.destroy(); r.update()
 open(_v1[:-4] + ".srt", "w").write("1")
 assert a.has_subtitles(_v1) and not a.has_subtitles(_v2)
 print("::notice title=v1.21::AI 字幕視窗（單部、多選 2 部）、有沒有字幕的判斷 OK")
+
+# 7e. 自動化核心：429 自動重試（照 Retry-After）、磁碟滿 → 佇列暫停
+t429 = app.enqueue(mk("f429-auto"))
+wait(lambda: t429["status"] == a.RETRY_WAIT)
+assert t429["tries"] == 1 and 0 < t429["retry_at"] - time.time() < 10, "429 應該照 Retry-After 排 1～6 秒後重試"
+wait(lambda: t429["status"] == a.DONE, sec=20)                     # 時間到自動重試 → 成功
+assert t429["tries"] == 0, "成功後重試次數應該歸零"
+t_disk = app.enqueue(mk("fdisk-full"))
+wait(lambda: app.queue_paused and t_disk["status"] == a.WAITING)   # 磁碟滿：佇列暫停、任務留著
+app.toggle_pause()                                                  # 假裝清出空間 → 繼續
+wait(lambda: t_disk["status"] == a.DONE, sec=20)
+import json as _json
+_dec = [_json.loads(x) for x in open(os.path.join(a.data_dir(), "decisions.jsonl"), encoding="utf-8").read().splitlines()]
+assert [x["action"] for x in _dec[-4:]].count("retry") >= 1 and any(x["action"] == "pause_queue" for x in _dec), _dec[-4:]
+print("::notice title=自動化核心::404→需要處理、429→自動重試成功、磁碟滿→暫停佇列、決策日誌 OK")
 
 # 8. 系統匣：關視窗 → 縮到系統匣 → 從系統匣打開 → 結束
 assert a.pystray is not None, "pystray 沒有裝進去"
