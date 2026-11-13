@@ -36,7 +36,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
-from datetime import datetime
+from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.23.0"
+VERSION = "1.24.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -154,6 +154,8 @@ DEFAULT_SETTINGS = {
     "default_quality": "最高",
     "rate_limit_mbps": 0,             # 下載速度上限（Mbps），0＝不限制
     "skip_downloaded": True,          # 批次、瀏覽器送來的：下載過（檔案還在）就跳過
+    "smart_segments": "observe",      # 智慧分段：auto＝自動調整／observe＝只觀察（記錄建議、照舊 6 段）／off＝關閉
+    "seg_state": {},                  # 每個網站的分段狀態：網站 → {"level", "stable", "hold"}
     "keep_history": True,
     "keep_stats": True,               # 記錄下載統計（只存數字和網站名稱）
     "filename_template": DEFAULT_TEMPLATE,
@@ -629,8 +631,9 @@ class TaskQueue:
     def running(self):
         return next((t for t in self.tasks if t["status"] == RUNNING), None)
 
-    def next_waiting(self):
-        return next((t for t in self.tasks if t["status"] == WAITING), None)
+    def next_waiting(self, skip=None):
+        """下一個等待中的；skip(task) 回傳 True 的先跳過（例如網站在冷卻）"""
+        return next((t for t in self.tasks if t["status"] == WAITING and not (skip and skip(t))), None)
 
     def count(self, *statuses):
         return sum(t["status"] in statuses for t in self.tasks)
@@ -1402,31 +1405,232 @@ def retry_wait_seconds(info, tries, msg=""):
 
 
 class NetHealth:
-    """整體網路健康：連續好幾個任務都因為網路掛掉 → 暫緩開始新任務（冷卻），成功一次就歸零"""
+    """
+    整體網路健康：連續好幾個任務都因為網路掛掉 → 暫緩開始新任務（冷卻），成功一次就歸零
+    v1.24.0：有給網站名稱時，要「兩個以上不同網站」最近 10 分鐘都出錯，才算整體網路有問題；
+    只有一個網站出錯 → 交給 HOSTS 只冷卻那個網站，其他網站照常下載
+    """
     BAD_KINDS = ("timeout", "network", "http_5xx")
+    NET_KINDS = ("timeout", "network")             # 5xx 是網站自己壞掉，不算整體網路
+    WINDOW = 600
 
     def __init__(self):
-        self.fails, self.hold_until = 0, 0.0
+        self.fails, self.hold_until, self.recent = 0, 0.0, []
 
     def ok(self):
-        self.fails, self.hold_until = 0, 0.0
+        self.fails, self.hold_until, self.recent = 0, 0.0, []
 
-    def bad(self, kind):
+    def bad(self, kind, site=None):
         if kind not in self.BAD_KINDS:
             return 0
         import random
+        now = time.time()
+        if site is not None:
+            if kind not in self.NET_KINDS:
+                return 0
+            self.recent = [(t, s) for t, s in self.recent if now - t < self.WINDOW] + [(now, site)]
+            if len({s for _, s in self.recent}) < 2:
+                return 0
         self.fails += 1
         if self.fails < 3:
             return 0
         hold = min(600, 60 * 2 ** (self.fails - 3)) * random.uniform(0.8, 1.2)
-        self.hold_until = time.time() + hold
+        self.hold_until = now + hold
         return hold
 
     def holding(self):
         return max(0, self.hold_until - time.time())
 
 
+class HostHealth:
+    """
+    各網站自己的健康：429（太頻繁）照網站說的時間冷卻；5xx／逾時／斷線連續 3 次 → 冷卻那個網站
+    冷卻中的網站，後面排隊的任務先跳過，先下載其他網站的
+    """
+
+    def __init__(self):
+        self.h = {}                                 # 網站 → {"fails", "until", "why"}
+
+    def _get(self, site):
+        return self.h.setdefault(site, {"fails": 0, "until": 0.0, "why": ""})
+
+    def ok(self, site):
+        self.h.pop(site, None)
+
+    def bad(self, site, kind, wait=0):
+        """回傳這個網站要冷卻幾秒（0＝不用）"""
+        import random
+        st = self._get(site)
+        if kind == "http_429":                      # 網站叫我們慢一點：整個網站都等（不能用多開連線硬衝）
+            st["until"], st["why"] = max(st["until"], time.time() + wait), "請求太頻繁（429）"
+            return wait
+        if kind not in NetHealth.BAD_KINDS:
+            return 0
+        st["fails"] += 1
+        if st["fails"] < 3:
+            return 0
+        hold = min(600, 60 * 2 ** (st["fails"] - 3)) * random.uniform(0.8, 1.2)
+        st["until"], st["why"] = time.time() + hold, "連續出錯"
+        return hold
+
+    def cooling(self, site):
+        st = self.h.get(site)
+        return max(0, st["until"] - time.time()) if st else 0
+
+
+HOSTS = HostHealth()
+
+
 NET = NetHealth()
+
+
+# ======================================================================
+# 智慧下載決策（v1.24.0）：看下載過程的實際狀況，決定「下一個任務」分幾段
+#   ・分類器回答「發生什麼事」（classify_error）；這裡回答「下一步怎麼做」
+#   ・只改下一個任務，不動正在下載的（續傳不會壞）
+#   ・速度用 EWMA 平滑：S = αX + (1−α)S，α＝0.25；至少 5 個樣本才看趨勢
+#   ・降級：一個任務裡分段出錯 ≥ 2 次 → 降一級；整個任務因逾時／斷線失敗 → 降兩級
+#   ・升級：累積 3 個「30 秒都沒出錯」的穩定時段才升一級；剛改過要先等 2 個任務（防來回跳）
+#   ・429／403／404 是網站的事，不改分段；網站不支援分段 → 本來就會改一般下載
+#   ・模式：auto 自動調整／observe 只觀察（照舊 6 段，只記錄「如果是自動會怎麼做」）／off 關閉
+# ======================================================================
+SEG_LEVELS = (1, 2, 4, 6)
+EWMA_ALPHA = 0.25
+TREND_MIN_SAMPLES = 5
+SAMPLE_EVERY = 3              # 每 3 秒取一個速度樣本
+STABLE_WINDOW = 30            # 30 秒一個觀察時段
+SEG_DOWN_ERRORS = 2
+SEG_UP_WINDOWS = 3
+SEG_HOLD_TASKS = 2
+SMART_MODES = {"只觀察（記錄建議，照舊 6 段）": "observe", "自動調整": "auto", "關閉（固定 6 段）": "off"}
+
+
+class Telemetry:
+    """一個任務的下載觀察值：速度樣本、EWMA、分段出錯／逾時次數、穩定時段"""
+
+    def __init__(self, parts=0):
+        self.parts, self.samples, self.ewma = parts, 0, None
+        self.seg_errors, self.seg_timeouts, self.http_status, self.no_range = 0, 0, None, False
+        self.stable_windows, self._t, self._w, self._werr = 0, 0.0, None, 0
+        self.lock = threading.Lock()
+
+    def speed(self, bps, now=None):
+        """收一個速度（位元組／秒）；太密就跳過"""
+        now = now or time.time()
+        if bps is None or now - self._t < SAMPLE_EVERY:
+            return
+        with self.lock:
+            self._t = now
+            x = bps * 8 / 1e6
+            self.ewma = x if self.ewma is None else EWMA_ALPHA * x + (1 - EWMA_ALPHA) * self.ewma
+            self.samples += 1
+            if self._w is None:                     # 第一個樣本：開始第一個時段
+                self._w = now
+            elif now - self._w >= STABLE_WINDOW:      # 一個時段結束：這 30 秒都沒出錯就算穩定
+                if self.seg_errors == self._werr:
+                    self.stable_windows += 1
+                self._w, self._werr = now, self.seg_errors
+
+    def error(self, e):
+        with self.lock:
+            self.seg_errors += 1
+            if re.search(r"timed? ?out|逾時", str(e).lower()):
+                self.seg_timeouts += 1
+            code = getattr(e, "code", None)
+            if isinstance(code, int):
+                self.http_status = code
+
+    def summary(self):
+        return {"parts": self.parts, "samples": self.samples,
+                "speed_ewma_mbps": round(self.ewma, 2) if self.ewma is not None else None,
+                "seg_errors": self.seg_errors, "seg_timeouts": self.seg_timeouts,
+                "http_status": self.http_status, "no_range": self.no_range, "stable_windows": self.stable_windows}
+
+
+class SegmentController:
+    """每個網站一份分段狀態；回傳下一個任務該分幾段"""
+
+    def __init__(self, state=None):
+        self.state = state if state is not None else {}
+
+    def _st(self, site):
+        st = self.state.get(site)
+        if not isinstance(st, dict) or st.get("level") not in range(len(SEG_LEVELS)):
+            st = self.state[site] = {"level": len(SEG_LEVELS) - 1, "stable": 0, "hold": 0}
+        return st
+
+    def suggest(self, site):
+        return SEG_LEVELS[self._st(site)["level"]]
+
+    def learn(self, site, tele, kind=None):
+        """
+        任務結束時呼叫。tele：Telemetry.summary()；kind：失敗的錯誤種類（成功＝None）
+        回傳 (decision, reason, before, after)；decision＝keep／reduce／increase
+        """
+        st = self._st(site)
+        before = st["level"]
+        if st["hold"] > 0:
+            st["hold"] -= 1
+        decision, reason = "keep", "stable"
+        if kind in ("http_429", "http_403", "http_404", "invalid_url", "disk_full"):
+            reason = "server_or_local"              # 網站限流／拒絕、本機問題：不是分段的錯，不改
+        elif tele.get("no_range"):
+            reason = "no_range"
+        elif kind in ("timeout", "network"):
+            st["level"], st["stable"], decision, reason = max(0, before - 2), 0, "reduce", "task_failed_" + kind
+        elif tele.get("seg_errors", 0) >= SEG_DOWN_ERRORS:
+            st["level"], st["stable"] = max(0, before - 1), 0
+            decision, reason = "reduce", "repeated_timeout" if tele.get("seg_timeouts", 0) >= SEG_DOWN_ERRORS else "segment_errors"
+        elif tele.get("seg_errors", 0) == 0 and tele.get("samples", 0) >= TREND_MIN_SAMPLES:
+            st["stable"] += tele.get("stable_windows", 0)
+            if st["stable"] >= SEG_UP_WINDOWS and before < len(SEG_LEVELS) - 1 and st["hold"] == 0:
+                st["level"], st["stable"], decision, reason = before + 1, 0, "increase", "stable_windows"
+        elif tele.get("samples", 0) < TREND_MIN_SAMPLES:
+            reason = "few_samples"
+        if st["level"] == before and decision != "keep":
+            decision = "keep"                       # 已經在最低／最高了
+        if st["level"] != before:
+            st["hold"] = SEG_HOLD_TASKS
+        return decision, reason, SEG_LEVELS[before], SEG_LEVELS[st["level"]]
+
+
+def smart_report(path=None, days=30):
+    """讀 decisions.jsonl，比較「固定分段」和「自動調整」：成功率、平均速度、平均重試、調整次數"""
+    path = path or os.path.join(data_dir(), "decisions.jsonl")
+    try:
+        rows = [json.loads(x) for x in open(path, encoding="utf-8").read().splitlines() if x.strip()]
+    except Exception:
+        rows = []
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    rows = [r for r in rows if str(r.get("time", "")) >= since]
+    res = [r for r in rows if r.get("action") == "task_result"]
+    out = [f"最近 {days} 天：完成或失敗的任務 {len(res)} 個"]
+    for mode, name in (("fixed", "固定 6 段（基準）"), ("auto", "自動調整")):
+        g = [r for r in res if r.get("mode") == mode]
+        if not g:
+            out.append(f"・{name}：還沒有資料")
+            continue
+        ok = [r for r in g if r.get("result") == "success"]
+        sp = [r["mbps"] for r in ok if r.get("mbps")]
+        out.append(f"・{name}：{len(g)} 個，成功 {len(ok) / len(g):.0%}，平均速度 "
+                   + (f"{sum(sp) / len(sp):.1f} Mbps" if sp else "—")
+                   + f"，平均重試 {sum(r.get('tries', 0) for r in g) / len(g):.2f} 次")
+    seg = [r for r in rows if r.get("action") == "segments" and r.get("decision") != "keep"]
+    auto = [r for r in seg if r.get("applied")]
+    out.append(f"・分段調整：實際調整 {len(auto)} 次，只觀察的建議 {len(seg) - len(auto)} 次")
+    for r in seg[-5:]:
+        out.append(f"　{r['time'][5:16]} {r.get('site')}：{r.get('segment_count_before')} → "
+                   f"{r.get('segment_count_after')} 段（{SEG_REASONS.get(r.get('reason'), r.get('reason'))}）"
+                   + ("" if r.get("applied") else "［只觀察］"))
+    cool = [r for r in rows if r.get("action") == "host_cooldown"]
+    if cool:
+        out.append(f"・網站冷卻 {len(cool)} 次（只停那個網站，其他網站照常下載）")
+    out.append("\n兩種模式各有 10 個以上任務、在差不多的網路下比較，才看得出自動調整有沒有比較好。")
+    return "\n".join(out)
+
+
+SEG_REASONS = {"repeated_timeout": "分段一直逾時", "segment_errors": "分段一直出錯", "stable_windows": "連續穩定",
+               "task_failed_timeout": "整個任務逾時", "task_failed_network": "整個任務斷線"}
 
 
 def decision_log(**ev):
@@ -1523,18 +1727,24 @@ def _probe_size(url, headers):
 
 
 def parallel_download(url, headers, dest, parts=PARALLEL_PARTS, on_progress=None, cancel_event=None,
-                      touched=None, keep_partials=None):
+                      touched=None, keep_partials=None, tele=None):
     """
     把一個檔案切成幾段同時下載，再接回去（內容跟一條線下載的一模一樣）。
     成功回傳 {"bytes", "start", "end"}；伺服器不支援分段就回傳 None（改用一般下載）。
     取消會丟出 Cancelled；某一段一直失敗會丟出例外。
     """
+    if parts <= 1:                                   # 智慧分段決定只用 1 段 → 直接用一般下載
+        return None
     try:
         total = _probe_size(url, headers)
     except Exception as e:
         log.info("分段下載：問不到檔案大小，改用一般下載（%s）", e)
+        if tele is not None:
+            tele.no_range = True
         return None
     if total < PARALLEL_MIN_BYTES:
+        if tele is not None and not total:
+            tele.no_range = True
         return None
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
     step = -(-total // parts)
@@ -1566,10 +1776,13 @@ def parallel_download(url, headers, dest, parts=PARALLEL_PARTS, on_progress=None
     lock = threading.Lock()
     errors = []
     start = time.time()
-    last = {"t": 0}
+    last = {"t": 0, "st": start, "sd": resumed}
 
     def report():
         now = time.time()
+        if tele is not None and now - last["st"] >= SAMPLE_EVERY:      # 這 3 秒的速度（不是平均）
+            tele.speed((sum(got) - last["sd"]) / (now - last["st"]), now)
+            last["st"], last["sd"] = now, sum(got)
         if not on_progress or now - last["t"] < 0.25:
             return
         last["t"] = now
@@ -1608,6 +1821,8 @@ def parallel_download(url, headers, dest, parts=PARALLEL_PARTS, on_progress=None
                     tries = 0
                 except Exception as e:
                     tries += 1
+                    if tele is not None:
+                        tele.error(e)
                     if tries > 8:
                         errors.append(e)
                         return
@@ -1663,6 +1878,7 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
     keep_partials：停下來時呼叫；回傳 True（暫停）就保留已下載的部分、丟出 Paused，下次接著下載
     """
     touched = set()          # 這次下載碰過的檔案（取消時要清掉）
+    tele = None              # 下面設定好再換成 Telemetry（hook 先看到 None 沒關係）
     final = {"path": None}
     sizes = {}               # 每個檔案下載了多少（影像和聲音可能是分開的兩個檔）
     clock = {"start": None, "end": None}
@@ -1681,6 +1897,8 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
             got = d.get("total_bytes") if d["status"] == "finished" else d.get("downloaded_bytes")
             if got:
                 sizes[fn] = max(sizes.get(fn, 0), got)
+        if d["status"] == "downloading" and tele is not None:
+            tele.speed(d.get("speed"))
         if d["status"] == "downloading" and on_progress:
             total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
             on_progress(d.get("downloaded_bytes", 0), total, d.get("speed"), d.get("eta"))
@@ -1721,8 +1939,12 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
         opts["postprocessors"] = [{"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"}]
     if THROTTLE.bps:
         opts["ratelimit"] = THROTTLE.bps                    # 速度上限（yt-dlp 自己下載的部分）
+    parts = int((stats or {}).get("parts") or PARALLEL_PARTS)   # 智慧分段決定的段數（App 放進 stats）
+    tele = Telemetry(parts)
+    opts["concurrent_fragment_downloads"] = parts            # 切片影片：同時抓幾片也照這個
     if stats is not None:
         stats["touched"] = touched                          # 暫停的話，App 要知道留下哪些檔案
+        stats["tele"] = tele
 
     media = fmt.get("media")
     if media:
@@ -1750,9 +1972,9 @@ def run_download(url, fmt, out_dir, on_progress=None, on_stage=None, cancel_even
             if parallel_ok(info):
                 path = ydl.prepare_filename(info)
                 touched.add(path)
-                done = parallel_download(info["url"], {**(info.get("http_headers") or {})}, path,
+                done = parallel_download(info["url"], {**(info.get("http_headers") or {})}, path, parts=parts,
                                          on_progress=on_progress, cancel_event=cancel_event,
-                                         touched=touched, keep_partials=keep_partials)
+                                         touched=touched, keep_partials=keep_partials, tele=tele)
                 if done:
                     clock["start"], clock["end"] = done["start"], done["end"]
                     sizes[path] = done["bytes"]
@@ -2321,6 +2543,8 @@ class App:
         self.analyze_fn = analyze_url
         self.analyze_media_fn = analyze_media
         self.download_fn = run_download
+        self.settings["seg_state"] = dict(self.settings["seg_state"] or {})   # 不要改到預設值那份
+        self.segments = SegmentController(self.settings["seg_state"])   # 直接改設定裡那份，存設定就一起存
         # 瀏覽器連動
         self.remote = {}               # 配對的瀏覽器送來的任務：ticket → 狀態
         self.last_clip = ""
@@ -2763,8 +2987,13 @@ class App:
         if self.queue.running() or self.queue_paused:
             self.set_buttons()
             return
-        t = self.queue.next_waiting()
+        t = self.queue.next_waiting(skip=lambda x: HOSTS.cooling(site_of(x["url"])) > 0)
         if not t:
+            cool = [x for x in self.queue.tasks if x["status"] == WAITING]
+            if cool:                                    # 有人在排隊，但他們的網站都在冷卻
+                s0 = site_of(cool[0]["url"])
+                self.status.config(text=f"🧊 {s0} 冷卻中（{HOSTS.h.get(s0, {}).get('why', '')}），"
+                                        f"{int(HOSTS.cooling(s0))} 秒後再下載這個網站")
             self.set_buttons()
             return
         hold = NET.holding()
@@ -2784,7 +3013,11 @@ class App:
 
     def _download_worker(self, task, cancel_event):
         tid = task["id"]
-        measured = {}
+        mode = self.settings["smart_segments"]
+        site = site_of(task["url"])
+        parts = self.segments.suggest(site) if mode == "auto" else PARALLEL_PARTS
+        measured = {"parts": parts}
+        task["seg"] = {"mode": "auto" if mode == "auto" else "fixed", "parts": parts}
         try:
             result = self.download_fn(task["url"], task["fmt"], task["out"],
                                       on_progress=lambda *a: self.q.put(("progress", (tid,) + a)),
@@ -2800,6 +3033,7 @@ class App:
         except Cancelled:
             self.q.put(("cancelled", tid))
         except Exception as e:
+            task["measured"] = measured
             self.q.put(("download_error", (tid, f"{e}")))
 
     def refresh_queue(self):
@@ -2947,6 +3181,8 @@ class App:
         t = self.queue.get(tid)
         NET.ok()
         if t:
+            HOSTS.ok(site_of(t["url"]))
+            self.smart_learn(t, None)
             t["tries"] = 0
         if t and warning:
             t["note"] = warning
@@ -2964,12 +3200,35 @@ class App:
         self.status.config(text="已取消，殘留的暫存檔已清除")
         self.finish_task(tid, CANCELLED)
 
+    def smart_learn(self, t, kind):
+        """任務結束（成功或失敗）：記錄結果、讓分段控制器學習下一個任務要分幾段"""
+        m = t.get("measured") or {}
+        tele = m.get("tele")
+        tele = tele.summary() if isinstance(tele, Telemetry) else {}
+        seg = t.get("seg") or {"mode": "fixed", "parts": PARALLEL_PARTS}
+        site = site_of(t["url"])
+        mbps = round(m["bytes"] * 8 / m["seconds"] / 1e6, 2) if m.get("bytes") and m.get("seconds") else None
+        decision_log(site=site, action="task_result", mode=seg["mode"], parts=seg["parts"], result="success" if kind is None else "fail",
+                     kind=kind, mbps=mbps, tries=t.get("tries", 0), **{k: tele.get(k) for k in ("speed_ewma_mbps", "seg_errors", "seg_timeouts")})
+        mode = self.settings["smart_segments"]
+        if mode == "off" or not tele:
+            return
+        decision, reason, before, after = self.segments.learn(site, tele, kind)
+        if decision != "keep":
+            decision_log(site=site, action="segments", applied=mode == "auto", speed_ewma_mbps=tele.get("speed_ewma_mbps"),
+                         segment_count_before=before, decision=decision + "_segments", segment_count_after=after, reason=reason,
+                         result="success" if kind is None else "fail")
+            log.info("智慧分段（%s）：%s %d → %d 段（%s）", "自動" if mode == "auto" else "只觀察", site, before, after, reason)
+        self.settings.save()
+
     def on_download_error(self, data):
         tid, msg = data
         t = self.queue.get(tid)
         info = classify_error(msg)
         site = site_of(t["url"]) if t else "?"
-        hold = NET.bad(info["kind"])
+        hold = NET.bad(info["kind"], site)
+        if t:
+            self.smart_learn(t, info["kind"])
 
         # 硬碟滿了：整個佇列暫停、任務放回等待中，等使用者清空間
         if info["kind"] == "disk_full":
@@ -2990,6 +3249,9 @@ class App:
         tries = (t.get("tries", 0) if t else 0) + 1
         if t and info["retry"] and tries <= info["max"]:
             wait = retry_wait_seconds(info, tries, msg)
+            cool = HOSTS.bad(site, info["kind"], wait)     # 只冷卻這個網站，其他網站照常
+            if cool:
+                decision_log(site=site, kind=info["kind"], action="host_cooldown", wait=round(cool))
             t.update(status=RETRY_WAIT, tries=tries, retry_at=time.time() + wait,
                      note=f"{info['label']}，{int(wait)} 秒後自動重試（第 {tries}/{info['max']} 次）")
             decision_log(site=site, kind=info["kind"], action="retry", wait=round(wait), tries=tries,
@@ -3794,6 +4056,18 @@ class App:
         ttk.Checkbutton(f, text="批次、瀏覽器送來的影片：下載過（檔案還在）就自動跳過", variable=self.skip_var,
                         command=lambda: (self.settings.__setitem__("skip_downloaded", bool(self.skip_var.get())),
                                          self.settings.save())).grid(row=3, column=0, columnspan=3, sticky="w", pady=2)
+        ttk.Label(f, text="智慧分段：").grid(row=4, column=0, sticky="w", pady=4)
+        self.smart_var = tk.StringVar(value=next((k for k, v in SMART_MODES.items() if v == self.settings["smart_segments"]),
+                                                 next(iter(SMART_MODES))))
+        sm = ttk.Combobox(f, textvariable=self.smart_var, values=list(SMART_MODES), state="readonly", width=26)
+        sm.grid(row=4, column=1, sticky="w", padx=6)
+        sm.bind("<<ComboboxSelected>>", lambda e: (self.settings.__setitem__("smart_segments", SMART_MODES[self.smart_var.get()]),
+                                                   self.settings.save()))
+        ttk.Button(f, text="📊 報告", command=lambda: messagebox.showinfo("智慧分段報告", smart_report())).grid(row=4, column=2)
+        ttk.Label(f, foreground="#555", wraplength=520, justify="left",
+                  text="看下載時的速度和出錯情況，決定下一部影片同時開幾條線（1／2／4／6）。"
+                       "網路不穩時開少一點反而比較快；先用「只觀察」累積紀錄，報告看得出有幫助再改「自動調整」。").grid(
+            row=5, column=0, columnspan=3, sticky="w")
 
         # --- 瀏覽器連動 ---
         c = box("瀏覽器連動（在影片網頁按「🖥 送到電腦版」）")
@@ -4019,6 +4293,9 @@ class App:
         self.q_var.set(self.settings["default_quality"])
         self.rate_var.set(str(self.settings["rate_limit_mbps"] or "不限制"))
         self.skip_var.set(bool(self.settings["skip_downloaded"]))
+        self.smart_var.set(next((k for k, v in SMART_MODES.items() if v == self.settings["smart_segments"]), next(iter(SMART_MODES))))
+        self.settings["seg_state"] = dict(self.settings["seg_state"] or {})   # 不要改到預設值那份
+        self.segments = SegmentController(self.settings["seg_state"])
         THROTTLE.set_mbps(self.settings["rate_limit_mbps"])
         self.tpl_var.set(self.settings["filename_template"])
         self.keep_var.set(bool(self.settings["keep_history"]))

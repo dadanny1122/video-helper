@@ -342,8 +342,35 @@ app.toggle_pause()                                                  # 假裝清�
 wait(lambda: t_disk["status"] == a.DONE, sec=20)
 import json as _json
 _dec = [_json.loads(x) for x in open(os.path.join(a.data_dir(), "decisions.jsonl"), encoding="utf-8").read().splitlines()]
-assert [x["action"] for x in _dec[-4:]].count("retry") >= 1 and any(x["action"] == "pause_queue" for x in _dec), _dec[-4:]
+assert [x["action"] for x in _dec].count("retry") >= 1 and any(x["action"] == "pause_queue" for x in _dec), _dec[-4:]
 print("::notice title=自動化核心::404→需要處理、429→自動重試成功、磁碟滿→暫停佇列、決策日誌 OK")
+
+# 7f. 智慧下載（v1.24.0）：一個網站 429 → 只冷卻那個網站，其他網站照常；決策紀錄有任務結果
+t_c = app.enqueue(mk("f429-cool"))
+wait(lambda: t_c["status"] == a.RETRY_WAIT)
+assert a.HOSTS.cooling("?") > 0, "429 應該讓那個網站冷卻"
+t_same = app.enqueue(mk("same-site-later"))
+r.update()
+assert t_same["status"] == a.WAITING, "冷卻中的網站，排隊的要先等"
+t_other = app.enqueue(mk("https://www.xvideos.com/video.ci_other/x"))
+wait(lambda: t_other["status"] == a.DONE, sec=5)
+assert t_c["status"] == a.RETRY_WAIT, "其他網站應該在冷卻期間就下載完"
+wait(lambda: t_c["status"] == a.DONE and t_same["status"] == a.DONE, sec=20)
+assert a.HOSTS.cooling("?") == 0
+_dec = [_json.loads(x) for x in open(os.path.join(a.data_dir(), "decisions.jsonl"), encoding="utf-8").read().splitlines()]
+assert any(x["action"] == "host_cooldown" for x in _dec) and any(x["action"] == "task_result" and x.get("mode") == "fixed" for x in _dec)
+assert app.settings["smart_segments"] == "observe" and "固定 6 段" in a.smart_report()
+app.settings["smart_segments"] = "auto"
+app.settings["seg_state"]["?"] = {"level": 1, "stable": 0, "hold": 0}      # 假裝之前學到「2 段」
+_seen = {}
+_orig = app.download_fn
+app.download_fn = lambda *x, **k: (_seen.update(parts=k["stats"]["parts"]), _orig(*x, **k))[1]
+t_auto = app.enqueue(mk("auto-parts"))
+wait(lambda: t_auto["status"] == a.DONE)
+app.download_fn = _orig
+assert _seen["parts"] == 2, _seen
+app.settings["smart_segments"] = "observe"
+print("::notice title=智慧下載::單一網站 429 只冷卻那個網站、自動模式照學到的段數、決策紀錄 OK")
 
 # 8. 系統匣：關視窗 → 縮到系統匣 → 從系統匣打開 → 結束
 assert a.pystray is not None, "pystray 沒有裝進去"
