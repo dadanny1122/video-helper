@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.19.3
+// @version      3.19.4
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -1420,7 +1420,8 @@
           //    （播放中網頁一直在下載影片 → 以前會變成影片黑掉、網頁沒跳走）
           setTimeout(() => { try { location.replace(url); } catch (e) {} }, 0);
           // 3. 1 秒後還在原網頁 → 換一種方法再跳一次
-          setTimeout(() => { if (!document.hidden && location.href !== url) { try { location.href = url; } catch (e) {} } }, 1000);
+          //    （一樣用 replace：用 href 的話影片頁會留在「上一頁」裡）
+          setTimeout(() => { if (!document.hidden && location.href !== url) { try { location.replace(url); } catch (e) {} } }, 1000);
         };
         // 最外層：收到內嵌播放器的通知就跳（只會跳到你設定的安全網頁，別人亂送也只是跳走而已）
         if (IS_TOP) window.addEventListener('message', e => { if (e.data && e.data[MSG] === 1) go(); });
