@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.19.1
+// @version      3.19.2
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -1397,13 +1397,23 @@
       run() {
         const target = () => store.get('bossUrl', 'https://www.google.com/');
         let last = 0;
+        const MSG = 'vhBossKey';
         const go = () => {
           for (const v of document.querySelectorAll('video, audio')) { try { v.muted = true; v.pause(); } catch (e) {} }
+          if (!IS_TOP) {
+            // 在播放器的內嵌網頁（iframe）裡按的：瀏覽器不准內嵌網頁用 Esc 換掉整個分頁，
+            // 以前會改成讓內嵌網頁自己跳 Google → Google 不給嵌 → 播放器那格變黑。
+            // 現在改成通知最外層的網頁，由它來跳
+            try { window.top.postMessage({ [MSG]: 1 }, '*'); } catch (e) {}
+            return;
+          }
           try { document.title = ''; } catch (e) {}
           const url = new URL(target()).href;
           shared.bossUrl = url;                                    // 先報備，「擋自動跳轉」才不會攔下來
-          try { (IS_TOP ? location : window.top.location).replace(url); } catch (e) { location.replace(url); }
+          location.replace(url);
         };
+        // 最外層：收到內嵌播放器的通知就跳（只會跳到你設定的安全網頁，別人亂送也只是跳走而已）
+        if (IS_TOP) window.addEventListener('message', e => { if (e.data && e.data[MSG] === 1) go(); });
         // 兩下之間 0.7 秒內都算；全螢幕時第一下 Esc 會被瀏覽器拿去「退出全螢幕」、網頁收不到
         // → 把「退出全螢幕」也當成按了一下，全螢幕時一樣按兩下就有效
         const press = e => {
