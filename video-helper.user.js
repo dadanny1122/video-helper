@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.19.2
+// @version      3.19.3
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -1410,7 +1410,17 @@
           try { document.title = ''; } catch (e) {}
           const url = new URL(target()).href;
           shared.bossUrl = url;                                    // 先報備，「擋自動跳轉」才不會攔下來
-          location.replace(url);
+          // 1. 先用白色畫面蓋住整個網頁：就算跳轉被擋，別人也看不到內容
+          try {
+            const c = document.createElement('div');
+            c.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:2147483647;cursor:default';
+            (document.body || document.documentElement).appendChild(c);
+          } catch (e) {}
+          // 2. 等這一下 Esc 處理完才跳：Esc 本身是瀏覽器的「停止載入」，同一下開始的跳轉會被它取消
+          //    （播放中網頁一直在下載影片 → 以前會變成影片黑掉、網頁沒跳走）
+          setTimeout(() => { try { location.replace(url); } catch (e) {} }, 0);
+          // 3. 1 秒後還在原網頁 → 換一種方法再跳一次
+          setTimeout(() => { if (!document.hidden && location.href !== url) { try { location.href = url; } catch (e) {} } }, 1000);
         };
         // 最外層：收到內嵌播放器的通知就跳（只會跳到你設定的安全網頁，別人亂送也只是跳走而已）
         if (IS_TOP) window.addEventListener('message', e => { if (e.data && e.data[MSG] === 1) go(); });
@@ -1418,7 +1428,12 @@
         // → 把「退出全螢幕」也當成按了一下，全螢幕時一樣按兩下就有效
         const press = e => {
           const now = Date.now();
-          if (now - last < 700) { last = 0; if (e) e.stopImmediatePropagation(); go(); return; }
+          if (now - last < 700) {
+            last = 0;
+            if (e) { e.preventDefault(); e.stopImmediatePropagation(); }   // 不讓瀏覽器把這下 Esc 當「停止載入」
+            go();
+            return;
+          }
           last = now;
         };
         window.addEventListener('keydown', e => {
