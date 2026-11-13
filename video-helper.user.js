@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.19.0
+// @version      3.19.1
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -1391,7 +1391,7 @@
      * 在影片播放器的 iframe 裡按也有效（early：每個 frame 都裝）
      * 用 location.replace：按「上一頁」不會回到影片，直接回到更早的網頁 */
     bossKey: {
-      label: '老闆鍵（Esc 快速按兩下：靜音、暫停、跳到安全網頁）',
+      label: '老闆鍵（Esc 快速按兩下：靜音、暫停、跳到安全網頁；全螢幕時也是兩下）',
       defaultOff: true,
       early: true,
       run() {
@@ -1404,12 +1404,21 @@
           shared.bossUrl = url;                                    // 先報備，「擋自動跳轉」才不會攔下來
           try { (IS_TOP ? location : window.top.location).replace(url); } catch (e) { location.replace(url); }
         };
-        window.addEventListener('keydown', e => {
-          if (e.key !== 'Escape' || e.repeat) return;
+        // 兩下之間 0.7 秒內都算；全螢幕時第一下 Esc 會被瀏覽器拿去「退出全螢幕」、網頁收不到
+        // → 把「退出全螢幕」也當成按了一下，全螢幕時一樣按兩下就有效
+        const press = e => {
           const now = Date.now();
-          if (now - last < 450) { e.stopImmediatePropagation(); go(); }
+          if (now - last < 700) { last = 0; if (e) e.stopImmediatePropagation(); go(); return; }
           last = now;
+        };
+        window.addEventListener('keydown', e => {
+          if (e.key === 'Escape' && !e.repeat) press(e);
         }, true);
+        for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) {
+          document.addEventListener(ev, () => {
+            if (!(document.fullscreenElement || document.webkitFullscreenElement)) press();
+          }, true);
+        }
         if (IS_TOP) {
           try {
             gmMenu('🚨 老闆鍵要跳到的網頁…', () => {
