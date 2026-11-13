@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.22.0"
+VERSION = "1.23.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -719,6 +719,7 @@ log = setup_log()
 # ======================================================================
 
 BRIDGE_PORTS = list(range(47321, 47326))
+BRIDGE_API = 1        # 腳本和電腦版溝通的「語言版本」：改了請求格式才 +1
 BRIDGE_HOSTS = ("pornhub.com", "xvideos.com", "xnxx.com", "youporn.com", "redtube.com",
                 "xhamster.com", "xhamster.desi", "xhamster2.com", "xhamster3.com", "xhamster.one",
                 "tube8.com", "youjizz.com", "spankbang.com")
@@ -1071,8 +1072,10 @@ class Bridge:
                 if not self.allowed():
                     return self.send(403, {"error": "forbidden"})
                 path, _, qs = self.path.partition("?")
-                if path == "/ping":
-                    return self.send(200, {"app": "VideoHelper", "version": VERSION})
+                if path == "/ping":                 # 能力協商：告訴腳本「我是哪一版、會做哪些事、收哪些網站」
+                    feats = ["enqueue", "media", "status"] + (["classify"] if bridge.on_classify else [])
+                    return self.send(200, {"app": "VideoHelper", "version": VERSION, "api": BRIDGE_API,
+                                           "features": feats, "sites": list(BRIDGE_HOSTS)})
                 if path == "/status":
                     if not bridge.token_ok(self.headers.get("X-VH-Token")):
                         return self.send(401, {"error": "需要重新配對"})

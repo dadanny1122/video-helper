@@ -152,6 +152,8 @@ def call(method, path, body=None, token=None, origin="chrome-extension://test", 
 assert call("GET", "/ping", origin="https://evil.example")[0] == 403, "一般網頁應該被拒絕"
 assert call("GET", "/ping", origin=None, xvh=False)[0] == 403, "沒 Origin 也沒自訂標頭（網頁 no-cors）應該被拒絕"
 assert call("GET", "/ping", origin=None)[0] == 200, "腳本（帶自訂標頭）應該可以"
+st, dd = call("GET", "/ping", origin=None)
+assert dd.get("api") == 1 and "enqueue" in dd.get("features", []) and "spankbang.com" in dd.get("sites", []), dd
 assert call("POST", "/pair", {"code": "x"}, origin=None, xvh=False)[0] == 403
 code = app.bridge.new_pair_code()
 st, dd = call("POST", "/pair", {"code": code})

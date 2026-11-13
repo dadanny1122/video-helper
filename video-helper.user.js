@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.19.4
+// @version      3.20.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -2128,11 +2128,48 @@
     });
   }
 
+  /* 能力協商：電腦版在 /ping 回答「我是哪一版、會做哪些事（features）、收哪些網站（sites）」
+   * 腳本會自動更新、電腦版要自己下載 → 兩邊版本常常不同。電腦版太舊時直接說清楚，不要丟看不懂的錯誤 */
+  const DESKTOP_DL = 'https://github.com/dadanny1122/video-helper/releases/latest';
+  let desktopCaps = null;
+  const verLt = (a, b) => {
+    const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
+    for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0);
+    return false;
+  };
+  // 1.23.0 以前的電腦版不會回 features／sites → 照版本推算
+  const LEGACY_FEATURES = { enqueue: '1.0.0', status: '1.0.0', media: '1.16.0', classify: '1.13.0' };
+  const LEGACY_SITES = { 'tube8.com': '1.17.0', 'youjizz.com': '1.17.0', 'spankbang.com': '1.17.0' };
+  function desktopLacks(feature, host) {
+    const c = desktopCaps;
+    if (!c) return '';
+    const old = `電腦版 v${c.version || '?'} 太舊，`;
+    const fix = `\n請到這裡下載最新的 VideoHelper.exe：${DESKTOP_DL}`;
+    if (c.api > BRIDGE_API) return `腳本比電腦版舊，請在暴力猴按「檢查更新」`;
+    if (feature && (c.features ? !c.features.includes(feature)
+                              : LEGACY_FEATURES[feature] && verLt(c.version, LEGACY_FEATURES[feature])))
+      return old + '還不支援這個功能。' + fix;
+    if (host) {
+      const ok = c.sites ? c.sites.some(d => host === d || host.endsWith('.' + d))
+        : !Object.keys(LEGACY_SITES).some(d => (host === d || host.endsWith('.' + d)) && verLt(c.version, LEGACY_SITES[d]));
+      if (!ok) return old + '還不能下載這個網站。' + fix;
+    }
+    return '';
+  }
+  const BRIDGE_API = 1;
+
   async function findBridge() {
     const last = store.get('bridgePort', 0);
     for (const port of [last, ...BRIDGE_PORTS.filter(p => p !== last)].filter(Boolean)) {
       const r = await bridgeReq('GET', port, '/ping');
-      if (r.status === 200 && r.data.app === 'VideoHelper') { store.set('bridgePort', port); return port; }
+      if (r.status === 200 && r.data.app === 'VideoHelper') {
+        store.set('bridgePort', port);
+        const d = r.data;
+        desktopCaps = { version: String(d.version || ''), api: Number(d.api) || 0,
+          features: Array.isArray(d.features) ? d.features.map(String) : null,
+          sites: Array.isArray(d.sites) ? d.sites.map(String) : null };
+        return port;
+      }
     }
     return 0;
   }
@@ -2156,6 +2193,8 @@
   async function askAi(domains, hosts) {
     const port = await findBridge();
     if (!port) throw new Error('要先打開電腦版（廣告清單在電腦版裡）');
+    const lack = desktopLacks('classify');
+    if (lack) throw new Error(lack);
     const r = await bridgeCall(port, '/classify', { site: site ? site.name : HOST, domains, hosts });
     if (r.status !== 200) throw new Error(r.data.error || `電腦版回應錯誤（${r.status}）`);
     return r.data.results || {};
@@ -2172,6 +2211,8 @@
       try { gmClip(url); } catch (e) {}
       throw new Error('找不到電腦版。請先打開 Video Helper 電腦版，並在「③ 設定」按「🔗 配對瀏覽器…」。\n（網址已經幫你複製，切到電腦版也會自動偵測）');
     }
+    const lack = desktopLacks(s.url ? 'media' : 'enqueue', location.hostname.toLowerCase());
+    if (lack) throw new Error(lack);
     const media = s.url ? new URL(s.url, location.href).href : '';
     const r = await bridgeCall(port, '/enqueue',
       { url, height, media, kind: s.kind, title: String(title || '').slice(0, 300) });
