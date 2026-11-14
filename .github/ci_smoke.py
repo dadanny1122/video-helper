@@ -47,6 +47,13 @@ app.show_home(); r.update()
 assert app.home.visible()
 app.home.leaving = (1, time.time() - 1); app.home._run(); r.update()
 assert not app.home.visible() and app.nb.index("current") == 1, "點首頁卡片要進到那個分頁"
+app.nav(2); r.update()
+assert app.nb.index("current") == 2 and app.header.active == 2, "頂部選單要能切到設定"
+app.nav(-1); r.update()
+assert app.home.visible() and app.header.active == -1
+app.nav(_tab0); r.update()
+assert not app.home.visible()
+assert [x[0] for x in _ttk.Style().layout("Hidden.TNotebook.Tab")] in ([], ["null"]), "主視窗的分頁籤要藏起來（換主題後也是）"
 app.nb.select(_tab0); r.update()
 print("::notice title=外觀::Sun Valley 主題、深淺色切換、首頁卡片 OK")
 r.update()

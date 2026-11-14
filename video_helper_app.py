@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.26.0"
+VERSION = "1.27.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -2119,6 +2119,7 @@ def apply_theme(root, mode="auto"):
     style.configure("H1.TLabel", font=(fam or "", 15, "bold"))
     style.configure("H2.TLabel", font=(fam or "", 11, "bold"))
     style.configure("Treeview", rowheight=30)
+    style.layout("Hidden.TNotebook.Tab", [])          # 主視窗的分頁籤藏起來，改用上面的選單（每次換主題都要重設）
     style.configure("Treeview.Heading", font=(fam or "", 10, "bold"))
     root.configure(background=C["bg"])
     dark_titlebar(root, m == "dark")
@@ -2183,9 +2184,9 @@ class Home(tk.Canvas):
     """
     DUR, GAP = 480, 90           # 每張卡片動畫多久、下一張晚多久開始（毫秒）
 
-    def __init__(self, master, on_pick, status=lambda: "", top=None):
+    def __init__(self, master, on_pick, status=lambda: "", top=None, below=None):
         super().__init__(master, highlightthickness=0, bd=0, bg=C["bg"])
-        self.on_pick, self.status, self.top = on_pick, status, top
+        self.on_pick, self.status, self.top, self.below = on_pick, status, top, below
         self.t0, self.hover, self.lift, self.leaving, self.anim = 0.0, None, [0.0] * len(HOME_CARDS), None, None
         self.bind("<Configure>", lambda e: self.draw())
         self.bind("<Motion>", self._motion)
@@ -2201,7 +2202,7 @@ class Home(tk.Canvas):
         self.configure(bg=C["bg"])
         self.t0, self.leaving = time.time(), None
         self.lift = [0.0] * len(HOME_CARDS)
-        y = max(self.top.winfo_height(), self.top.winfo_reqheight()) if self.top is not None else 0
+        y = sum(max(wd.winfo_height(), wd.winfo_reqheight()) for wd in (self.top, self.below) if wd is not None)
         self.place(x=0, y=y, relwidth=1, relheight=1, height=-y)
         self.lift_()
         self._run()
@@ -2220,7 +2221,7 @@ class Home(tk.Canvas):
 
     def _run(self):
         self.draw()
-        busy = (time.time() - self.t0) * 1000 < self.DUR + self.GAP * len(HOME_CARDS) + 50 or self.leaving \
+        busy = (time.time() - self.t0) * 1000 < 2400 or self.leaving \
             or any(abs(v - (1.0 if i == self.hover else 0.0)) > 0.02 for i, v in enumerate(self.lift))
         if self.leaving and (time.time() - self.leaving[1]) * 1000 > 260:
             idx = self.leaving[0]
@@ -2237,7 +2238,7 @@ class Home(tk.Canvas):
         gx, gy = 22, 22
         total_w = cols * cw + (cols - 1) * gx
         x0 = (w - total_w) // 2
-        y0 = max(150, (h - (2 * ch + gy)) // 2 + 40)
+        y0 = max(170, (h - (2 * ch + gy)) // 2 + 50)
         return [(x0 + (i % cols) * (cw + gx), y0 + (i // cols) * (ch + gy), cw, ch) for i in range(len(HOME_CARDS))], x0, y0
 
     def draw(self):
@@ -2254,9 +2255,19 @@ class Home(tk.Canvas):
         w = max(self.winfo_width(), 400)
         # 標題（先淡入）
         a = ease_out(now / 420) * (1 - out)
-        self.create_text(w // 2, y0 - 92 + (1 - a) * 12, text="歡迎回來 👋", font=self._font(22, True), fill=mix(C["bg"], C["text"], a))
-        self.create_text(w // 2, y0 - 56 + (1 - a) * 12, text=self.status() or "想做什麼？點一張卡片開始",
-                         font=self._font(10), fill=mix(C["bg"], C["muted"], a))
+        ty = y0 - 96 + (1 - a) * 12
+        self.create_text(w // 2, ty, text="歡迎回來", font=self._font(22, True), fill=mix(C["bg"], C["text"], a))
+        ln = ease_out((now - 200) / 500) * (1 - out) * 70      # 標題兩邊的細線（往外長出來）
+        for sgn in (-1, 1):
+            x0 = w // 2 + sgn * 78
+            self.create_line(x0, ty, x0 + sgn * ln, ty, fill=mix(C["bg"], C["accent"], a), width=1)
+        typed = "安全・乾淨・穩定 —— 你的影片小幫手"           # 打字機效果：一個字一個字出現
+        k = int(max(0, now - 350) / 45)
+        cursor = "▍" if k < len(typed) or int(now / 500) % 2 else " "
+        self.create_text(w // 2, y0 - 62, text=typed[:k] + (cursor if not self.leaving else ""),
+                         font=self._font(11), fill=mix(C["bg"], C["accent"], a))
+        self.create_text(w // 2, y0 - 36, text=self.status() or "想做什麼？點一張卡片開始",
+                         font=self._font(9), fill=mix(C["bg"], C["muted"], ease_out((now - 900) / 400) * (1 - out)))
         for i, ((x, y, cw, ch), (icon, title, desc, _)) in enumerate(zip(boxes, HOME_CARDS)):
             p = ease_out((now - 150 - i * self.GAP) / self.DUR)     # 這張卡片進場進度
             if self.leaving:
@@ -2281,7 +2292,7 @@ class Home(tk.Canvas):
             self.create_text(x + cw - 22, cy - 14, text="›", font=self._font(18, True),
                              fill=mix(bg, C["accent"], p * (0.3 + 0.7 * hv)))
         tip = ease_out((now - 700) / 400) * (1 - out)
-        self.create_text(w // 2, boxes[-1][1] + boxes[-1][3] + 44, text="小技巧：之後按上面的「⌂ 首頁」可以回到這裡",
+        self.create_text(w // 2, boxes[-1][1] + boxes[-1][3] + 44, text="之後按右上角的「首頁」可以回到這裡",
                          font=self._font(9), fill=mix(C["bg"], C["muted"], tip * 0.8))
 
     def _hit(self, ev):
@@ -2308,64 +2319,187 @@ class Home(tk.Canvas):
                 self._run()
 
 
+TIPS = ("小技巧：瀏覽器按兩下 Esc＝老闆鍵", "下載佇列按右鍵有更多選項", "③ 設定可以切換深色／淺色",
+        "② 下載紀錄可以一次選很多部做 AI 字幕", "全部在你的電腦上跑，影片不會上傳")
+NAV_ITEMS = (("首頁", -1), ("下載影片", 0), ("下載紀錄", 1), ("設定", 2), ("擋廣告", 3))   # (名稱, 分頁；-1＝首頁)
+
+
+def ease_out_circ(t):
+    """先快後慢（跟 UX Design Awards 網站的選單動畫一樣的曲線感覺）"""
+    t = max(0.0, min(1.0, t))
+    return (1 - (1 - t) ** 2) ** 0.5
+
+
 class Header(tk.Canvas):
-    """視窗最上面的品牌列：漸層底＋logo＋名稱＋右邊幾顆狀態膠囊"""
+    """
+    最上面的品牌列：漸層底＋logo＋名稱＋右邊的頂部選單
+    選單：滑鼠移上去字變亮、出現淡淡底線；選中的那一項有漸層底線，切換時底線「滑過去」
+    """
 
     def __init__(self, master, **kw):
         super().__init__(master, height=68, highlightthickness=0, bd=0, **kw)
-        self.pills, self.on_home = [], None
+        self.on_nav, self.active, self.hover = None, 0, None
+        self.bar = None                               # 底線目前位置 (x0, x1)
+        self.bar_from = self.bar_to = None
+        self.bar_t0, self.anim = 0.0, None
+        self.items = []                               # [(x0, x1, idx)]
         self.bind("<Configure>", lambda e: self.draw())
+        self.bind("<Motion>", self._motion)
+        self.bind("<Leave>", lambda e: self._set_hover(None))
+        self.bind("<Button-1>", self._click)
 
     @staticmethod
     def _mix(a, b, t):
-        a, b = int(a[1:], 16), int(b[1:], 16)
-        return "#%02x%02x%02x" % tuple(int(((a >> s) & 255) * (1 - t) + ((b >> s) & 255) * t) for s in (16, 8, 0))
+        return mix(a, b, t)
+
+    def _font(self, size=10, bold=False):
+        from tkinter import font as tkfont
+        key = (size, bold)
+        if not hasattr(self, "_fonts"):
+            self._fonts = {}
+        if key not in self._fonts:
+            fam = tkfont.nametofont("TkDefaultFont").actual("family")
+            self._fonts[key] = tkfont.Font(self, family=fam, size=size, weight="bold" if bold else "normal")
+        return self._fonts[key]
 
     def _pill_font(self):
-        from tkinter import font as tkfont
-        if not hasattr(self, "_pf"):
-            self._pf = tkfont.Font(self, family=tkfont.nametofont("TkDefaultFont").actual("family"), size=9, weight="bold")
-        return self._pf
+        return self._font(9, True)
 
-    def set_pills(self, pills):
-        """pills：[(文字, 顏色)]；一樣就不重畫"""
-        if pills != self.pills:
-            self.pills = pills
+    def _layout(self):
+        w = max(self.winfo_width(), 400)
+        f = self._font(10, True)
+        widths = [f.measure(name) + 28 for name, _ in NAV_ITEMS]
+        x = w - 18 - sum(widths)
+        out = []
+        for (name, idx), iw in zip(NAV_ITEMS, widths):
+            out.append((x, x + iw, idx, name))
+            x += iw
+        return out
+
+    def set_active(self, idx):
+        """切換選中的項目；底線用 0.35 秒滑過去"""
+        if idx == self.active and self.bar is not None:
+            return
+        self.active = idx
+        target = next(((x0 + 12, x1 - 12) for x0, x1, i, _ in self._layout() if i == idx), None)
+        if target is None:
+            return
+        if self.bar is None:
+            self.bar = target
+            self.draw()
+            return
+        self.bar_from, self.bar_to, self.bar_t0 = self.bar, target, time.time()
+        if not self.anim:
+            self._tick()
+
+    def _tick(self):
+        t = (time.time() - self.bar_t0) / 0.35
+        e = ease_out_circ(t)
+        (a0, a1), (b0, b1) = self.bar_from, self.bar_to
+        self.bar = (a0 + (b0 - a0) * e, a1 + (b1 - a1) * e)
+        self.draw()
+        self.anim = self.after(15, self._tick) if t < 1 else None
+
+    def _hit(self, ev):
+        if 14 <= ev.y <= 56:
+            for x0, x1, idx, _ in self._layout():
+                if x0 <= ev.x <= x1:
+                    return idx
+        return None
+
+    def _set_hover(self, idx):
+        if idx != self.hover:
+            self.hover = idx
+            self.configure(cursor="hand2" if idx is not None else "")
             self.draw()
 
-    def _round(self, x0, y0, x1, y1, r, **kw):
-        pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1, x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
-        return self.create_polygon(pts, smooth=True, **kw)
+    def _motion(self, ev):
+        self._set_hover(self._hit(ev))
+
+    def _click(self, ev):
+        idx = self._hit(ev)
+        if idx is not None and self.on_nav:
+            self.on_nav(idx)
 
     def draw(self):
         self.delete("all")
         w, h = max(self.winfo_width(), 200), int(self["height"])
         for x in range(0, w, 4):                     # 橫向漸層
-            self.create_rectangle(x, 0, x + 4, h, fill=self._mix(C["head1"], C["head2"], x / w), width=0)
-        self.create_line(0, h - 1, w, h - 1, fill=self._mix(C["accent"], C["accent2"], .5))
+            self.create_rectangle(x, 0, x + 4, h, fill=mix(C["head1"], C["head2"], x / w), width=0)
+        self.create_line(0, h - 1, w, h - 1, fill=mix(C["accent"], C["accent2"], .5))
         # logo：圓角方塊＋播放三角形
         for i in range(36):
-            self.create_line(18 + i, 16, 18 + i, 52, fill=self._mix("#57c8ff", "#8b7cff", i / 36))
-        self._round(16, 14, 56, 54, 12, fill="", outline="#ffffff", width=2)
+            self.create_line(18 + i, 16, 18 + i, 52, fill=mix("#57c8ff", "#8b7cff", i / 36))
+        round_rect(self, 16, 14, 56, 54, 12, fill="", outline="#ffffff", width=2)
         self.create_polygon(31, 24, 31, 44, 46, 34, fill="#ffffff", outline="")
-        fam = self._pill_font().actual("family")
-        self.create_text(70, 25, text="Video Helper", anchor="w", fill="#ffffff", font=(fam, 15, "bold"))
-        self.create_text(70, 47, text="安全・乾淨・穩定", anchor="w", fill="#c9d6ff", font=(fam, 9))
-        if self.on_home:                             # 回首頁的按鈕
-            bx = 230
-            round_rect(self, bx, 22, bx + 72, 46, 12, fill="#ffffff", outline="", tags=("home",))
-            self.create_text(bx + 36, 34, text="⌂ 首頁", fill="#1b1b1b", font=self._pill_font(), tags=("home",))
-            self.tag_bind("home", "<Button-1>", lambda e: self.on_home())
-            self.tag_bind("home", "<Enter>", lambda e: self.configure(cursor="hand2"))
-            self.tag_bind("home", "<Leave>", lambda e: self.configure(cursor=""))
-        x = w - 16
-        for text, color in reversed(self.pills):
-            tw = self._pill_font().measure(text) + 34
-            self._round(x - tw, 22, x, 46, 12, fill="#ffffff", outline="", stipple="")
-            self.create_oval(x - tw + 10, 30, x - tw + 18, 38, fill=color, outline="")
-            self.create_text(x - tw + 24, 34, text=text, anchor="w", fill="#1b1b1b", font=self._pill_font())
-            x -= tw + 8
+        self.create_text(70, 25, text="Video Helper", anchor="w", fill="#ffffff", font=self._font(15, True))
+        self.create_text(70, 47, text="安全・乾淨・穩定", anchor="w", fill="#c9d6ff", font=self._font(9))
+        if not self.on_nav:
+            return
+        lay = self._layout()
+        if not self.anim:                            # 沒在滑動：底線直接對準選中的項目（視窗大小變了也會跟著）
+            self.bar = next(((x0 + 12, x1 - 12) for x0, x1, i, _ in lay if i == self.active), None)
+        for x0, x1, idx, name in lay:
+            on, hv = idx == self.active, idx == self.hover
+            self.create_text((x0 + x1) / 2, 34, text=name, font=self._font(10, True),
+                             fill="#ffffff" if on or hv else "#b9c6e8")
+            if hv and not on:                        # 滑過：淡淡的底線
+                self.create_line(x0 + 12, 50, x1 - 12, 50, fill="#8ea3d6", width=2)
+        if self.bar:                                 # 選中：漸層底線（會滑動）
+            b0, b1 = self.bar
+            n = max(1, int(b1 - b0))
+            for k in range(0, n, 2):
+                self.create_line(b0 + k, 50, b0 + k + 2, 50, width=3, fill=mix("#57c8ff", "#8b7cff", k / n))
 
+
+class Ticker(tk.Canvas):
+    """品牌列下面的跑馬燈：一直往左捲，顯示狀態和小技巧（參考 UX Design Awards 網站的公告列）"""
+    SPEED = 1.2                                       # 每 30 毫秒移幾個像素
+
+    def __init__(self, master):
+        super().__init__(master, height=26, highlightthickness=0, bd=0)
+        self.text, self.x, self.anim = "", 0.0, None
+        self.bind("<Configure>", lambda e: self.draw())
+
+    def set_items(self, items):
+        text = "     ✦     ".join(items) + "     ✦     "
+        if text != self.text:
+            self.text = text
+            self.draw()
+        if not self.anim:
+            self._tick()
+
+    def _font(self):
+        from tkinter import font as tkfont
+        if not hasattr(self, "_f"):
+            self._f = tkfont.Font(self, family=tkfont.nametofont("TkDefaultFont").actual("family"), size=9)
+        return self._f
+
+    def _tick(self):
+        if not self.winfo_exists():
+            return
+        self.x -= self.SPEED
+        tw = self._font().measure(self.text) or 1
+        if self.x <= -tw:
+            self.x += tw
+        if self.find_withtag("run") and abs(self.x) > self.SPEED:   # 平常只移動文字（省電）
+            self.move("run", -self.SPEED, 0)
+        else:                                                      # 繞回開頭時整個重畫
+            self.draw()
+        self.anim = self.after(30, self._tick)
+
+    def draw(self):
+        self.delete("all")
+        dark = C["bg"] == PALETTE["dark"]["bg"]
+        self.configure(bg="#14171e" if dark else "#eef2fa")
+        w = max(self.winfo_width(), 200)
+        tw = self._font().measure(self.text) or 1
+        x = self.x
+        while x < w:
+            self.create_text(x, 13, text=self.text, anchor="w", font=self._font(), tags=("run",),
+                             fill=C["muted"])
+            x += tw
+        self.create_line(0, 25, w, 25, fill=C["line"])
 
 
 # ======================================================================
@@ -2897,7 +3031,9 @@ class App:
 
         self.header = Header(root)
         self.header.pack(fill="x")
-        self.nb = ttk.Notebook(root)
+        self.ticker = Ticker(root)
+        self.ticker.pack(fill="x")
+        self.nb = ttk.Notebook(root, style="Hidden.TNotebook")
         self.nb.pack(fill="both", expand=True, padx=10, pady=(8, 10))
         tabs = {}
         for key, text in (("dl", "① 下載影片"), ("hist", "② 下載紀錄"), ("set", "③ 設定"),
@@ -2921,9 +3057,11 @@ class App:
             self.refresh_bridge_label()
         root.bind("<FocusIn>", lambda e: self.check_clipboard() if e.widget is root else None)
 
-        self.home = Home(root, self.pick_home, self.home_status, top=self.header)
-        self.header.on_home = self.show_home
+        self.home = Home(root, self.pick_home, self.home_status, top=self.header, below=self.ticker)
+        self.header.on_nav = self.nav
+        self.header.active = self.nb.index("current")
         self.header.draw()
+        self.nb.bind("<<NotebookTabChanged>>", lambda e: self.home.visible() or self.header.set_active(self.nb.index("current")), add="+")
         # 程式自己切分頁（例如瀏覽器送影片來）→ 首頁讓開；剛出現的 0.5 秒內不算（那是之前排隊的切換事件）
         self.nb.bind("<<NotebookTabChanged>>", lambda e: self.home.visible() and not self.home.leaving
                      and time.time() - self.home.t0 > 0.5 and self.home.hide(), add="+")
@@ -3779,10 +3917,23 @@ class App:
         self.analyze()
 
     def show_home(self):
+        self.header.set_active(-1)
         self.home.show()
 
     def pick_home(self, idx):
         self.nb.select(idx)
+        self.header.set_active(idx)
+
+    def nav(self, idx):
+        """頂部選單：-1＝首頁，其他＝分頁"""
+        if idx == -1:
+            if not self.home.visible():
+                self.show_home()
+            return
+        if self.home.visible():
+            self.home.hide()
+        self.nb.select(idx)
+        self.header.set_active(idx)
 
     def home_status(self):
         run = sum(1 for t in self.queue.tasks if t["status"] == RUNNING)
@@ -3806,7 +3957,7 @@ class App:
             pills.append((f"{self.mbps:.0f} Mbps", C["ok"]))
         pills.append(("連動中" if self.bridge.server else "未連動", C["ok"] if self.bridge.server else "#9aa3b2"))
         pills.append((f"v{VERSION}", C["accent2"]))
-        self.header.set_pills(pills)
+        self.ticker.set_items([t for t, _ in pills] + list(TIPS))
 
     def refresh_bridge_label(self):
         if not hasattr(self, "bridge_lbl"):
@@ -4687,6 +4838,7 @@ class App:
         for t in (self.tree, self.qtree, self.htree):
             self.style_tree(t)
         self.header.draw()
+        self.ticker.draw()
         if self.home.visible():
             self.home.configure(bg=C["bg"])
             self.home.draw()
