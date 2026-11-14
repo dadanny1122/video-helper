@@ -81,7 +81,7 @@ jobs:
             echo "exists=1" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: steps.chk.outputs.exists != '1'
         with:
           name: ffmpeg-win
