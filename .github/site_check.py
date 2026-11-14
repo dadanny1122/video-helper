@@ -147,6 +147,30 @@ def probe_xnxx():
             print(f"::notice title=XNXX {path}::{e}")
 
 
+def probe_xvideos():
+    """診斷模式：XVideos 檢查時點到哪個連結、影片頁用什麼方式放影片位址"""
+    home = get("https://www.xvideos.com/")
+    links = re.findall(r'href="(/video\.?[a-z0-9]+/[^"]+)"', home)
+    print(f"::notice title=XVideos 首頁::{len(home)} 字｜影片連結 {len(links)} 個｜前 5 個：" + "  ".join(x[:60] for x in links[:5]))
+    for path in links[:3]:
+        try:
+            page = get("https://www.xvideos.com" + path)
+        except Exception as e:
+            print(f"::notice title=XVideos 影片頁::{path[:60]}｜{e}")
+            continue
+        marks = {k: page.count(k) for k in ("setVideoHLS", "setVideoUrlHigh", "setVideoUrlLow", "html5player", "HTML5Player",
+                                            ".m3u8", ".mp4", "hls", "video_related", "xv.conf", "cf-chl", "captcha")}
+        t = re.search(r"<title[^>]*>(.*?)</title>", page, re.S | re.I)
+        print(f"::notice title=XVideos 影片頁::{path[:60]}｜{len(page)} 字｜標題 {t.group(1).strip()[:60] if t else '無'}｜{json.dumps(marks)}"
+              f"｜伺服器：" + ",".join(media_hosts(page)))
+        for k in ("html5player", "HTML5Player", ".m3u8"):
+            i = page.find(k)
+            if i >= 0:
+                snip = re.sub(r"https?:[^\"' ]+", "<網址>", page[max(0, i - 150):i + 450])
+                print(f"::notice title=XVideos {k}::" + re.sub(r"\s+", " ", snip))
+                break
+
+
 PROBE_SITES = {   # 診斷用：網站 → (首頁, 影片連結的樣子)
     "tube8": ("https://www.tube8.com/", r'href="((?:https://www\.tube8\.com)?/porn-video/\d+[^"]*)"'),
     "spankbang": ("https://spankbang.com/", r'href="(/[a-z0-9]+/video/[^"]+)"'),
@@ -186,6 +210,9 @@ def main(state_path):
     if os.environ.get("PROBE") in PROBE_SITES:
         for n in PROBE_SITES:
             probe_site(n)
+        sys.exit(1)
+    if os.environ.get("PROBE") == "xvideos":
+        probe_xvideos()
         sys.exit(1)
     if os.environ.get("PROBE") == "xnxx":
         probe_xnxx()
