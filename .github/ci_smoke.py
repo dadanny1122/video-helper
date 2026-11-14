@@ -13,6 +13,7 @@ def _report(exc_type, exc, tb):
 
 sys.excepthook = _report
 os.environ["VIDEO_HELPER_HOME"] = tempfile.mkdtemp()
+os.environ["VH_NEXUS_ROOT"] = os.path.join(os.environ["VIDEO_HELPER_HOME"], "nexus")   # 節點（Nexus）的資料也放暫存
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import tkinter as tk
 import video_helper_app as a
@@ -67,7 +68,7 @@ assert app.settings["setup_seen"], "看過安裝頁應該記下來"
 # 進階設定：一開始藏著，按了才出現，關掉又藏起來
 assert app.adv.state() == "withdrawn", "進階設定一開始應該藏起來"
 app.show_advanced(); r.update()
-assert app.adv.state() == "normal" and len(app.adv_nb.tabs()) == 7, "進階設定打不開"
+assert app.adv.state() == "normal" and len(app.adv_nb.tabs()) == 8, "進階設定打不開"
 app.adv.withdraw(); r.update()
 assert not app.btn_retry.winfo_manager(), "沒有失敗的時候不該出現「重試」"
 app.nb.select(app.tab_dl); r.update()
@@ -321,6 +322,48 @@ app.refresh_security(); r.update()
 wait(lambda: "yt-dlp" in app.sec_comp.cget("text"))
 print("::notice title=安全分頁 元件::" + app.sec_comp.cget("text").replace("\n", " | ")[:600])
 assert app.settings["ai_usage"][_m]["classify"]["calls"] == _before + 1, "AI 使用紀錄沒記到"
+app.adv.withdraw(); r.update()
+
+# 7b2. 🖧 節點分頁（Nexus Master）：預設不開埠、勾了才開、真 Worker 配對→核准→撤銷、取消勾選後埠釋放
+import socket as _sk
+assert app.nexus is not None and app.nodes_tab is not None, "節點分頁沒載入（少 cryptography？）"
+assert not app.nexus.running and app.nexus.cfg["enabled"] is False, "Master 預設不該啟動"
+_nt = app.nodes_tab
+_nt.cfg["bind_host"] = "127.0.0.1"
+_s0 = _sk.socket(); _s0.bind(("127.0.0.1", 0)); _nt.cfg["port"] = _s0.getsockname()[1]; _s0.close()
+_nt.port.set(_nt.cfg["port"]); _nt._fill_addrs()
+import nexus.gui.devices_tab as _dt
+_dt.messagebox.askyesno = lambda *a, **k: True
+_dt.simpledialog.askstring = lambda *a, **k: "ci 測試"
+app.show_advanced(); app.adv_nb.select(_nt.page); r.update()
+_nt.enabled.set(True); _nt.toggle(); r.update()
+assert app.nexus.running, f"Master 啟動失敗：{app.nexus.error}"
+_nt.new_pair(); r.update()
+_code = _nt.pair_lbl.cget("text").replace(" ", "")
+assert len(_code) == 6, "配對碼格式不對"
+from nexus.core.config import Config as _NCfg
+from nexus.worker.agent import WorkerAgent as _WA
+from nexus.worker.credstore import CredStore as _CS
+os.environ["VH_NEXUS_ROOT"] = os.path.join(os.environ["VIDEO_HELPER_HOME"], "nexus-worker")
+_wcfg = _NCfg("worker"); _wcfg["heartbeat_seconds"] = 1
+_agent = _WA(_wcfg, _CS(), poll_seconds=0.3)
+os.environ["VH_NEXUS_ROOT"] = os.path.join(os.environ["VIDEO_HELPER_HOME"], "nexus")
+_agent.pair(f"https://127.0.0.1:{app.nexus.port}", _code, "ci-worker"); _agent.start()
+_nt.refresh(); r.update()
+_nt.tree.selection_set(_nt.tree.get_children()[0]); _nt._update_buttons(); _nt.act("approve"); r.update()
+wait(lambda: _agent.state == "ACTIVE" and _agent.detail == "心跳正常", 10)
+_nt.refresh(); r.update()
+assert _nt.tree.item(_nt.tree.get_children()[0])["values"][1] == "已核准", "名單沒顯示已核准"
+_nt.tree.selection_set(_nt.tree.get_children()[0]); _nt._update_buttons(); _nt.act("revoke"); r.update()
+wait(lambda: _agent.state == "REVOKED", 10)
+_acts = [e["action"] for e in app.nexus.audit(50)]
+assert "device.approved" in _acts and "device.revoked" in _acts, f"稽核沒記到：{_acts}"
+_port_n = app.nexus.port
+_nt.enabled.set(False); _nt.toggle(); r.update()
+assert not app.nexus.running and app.nexus.cfg["enabled"] is False, "停用沒生效"
+_s1 = _sk.socket(); _s1.setsockopt(_sk.SOL_SOCKET, _sk.SO_REUSEADDR, 1); _s1.bind(("127.0.0.1", _port_n)); _s1.close()   # 埠要釋放（REUSEADDR 略過 TIME_WAIT）
+_agent.stop(disconnect=False)
+print("::notice title=節點分頁::Master 開關、配對碼、核准、撤銷、稽核、埠釋放 OK")
 app.adv.withdraw(); r.update()
 
 # 7c. v1.20 暫停／繼續、速度上限、重複偵測的介面

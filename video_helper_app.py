@@ -4245,6 +4245,11 @@ class App:
             except Exception:
                 pass
         self.bridge.stop()
+        if getattr(self, "nexus", None):
+            try:
+                self.nexus.close()            # 關 Master：所有節點連線斷掉、埠釋放
+            except Exception:
+                pass
         log.info("關閉")
         self.root.destroy()
 
@@ -4436,6 +4441,26 @@ class App:
         u[month] = m
         self.settings["ai_usage"] = dict(sorted(u.items())[-12:])     # 只留 12 個月
         self.settings.save()
+
+    def build_nodes_tab(self, page):
+        """🖧 節點（Nexus Master）：畫面在 nexus/gui/devices_tab.py；這裡只負責建 MasterService、程式結束時關掉。
+        `master.enabled` 預設 false → 平常不開任何埠；只有使用者在這頁勾了才啟動（啟動時勾著就自動開）"""
+        self.nexus = None
+        self.nodes_tab = None
+        try:
+            from nexus.gui.devices_tab import DevicesTab
+            from nexus.master.service import MasterService
+            self.nexus = MasterService()
+            if self.nexus.cfg["enabled"]:
+                try:
+                    self.nexus.start()
+                except Exception as e:
+                    log.warning("Nexus Master 自動啟動失敗：%s", e)
+            self.nodes_tab = DevicesTab(page, self.nexus, self.settings, C, px)
+        except Exception as e:
+            log.warning("節點分頁無法載入：%r", e)
+            ttk.Label(page, text=f"節點功能無法載入：{type(e).__name__}\n（這版打包可能少了 cryptography 套件）",
+                      foreground=C["bad"], justify="left").pack(anchor="w")
 
     def build_security_tab(self, page):
         canvas = tk.Canvas(page, highlightthickness=0, bg=C["bg"])
@@ -4818,8 +4843,8 @@ class App:
         nb = self.adv_nb = ttk.Notebook(win)
         nb.pack(fill="both", expand=True)
         pages = {}
-        for key, text in (("prog", "檔名與程式"), ("link", "瀏覽器連動"), ("security", "🔒 安全"), ("backup", "備份與更新"),
-                          ("debug", "問題排查"), ("ai", "廣告判斷"), ("stats", "統計")):
+        for key, text in (("prog", "檔名與程式"), ("link", "瀏覽器連動"), ("security", "🔒 安全"), ("nodes", "🖧 節點"),
+                          ("backup", "備份與更新"), ("debug", "問題排查"), ("ai", "廣告判斷"), ("stats", "統計")):
             pages[key] = ttk.Frame(nb, padding=(12, 10))
             nb.add(pages[key], text=f"  {text}  ")
 
@@ -4864,6 +4889,7 @@ class App:
         ttk.Button(row, text="關閉服務", command=self.stop_bridge).pack(side="left", padx=8)
 
         self.build_security_tab(pages["security"])
+        self.build_nodes_tab(pages["nodes"])
 
         # --- 備份與更新 ---
         b = pages["backup"]
