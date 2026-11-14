@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.28.0"
+VERSION = "1.28.1"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -2195,11 +2195,18 @@ class Home(tk.Canvas):
         self.bind("<Button-1>", self._click)
 
     def _font(self, size, bold=False):
+        """字體只建一次、記起來（每一格動畫都去問系統字體會很慢）"""
         from tkinter import font as tkfont
-        fam = tkfont.nametofont("TkDefaultFont").actual("family")
-        return (fam, size, "bold") if bold else (fam, size)
+        if not hasattr(self, "_fonts"):
+            self._fonts = {}
+        key = (size, bold)
+        if key not in self._fonts:
+            fam = tkfont.nametofont("TkDefaultFont").actual("family")
+            self._fonts[key] = tkfont.Font(self, family=fam, size=size, weight="bold" if bold else "normal")
+        return self._fonts[key]
 
     def show(self):
+        self._kpi_t = 0                              # 打開首頁時重新算一次數字
         self.configure(bg=C["bg"])
         self.t0, self.leaving = time.time(), None
         self.lift = [0.0] * len(HOME_CARDS)
@@ -2229,7 +2236,7 @@ class Home(tk.Canvas):
             self.hide()
             self.on_pick(idx)
             return
-        self.anim = self.after(15, self._run) if busy else None
+        self.anim = self.after(16, self._run) if busy else None
 
     def _layout(self):
         w, h = max(self.winfo_width(), 400), max(self.winfo_height(), 300)
@@ -2274,10 +2281,13 @@ class Home(tk.Canvas):
         self.create_text(w // 2, top + 94, text=self.status() or "想做什麼？點一張卡片開始",
                          font=self._font(9), fill=mix(C["bg"], C["muted"], ease_out((now - 900) / 400) * (1 - out)))
         # 數據卡（參考 Behance 上的金融儀表板）：大數字從 0 跳上去、今天下載附 7 天迷你長條圖
-        try:
-            kpis = self.kpis() if self.kpis else []
-        except Exception:
-            kpis = []
+        if time.time() - getattr(self, "_kpi_t", 0) > 0.9:     # 數字每秒算一次就好，不用每一格都算
+            try:
+                self._kpi = self.kpis() if self.kpis else []
+            except Exception:
+                self._kpi = []
+            self._kpi_t = time.time()
+        kpis = self._kpi
         for i, ((x, y, tw, th), kp) in enumerate(zip(self.tiles, kpis)):
             p = ease_out((now - 250 - i * 70) / 420) * (1 - out)
             cnt = ease_out((now - 300 - i * 70) / 900)                # 數字往上跳的進度
@@ -2313,9 +2323,10 @@ class Home(tk.Canvas):
             round_rect(self, x + 2, y + dy + 6, x + cw + 2, y + ch + dy + 6, 18, fill=mix(C["bg"], "#000000" if dark else "#d5dbe5", p * (0.35 + hv * 0.3)), outline="")
             round_rect(self, x, y + dy, x + cw, y + ch + dy, 18, fill=bg,
                        outline=mix(C["bg"], mix(line, C["accent"], hv), p), width=1.5, tags=(f"c{i}",))
-            for k in range(0, cw - 36, 3):          # 卡片上緣品牌色光帶
-                self.create_line(x + 18 + k, y + dy + 1, x + 21 + k, y + dy + 1,
-                                 fill=mix(bg, mix(C["accent"], C["accent2"], k / (cw - 36)), p * (0.45 + 0.55 * hv)))
+            seg = (cw - 36) / 10                    # 卡片上緣品牌色光帶（10 段就夠順，畫太多段會卡）
+            for k in range(10):
+                self.create_line(x + 18 + k * seg, y + dy + 1, x + 18 + (k + 1) * seg, y + dy + 1,
+                                 fill=mix(bg, mix(C["accent"], C["accent2"], k / 9), p * (0.45 + 0.55 * hv)))
             # 圖示圓
             cx, cy = x + 46, y + dy + ch / 2
             self.create_oval(cx - 26, cy - 26, cx + 26, cy + 26, outline="",
@@ -2420,7 +2431,7 @@ class Header(tk.Canvas):
             return
         if self.bar is None:
             self.bar = target
-            self.draw()
+            self.draw_nav()
             return
         self.bar_from, self.bar_to, self.bar_t0 = self.bar, target, time.time()
         if not self.anim:
@@ -2431,8 +2442,8 @@ class Header(tk.Canvas):
         e = ease_out_circ(t)
         (a0, a1), (b0, b1) = self.bar_from, self.bar_to
         self.bar = (a0 + (b0 - a0) * e, a1 + (b1 - a1) * e)
-        self.draw()
-        self.anim = self.after(15, self._tick) if t < 1 else None
+        self.anim = self.after(16, self._tick) if t < 1 else None
+        self.draw_nav()
 
     def _hit(self, ev):
         if 14 <= ev.y <= 56:
@@ -2445,7 +2456,7 @@ class Header(tk.Canvas):
         if idx != self.hover:
             self.hover = idx
             self.configure(cursor="hand2" if idx is not None else "")
-            self.draw()
+            self.draw_nav()
 
     def _motion(self, ev):
         self._set_hover(self._hit(ev))
@@ -2456,10 +2467,11 @@ class Header(tk.Canvas):
             self.on_nav(idx)
 
     def draw(self):
+        """整個重畫（視窗大小、主題變了才需要）"""
         self.delete("all")
         w, h = max(self.winfo_width(), 200), int(self["height"])
-        for x in range(0, w, 4):                     # 橫向漸層
-            self.create_rectangle(x, 0, x + 4, h, fill=mix(C["head1"], C["head2"], x / w), width=0)
+        for x in range(0, w, 8):                     # 橫向漸層
+            self.create_rectangle(x, 0, x + 8, h, fill=mix(C["head1"], C["head2"], x / w), width=0)
         self.create_line(0, h - 1, w, h - 1, fill=mix(C["accent"], C["accent2"], .5))
         # logo：圓角方塊＋播放三角形
         for i in range(36):
@@ -2468,6 +2480,11 @@ class Header(tk.Canvas):
         self.create_polygon(31, 24, 31, 44, 46, 34, fill="#ffffff", outline="")
         self.create_text(70, 25, text="Video Helper", anchor="w", fill="#ffffff", font=self._font(15, True))
         self.create_text(70, 47, text="安全・乾淨・穩定", anchor="w", fill="#c9d6ff", font=self._font(9))
+        self.draw_nav()
+
+    def draw_nav(self):
+        """只重畫選單（滑過、底線滑動時用；背景漸層不用重畫）"""
+        self.delete("nav")
         if not self.on_nav:
             return
         lay = self._layout()
@@ -2475,20 +2492,21 @@ class Header(tk.Canvas):
             self.bar = next(((x0 + 12, x1 - 12) for x0, x1, i, _ in lay if i == self.active), None)
         for x0, x1, idx, name in lay:
             on, hv = idx == self.active, idx == self.hover
-            self.create_text((x0 + x1) / 2, 34, text=name, font=self._font(10, True),
+            self.create_text((x0 + x1) / 2, 34, text=name, font=self._font(10, True), tags=("nav",),
                              fill="#ffffff" if on or hv else "#b9c6e8")
             if hv and not on:                        # 滑過：淡淡的底線
-                self.create_line(x0 + 12, 50, x1 - 12, 50, fill="#8ea3d6", width=2)
-        if self.bar:                                 # 選中：漸層底線（會滑動）
+                self.create_line(x0 + 12, 50, x1 - 12, 50, fill="#8ea3d6", width=2, tags=("nav",))
+        if self.bar:                                 # 選中：漸層底線（會滑動；6 段漸層）
             b0, b1 = self.bar
-            n = max(1, int(b1 - b0))
-            for k in range(0, n, 2):
-                self.create_line(b0 + k, 50, b0 + k + 2, 50, width=3, fill=mix("#57c8ff", "#8b7cff", k / n))
+            n = (b1 - b0) / 6
+            for k in range(6):
+                self.create_line(b0 + k * n, 50, b0 + (k + 1) * n, 50, width=3, tags=("nav",),
+                                 fill=mix("#57c8ff", "#8b7cff", k / 5))
 
 
 class Ticker(tk.Canvas):
     """品牌列下面的跑馬燈：一直往左捲，顯示狀態和小技巧（參考 UX Design Awards 網站的公告列）"""
-    SPEED = 1.2                                       # 每 30 毫秒移幾個像素
+    SPEED = 1                                         # 每次移 1 像素（整數才不會一頓一頓）
 
     def __init__(self, master):
         super().__init__(master, height=26, highlightthickness=0, bd=0)
@@ -2520,7 +2538,7 @@ class Ticker(tk.Canvas):
             self.move("run", -self.SPEED, 0)
         else:                                                      # 繞回開頭時整個重畫
             self.draw()
-        self.anim = self.after(30, self._tick)
+        self.anim = self.after(25, self._tick)       # 每秒 40 像素
 
     def draw(self):
         self.delete("all")
@@ -3045,6 +3063,7 @@ class App:
         self.analyze_fn = analyze_url
         self.analyze_media_fn = analyze_media
         self.download_fn = run_download
+        self.live = None                                  # (時間, 位元組／秒)：這一秒的下載速度
         self.settings["seg_state"] = dict(self.settings["seg_state"] or {})   # 不要改到預設值那份
         self.segments = SegmentController(self.settings["seg_state"])   # 直接改設定裡那份，存設定就一起存
         # 瀏覽器連動
@@ -3118,6 +3137,8 @@ class App:
         self._tick = getattr(self, "_tick", 0) + 1
         if self._tick % 10 == 0:                       # 約每 1 秒：把「等重試」時間到的放回佇列
             self.refresh_header()
+            if self.home.visible() and not self.home.anim:   # 首頁開著：數字每秒更新
+                self.home.draw()
             if not self.queue_paused and self.queue.due_retries():
                 self.refresh_queue()
             if not self.queue.running() and (self.queue.next_waiting() or None) is not None:
@@ -3666,9 +3687,20 @@ class App:
             t["progress"] = done / total * 100
             self.prog["value"] = t["progress"]
         parts = [f"{fmt_size(done)} / {fmt_size(total)}" if total else fmt_size(done)]
-        if speed:
+        now = time.time()                               # 每秒量一次「這一秒」下載了多少（不是從頭平均）
+        lt, ld = t.get("_lt"), t.get("_ld")
+        if lt is None or done < (ld or 0):
+            t["_lt"], t["_ld"] = now, done
+        elif now - lt >= 1.0:
+            inst = (done - ld) / (now - lt)
+            prev = self.live[1] if self.live and now - self.live[0] < 3 else inst
+            self.live = (now, 0.5 * inst + 0.5 * prev)  # 輕微平滑，數字不會亂跳
+            t["_lt"], t["_ld"] = now, done
+        if self.live and now - self.live[0] < 3:
+            parts.append(f"{self.live[1] * 8 / 1e6:.1f} Mbps")
+            self.mbps = self.live[1] * 8 / 1e6
+        elif speed:
             parts.append(f"{speed * 8 / 1e6:.1f} Mbps")
-            self.mbps = speed * 8 / 1e6
         if eta is not None:
             parts.append(f"剩約 {fmt_time(eta)}")
         w = self.queue.count(WAITING)
@@ -3982,10 +4014,12 @@ class App:
         gb = sum(r.get("size") or 0 for r in recent if r["status"] == DONE) / 1e9
         speeds = [r["mbps"] for r in self.stats.items[:20] if r.get("mbps")]
         avg = sum(speeds) / len(speeds) if speeds else (self.mbps or None)
+        live = self.live and time.time() - self.live[0] < 3       # 正在下載 → 顯示這一秒的速度
         return [
             {"label": "今天下載", "value": spark[-1], "fmt": "{:.0f}", "unit": "部", "spark": spark},
             {"label": "近 30 天", "value": gb, "fmt": "{:.1f}", "unit": "GB", "dot": C["accent"]},
-            {"label": "平均速度", "value": avg, "fmt": "{:.0f}", "unit": "Mbps", "dot": C["ok"]},
+            {"label": "目前速度（每秒更新）", "value": self.live[1] * 8 / 1e6, "fmt": "{:.1f}", "unit": "Mbps", "dot": C["accent"]}
+            if live else {"label": "平均速度（最近 20 部）", "value": avg, "fmt": "{:.0f}", "unit": "Mbps", "dot": C["ok"]},
             {"label": "成功率", "value": ok / len(recent) * 100 if recent else None, "fmt": "{:.0f}", "unit": "%",
              "dot": C["ok"] if not recent or ok / len(recent) >= .9 else C["warn"]},
         ]
@@ -4008,7 +4042,9 @@ class App:
         pills = []
         if run or wait:
             pills.append((f"下載中 {run}｜排隊 {wait}", C["accent"]))
-        if self.mbps:
+        if self.live and time.time() - self.live[0] < 3:
+            pills.append((f"下載速度 {self.live[1] * 8 / 1e6:.1f} Mbps", C["accent"]))
+        elif self.mbps:
             pills.append((f"{self.mbps:.0f} Mbps", C["ok"]))
         pills.append(("連動中" if self.bridge.server else "未連動", C["ok"] if self.bridge.server else "#9aa3b2"))
         pills.append((f"v{VERSION}", C["accent2"]))
