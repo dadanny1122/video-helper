@@ -1,6 +1,6 @@
 # 只檢查 nexus/（既有單檔另有自己的測試流程，不在這裡 lint）
 target-version = "py312"
-line-length = 130
+line-length = 140
 include = ["nexus/**/*.py"]
 [lint]
 select = ["E", "F", "W", "B", "I"]
