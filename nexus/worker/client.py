@@ -31,6 +31,7 @@ class NexusClient:
         self.ca_pem = ca_pem
         self.certfile, self.keyfile, self.key_password = certfile, keyfile, key_password
         self.server_cert_fingerprint = None      # TOFU 模式下看到的伺服器憑證指紋
+        self.server_cert = None
         self._conn = None
         self._ca_tmp = None
 
@@ -56,7 +57,8 @@ class NexusClient:
             der = self._conn.sock.getpeercert(binary_form=True)
             if der:
                 from cryptography import x509
-                self.server_cert_fingerprint = certs.cert_fingerprint(x509.load_der_x509_certificate(der))
+                self.server_cert = x509.load_der_x509_certificate(der)
+                self.server_cert_fingerprint = certs.cert_fingerprint(self.server_cert)
         return self._conn
 
     def close(self):

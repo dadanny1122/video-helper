@@ -5217,6 +5217,11 @@ if __name__ == "__main__":
     if "--selftest" in sys.argv:
         i = sys.argv.index("--selftest")
         sys.exit(selftest(sys.argv[i + 1] if len(sys.argv) > i + 1 else "selftest.json"))
+    if "--worker" in sys.argv:
+        # Worker 節點模式（決策 3）：獨立設定／日誌／生命週期；完全不建立 App、不碰 settings.json／Bridge／AI 金鑰
+        from nexus.worker.tray import main as worker_main
+        enable_dpi_awareness()
+        sys.exit(worker_main([a for a in sys.argv[1:] if a != "--worker"]))
     enable_dpi_awareness()
     root = tk.Tk()
     App(root)

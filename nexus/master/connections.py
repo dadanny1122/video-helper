@@ -35,6 +35,11 @@ class ConnectionRegistry:
                 pass
         return len(socks)
 
+    def close_everything(self) -> int:
+        with self.lock:
+            ids = list(self.by_device)
+        return sum(self.close_all(d) for d in ids)
+
     def count(self, device_id: str | None = None) -> int:
         with self.lock:
             if device_id:

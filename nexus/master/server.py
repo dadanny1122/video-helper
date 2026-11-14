@@ -202,6 +202,7 @@ class MasterServer:
                 self.httpd.server_close()
             except Exception:
                 pass
+            self.conns.close_everything()        # 停用 Master＝所有 Worker 連線都斷，不讓舊連線繼續用
             self.httpd = None
             try:
                 self.repo.audit(AuditEvent("master.stopped", "system", "master", MASTER_ID, "ok"))

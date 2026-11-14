@@ -98,6 +98,7 @@ class KeyStore:
 
     @staticmethod
     def _write(path: str, data: bytes):
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         tmp = path + ".tmp"
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "wb") as f:
