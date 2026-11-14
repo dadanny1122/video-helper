@@ -89,7 +89,7 @@ jobs:
           name: ffmpeg-win
           path: ffmpeg_bin
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.chk.outputs.exists != '1'
         with:
           python-version: '3.12'
