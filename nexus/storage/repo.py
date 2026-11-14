@@ -93,8 +93,12 @@ class Repo:
         r = c.execute("SELECT * FROM registrations WHERE device_id=?", (device_id,)).fetchone()
         return dict(r) if r else None
 
+    def set_registration_cert(self, c, device_id: str, cert_pem: str):
+        c.execute("UPDATE registrations SET cert_pem=? WHERE device_id=?", (cert_pem, device_id))
+
     def mark_delivered(self, c, device_id: str):
-        c.execute("UPDATE registrations SET delivered_at=?, registration_token_hash=? WHERE device_id=?",
+        """交付後：token 作廢、憑證從註冊表清掉（Worker 自己保存）"""
+        c.execute("UPDATE registrations SET delivered_at=?, registration_token_hash=?, cert_pem=NULL WHERE device_id=?",
                   (utcnow(), "delivered:" + sha256_hex(device_id + utcnow()), device_id))
 
     # ---- nonces ----

@@ -44,6 +44,7 @@ MIGRATIONS = {
         device_id TEXT PRIMARY KEY REFERENCES devices(device_id),
         registration_token_hash TEXT NOT NULL UNIQUE,
         csr_pem TEXT NOT NULL,
+        cert_pem TEXT,                      -- 核准後簽好的憑證（公開資料），交付一次就清掉
         created_at TEXT NOT NULL,
         expires_at TEXT NOT NULL,
         delivered_at TEXT
