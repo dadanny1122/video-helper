@@ -35,6 +35,11 @@ print("FFMPEG_OK", a.FFMPEG)
 # 2. 視窗：4 個分頁、安裝精靈 3 步、進階設定
 r = tk.Tk()
 app = a.App(r)
+from tkinter import ttk as _ttk
+assert _ttk.Style().theme_use().startswith("sun-valley"), "Sun Valley 主題沒有載入：" + _ttk.Style().theme_use()
+app.theme_var.set("深色"); app.change_theme(); app.theme_var.set("淺色"); app.change_theme()
+assert a.C["bg"] == a.PALETTE["light"]["bg"]
+print("::notice title=外觀::Sun Valley 主題、深淺色切換 OK")
 r.update()
 assert len(app.nb.tabs()) == 4, "分頁數量不對"
 assert len(app.step_marks) == 3, "安裝精靈步驟數量不對"

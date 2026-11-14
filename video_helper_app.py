@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.24.0"
+VERSION = "1.25.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -153,6 +153,7 @@ DEFAULT_SETTINGS = {
     "download_dir": "",          # 空的 = 使用者的「下載」資料夾
     "default_quality": "最高",
     "rate_limit_mbps": 0,             # 下載速度上限（Mbps），0＝不限制
+    "theme": "auto",                  # 外觀：auto 跟系統／dark 深色／light 淺色
     "skip_downloaded": True,          # 批次、瀏覽器送來的：下載過（檔案還在）就跳過
     "smart_segments": "observe",      # 智慧分段：auto＝自動調整／observe＝只觀察（記錄建議、照舊 6 段）／off＝關閉
     "seg_state": {},                  # 每個網站的分段狀態：網站 → {"level", "stable", "hold"}
@@ -2035,6 +2036,144 @@ from tkinter import ttk, messagebox, filedialog        # noqa: E402
 
 
 # ======================================================================
+# 外觀（v1.25.0）：Windows 11 的 Sun Valley（Fluent）主題＋深色標題列＋品牌色
+#   三個介面（電腦版、即時介面、腳本面板）共用同一組品牌色：青藍 #57C8FF → 紫 #8B7CFF
+# ======================================================================
+THEMES = {"跟系統": "auto", "深色": "dark", "淺色": "light"}
+PALETTE = {
+    "dark": {"bg": "#1c1c1c", "surface": "#2b2b2b", "text": "#f3f3f3", "muted": "#a0a7b4", "accent": "#57c8ff",
+             "accent2": "#8b7cff", "ok": "#3ddc97", "bad": "#ff6b6b", "warn": "#ffb547", "line": "#3a3a3a",
+             "head1": "#0f2a44", "head2": "#2c1f5c"},
+    "light": {"bg": "#fafafa", "surface": "#ffffff", "text": "#1b1b1b", "muted": "#5f6773", "accent": "#005fb8",
+              "accent2": "#6a4cff", "ok": "#1e8e5a", "bad": "#c62828", "warn": "#b26a00", "line": "#e5e5e5",
+              "head1": "#1d6fd1", "head2": "#6a4cff"},
+}
+C = dict(PALETTE["light"])        # 目前的顏色（apply_theme 會換）；介面用 C["muted"] 這種寫法
+
+
+def system_dark():
+    """Windows「應用程式模式」是不是深色"""
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as k:
+            return winreg.QueryValueEx(k, "AppsUseLightTheme")[0] == 0
+    except Exception:
+        return False
+
+
+def dark_titlebar(win, dark):
+    """Windows 10/11：標題列跟著變深色（不支援的系統就算了）"""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        win.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(win.winfo_id()) or win.winfo_id()
+        v = ctypes.c_int(1 if dark else 0)
+        for attr in (20, 19):                       # 20＝新版 Win10/11，19＝舊版 Win10
+            if ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v), ctypes.sizeof(v)) == 0:
+                break
+    except Exception:
+        pass
+
+
+def apply_theme(root, mode="auto"):
+    """套用主題；回傳實際用的 dark／light"""
+    from tkinter import font as tkfont
+    m = ("dark" if system_dark() else "light") if mode == "auto" else ("dark" if mode == "dark" else "light")
+    C.clear()
+    C.update(PALETTE[m])
+    style = ttk.Style(root)
+    try:
+        import sv_ttk
+        sv_ttk.set_theme(m, root)
+    except Exception as e:                          # 沒有主題檔就用系統內建的
+        log.warning("Sun Valley 主題載入失敗，改用內建：%s", e)
+        for t in ("vista", "clam"):
+            if t in style.theme_names():
+                style.theme_use(t)
+                break
+    fams = set(tkfont.families(root))
+    fam = next((f for f in ("Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans CJK TC", "PingFang TC") if f in fams), None)
+    if fam:
+        for name in tkfont.names(root):
+            try:
+                tkfont.nametofont(name, root).configure(family=fam)
+            except Exception:
+                pass
+    style.configure("Muted.TLabel", foreground=C["muted"])
+    style.configure("Ok.TLabel", foreground=C["ok"])
+    style.configure("Bad.TLabel", foreground=C["bad"])
+    style.configure("Accent.TLabel", foreground=C["accent"])
+    style.configure("H1.TLabel", font=(fam or "", 15, "bold"))
+    style.configure("H2.TLabel", font=(fam or "", 11, "bold"))
+    style.configure("Treeview", rowheight=30)
+    style.configure("Treeview.Heading", font=(fam or "", 10, "bold"))
+    root.configure(background=C["bg"])
+    dark_titlebar(root, m == "dark")
+    if not getattr(root, "_vh_tb_hook", False):     # 之後打開的小視窗也換深色標題列
+        root.bind_class("Toplevel", "<Map>", lambda e: dark_titlebar(e.widget, C["bg"] == PALETTE["dark"]["bg"])
+                        if isinstance(e.widget, tk.Toplevel) else None, add="+")
+        root._vh_tb_hook = True
+    return m
+
+
+class Header(tk.Canvas):
+    """視窗最上面的品牌列：漸層底＋logo＋名稱＋右邊幾顆狀態膠囊"""
+
+    def __init__(self, master, **kw):
+        super().__init__(master, height=68, highlightthickness=0, bd=0, **kw)
+        self.pills = []
+        self.bind("<Configure>", lambda e: self.draw())
+
+    @staticmethod
+    def _mix(a, b, t):
+        a, b = int(a[1:], 16), int(b[1:], 16)
+        return "#%02x%02x%02x" % tuple(int(((a >> s) & 255) * (1 - t) + ((b >> s) & 255) * t) for s in (16, 8, 0))
+
+    def _pill_font(self):
+        from tkinter import font as tkfont
+        if not hasattr(self, "_pf"):
+            self._pf = tkfont.Font(self, family=tkfont.nametofont("TkDefaultFont").actual("family"), size=9, weight="bold")
+        return self._pf
+
+    def set_pills(self, pills):
+        """pills：[(文字, 顏色)]；一樣就不重畫"""
+        if pills != self.pills:
+            self.pills = pills
+            self.draw()
+
+    def _round(self, x0, y0, x1, y1, r, **kw):
+        pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1, x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
+        return self.create_polygon(pts, smooth=True, **kw)
+
+    def draw(self):
+        self.delete("all")
+        w, h = max(self.winfo_width(), 200), int(self["height"])
+        for x in range(0, w, 4):                     # 橫向漸層
+            self.create_rectangle(x, 0, x + 4, h, fill=self._mix(C["head1"], C["head2"], x / w), width=0)
+        self.create_line(0, h - 1, w, h - 1, fill=self._mix(C["accent"], C["accent2"], .5))
+        # logo：圓角方塊＋播放三角形
+        for i in range(36):
+            self.create_line(18 + i, 16, 18 + i, 52, fill=self._mix("#57c8ff", "#8b7cff", i / 36))
+        self._round(16, 14, 56, 54, 12, fill="", outline="#ffffff", width=2)
+        self.create_polygon(31, 24, 31, 44, 46, 34, fill="#ffffff", outline="")
+        fam = self._pill_font().actual("family")
+        self.create_text(70, 25, text="Video Helper", anchor="w", fill="#ffffff", font=(fam, 15, "bold"))
+        self.create_text(70, 47, text="安全・乾淨・穩定", anchor="w", fill="#c9d6ff", font=(fam, 9))
+        x = w - 16
+        for text, color in reversed(self.pills):
+            tw = self._pill_font().measure(text) + 34
+            self._round(x - tw, 22, x, 46, 12, fill="#ffffff", outline="", stipple="")
+            self.create_oval(x - tw + 10, 30, x - tw + 18, 38, fill=color, outline="")
+            self.create_text(x - tw + 24, 34, text=text, anchor="w", fill="#1b1b1b", font=self._pill_font())
+            x -= tw + 8
+
+
+
+# ======================================================================
 # AI 字幕（全部在自己電腦上跑）：whisper.cpp 聽寫 → .srt；想要中文的話，用 AI 金鑰只把「字幕文字」拿去翻譯
 # 第一次用才下載：whisper.cpp 程式（約 5 MB，GitHub 官方發布）＋ 模型（190～550 MB，Hugging Face）
 # ======================================================================
@@ -2556,12 +2695,15 @@ class App:
         self.blocklist = BlockList()
 
         root.title(f"Video Helper v{VERSION}")
-        root.geometry("800x700")
-        root.minsize(700, 620)
+        root.geometry("900x780")
+        root.minsize(760, 660)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.theme = apply_theme(root, self.settings["theme"])
 
+        self.header = Header(root)
+        self.header.pack(fill="x")
         self.nb = ttk.Notebook(root)
-        self.nb.pack(fill="both", expand=True)
+        self.nb.pack(fill="both", expand=True, padx=10, pady=(8, 10))
         tabs = {}
         for key, text in (("dl", "① 下載影片"), ("hist", "② 下載紀錄"), ("set", "③ 設定"),
                           ("setup", "④ 安裝擋廣告")):
@@ -2583,6 +2725,7 @@ class App:
             self.refresh_bridge_label()
         root.bind("<FocusIn>", lambda e: self.check_clipboard() if e.widget is root else None)
 
+        self.refresh_header()
         self.poll()
         threading.Thread(target=check_update, args=(self.q,), daemon=True).start()
         log.info("啟動 v%s", VERSION)
@@ -2597,6 +2740,7 @@ class App:
             pass
         self._tick = getattr(self, "_tick", 0) + 1
         if self._tick % 10 == 0:                       # 約每 1 秒：把「等重試」時間到的放回佇列
+            self.refresh_header()
             if not self.queue_paused and self.queue.due_retries():
                 self.refresh_queue()
             if not self.queue.running() and (self.queue.next_waiting() or None) is not None:
@@ -2615,7 +2759,7 @@ class App:
         ttk.Label(f, text="在 Chrome 裝好擋廣告（約 2 分鐘，只要做一次）",
                   font=("", 13, "bold")).pack(anchor="w")
         ttk.Label(f, text="照順序按下面 3 個按鈕，每個都會在 Chrome 打開正確的頁面。",
-                  foreground="#555").pack(anchor="w", pady=(2, 12))
+                  foreground=C["muted"]).pack(anchor="w", pady=(2, 12))
 
         steps = [
             ("1", "安裝暴力猴（Violentmonkey）",
@@ -2633,8 +2777,8 @@ class App:
             txt = ttk.Frame(box)
             txt.pack(side="left", fill="x", expand=True)
             ttk.Label(txt, text=title, font=("", 11, "bold")).pack(anchor="w")
-            ttk.Label(txt, text=hint, foreground="#555", justify="left").pack(anchor="w")
-            mark = ttk.Label(box, text="", foreground="#2e7d32", width=4)
+            ttk.Label(txt, text=hint, foreground=C["muted"], justify="left").pack(anchor="w")
+            mark = ttk.Label(box, text="", foreground=C["ok"], width=4)
             mark.pack(side="right")
             ttk.Button(box, text="打開", command=lambda u=url, m=mark: self.open_in_chrome(u, m)).pack(side="right", padx=6)
             self.step_marks.append(mark)
@@ -2644,7 +2788,7 @@ class App:
                   wraplength=640, justify="left").pack(anchor="w")
         if not self.chrome:
             ttk.Label(f, text="⚠ 找不到 Chrome，會改用預設瀏覽器打開。這個工具是為 Chrome 設計的。",
-                      foreground="#c62828", wraplength=640).pack(anchor="w", pady=(8, 0))
+                      foreground=C["bad"], wraplength=640).pack(anchor="w", pady=(8, 0))
 
     def open_in_chrome(self, url, mark):
         # chrome:// 開頭的設定頁，只有 Chrome 自己打得開；同時複製網址當備案
@@ -2689,7 +2833,7 @@ class App:
         entry = ttk.Entry(top, textvariable=self.url_var)
         entry.pack(side="left", fill="x", expand=True, padx=6)
         entry.bind("<Return>", lambda e: self.analyze())
-        self.btn_read = ttk.Button(top, text="讀取", command=self.analyze)
+        self.btn_read = ttk.Button(top, text="讀取", command=self.analyze, style="Accent.TButton")
         self.btn_read.pack(side="left")
         self.btn_batch = ttk.Button(top, text="📋 多個網址…", command=self.open_batch)
         self.btn_batch.pack(side="left", padx=(6, 0))
@@ -2697,7 +2841,7 @@ class App:
         # 剪貼簿裡有影片網址時，出現這一列（不會自動做任何事，要你按）
         # 放在分頁的上面，不管現在在哪個分頁都看得到
         self.clip_bar = ttk.Frame(self.root)
-        self.clip_lbl = ttk.Label(self.clip_bar, text="", foreground="#1565c0")
+        self.clip_lbl = ttk.Label(self.clip_bar, text="", foreground=C["accent"])
         self.clip_lbl.pack(side="left")
         ttk.Button(self.clip_bar, text="讀取這個網址", command=self.use_clipboard).pack(side="left", padx=6)
         ttk.Button(self.clip_bar, text="✕", width=3, command=lambda: self.clip_bar.pack_forget()).pack(side="left")
@@ -2713,18 +2857,19 @@ class App:
             self.tree.heading(c, text=name)
             self.tree.column(c, width=w, anchor="center")
         self.tree.pack(fill="x", **pad)
+        self.style_tree(self.tree)
         self.tree.bind("<Double-1>", lambda e: self.download())
 
         mid = ttk.Frame(dl)
         mid.pack(fill="x", **pad)
         self.speed_lbl = ttk.Label(mid, text=f"網速：{self.mbps:.1f} Mbps（上次實測）" if self.mbps else "網速：尚未量測")
         self.speed_lbl.pack(side="left")
-        self.btn_dl = ttk.Button(mid, text="⬇ 加入下載", command=self.download, state="disabled")
+        self.btn_dl = ttk.Button(mid, text="⬇ 加入下載", command=self.download, state="disabled", style="Accent.TButton")
         self.btn_dl.pack(side="right")
 
         # 佇列
         ttk.Separator(dl).pack(fill="x", padx=10, pady=(6, 2))
-        self.qhead = ttk.Label(dl, text="下載佇列（依序下載；按右鍵有更多選項）", font=("", 10, "bold"))
+        self.qhead = ttk.Label(dl, text="下載佇列（依序下載；按右鍵有更多選項）", style="H2.TLabel")
         self.qhead.pack(anchor="w", padx=10)
         qcols = ("title", "quality", "status")
         self.qtree = ttk.Treeview(dl, columns=qcols, show="headings", height=5, selectmode="browse")
@@ -2733,6 +2878,7 @@ class App:
             self.qtree.heading(c, text=name)
             self.qtree.column(c, width=w, anchor=anchor)
         self.qtree.pack(fill="both", expand=True, **pad)
+        self.style_tree(self.qtree)
 
         qbar = ttk.Frame(dl)
         qbar.pack(fill="x", **pad)
@@ -2751,6 +2897,15 @@ class App:
         self.prog.pack(fill="x", **pad)
         self.status = ttk.Label(dl, text="" if FFMPEG else "⚠ 找不到 ffmpeg，部分影片可能無法轉成 MP4")
         self.status.pack(fill="x", **pad)
+
+    def style_tree(self, tree):
+        """表格：斑馬紋、狀態上色"""
+        stripe = "#262626" if self.theme == "dark" else "#f5f7fa"
+        tree.tag_configure("odd", background=stripe)
+        tree.tag_configure("ok", foreground=C["ok"])
+        tree.tag_configure("bad", foreground=C["bad"])
+        tree.tag_configure("warn", foreground=C["warn"])
+        tree.tag_configure("run", foreground=C["accent"])
 
     def set_buttons(self):
         """依目前狀態決定按鈕能不能按"""
@@ -2893,7 +3048,8 @@ class App:
         ttk.Label(win, text="一行貼一個網址。每部都會用「預設畫質」"
                             f"（目前：{self.settings['default_quality']}）加入佇列。",
                   wraplength=520).pack(anchor="w", padx=10, pady=(10, 4))
-        txt = tk.Text(win, height=12)
+        txt = tk.Text(win, height=12, bg=C["surface"], fg=C["text"], insertbackground=C["text"], relief="flat",
+                      highlightthickness=1, highlightbackground=C["line"], padx=8, pady=6)
         txt.pack(fill="both", expand=True, padx=10)
         try:
             clip = self.root.clipboard_get()
@@ -3047,7 +3203,9 @@ class App:
                 st = f"🔁 {max(0, int(t.get('retry_at', 0) - time.time()))} 秒後重試（{t.get('tries', 1)}/{RETRY_MAX}）"
             if t.get("note") and t["status"] == DONE:
                 st = "⚠ 完成（轉檔失敗）"
-            self.qtree.insert("", "end", iid=str(t["id"]), values=(t["title"], quality_label(t["fmt"]["height"]), st))
+            tag = {FAILED: "bad", NEEDS_ACTION: "bad", RUNNING: "run", RETRY_WAIT: "warn"}.get(t["status"], "")
+            self.qtree.insert("", "end", iid=str(t["id"]), values=(t["title"], quality_label(t["fmt"]["height"]), st),
+                              tags=(tag, "odd" if len(self.qtree.get_children()) % 2 else "even"))
         if sel and self.qtree.exists(sel[0]):
             self.qtree.selection_set(sel[0])
         w, r, p = self.queue.count(WAITING), self.queue.count(RUNNING), self.queue.count(PAUSED)
@@ -3412,16 +3570,29 @@ class App:
         self.nb.select(self.tab_dl)
         self.analyze()
 
+    def refresh_header(self):
+        """品牌列右邊的狀態膠囊：下載中幾個、網速、瀏覽器連動、版本"""
+        run = sum(1 for t in self.queue.tasks if t["status"] == RUNNING)
+        wait = sum(1 for t in self.queue.tasks if t["status"] in (WAITING, RETRY_WAIT))
+        pills = []
+        if run or wait:
+            pills.append((f"下載中 {run}｜排隊 {wait}", C["accent"]))
+        if self.mbps:
+            pills.append((f"{self.mbps:.0f} Mbps", C["ok"]))
+        pills.append(("連動中" if self.bridge.server else "未連動", C["ok"] if self.bridge.server else "#9aa3b2"))
+        pills.append((f"v{VERSION}", C["accent2"]))
+        self.header.set_pills(pills)
+
     def refresh_bridge_label(self):
         if not hasattr(self, "bridge_lbl"):
             return
         n = len(self.settings["bridge_tokens"] or [])
         if self.bridge.server:
-            self.bridge_lbl.config(text=f"✅ 執行中（127.0.0.1:{self.bridge.port}）｜已配對 {n} 個瀏覽器", foreground="#2e7d32")
+            self.bridge_lbl.config(text=f"✅ 執行中（127.0.0.1:{self.bridge.port}）｜已配對 {n} 個瀏覽器", foreground=C["ok"])
         elif self.settings["bridge_enabled"]:
-            self.bridge_lbl.config(text="⚠ 無法啟動（連接埠都被占用）", foreground="#c62828")
+            self.bridge_lbl.config(text="⚠ 無法啟動（連接埠都被占用）", foreground=C["bad"])
         else:
-            self.bridge_lbl.config(text="關閉中（按「配對」會打開）", foreground="#555")
+            self.bridge_lbl.config(text="關閉中（按「配對」會打開）", foreground=C["muted"])
 
     def pair_browser(self):
         if not self.bridge.start():
@@ -3439,10 +3610,10 @@ class App:
         ttk.Label(win, text="在影片網頁按右下角「⬇ 下載」→「🖥 送到電腦版」，\n跳出配對視窗時輸入：",
                   justify="center").pack(pady=(18, 8))
         ttk.Label(win, text=f"{code[:3]} {code[3:]}", font=("Consolas", 32, "bold")).pack()
-        left = ttk.Label(win, text="", foreground="#555")
+        left = ttk.Label(win, text="", foreground=C["muted"])
         left.pack(pady=8)
         ttk.Label(win, text="配對碼 5 分鐘內有效、只能用一次。\n配對過的瀏覽器之後就不用再輸入。",
-                  foreground="#555", justify="center").pack()
+                  foreground=C["muted"], justify="center").pack()
         ttk.Button(win, text="關閉", command=win.destroy).pack(pady=10)
 
         def tick():
@@ -3603,6 +3774,7 @@ class App:
             self.htree.heading(c, text=name)
             self.htree.column(c, width=w, anchor=anchor)
         self.htree.pack(fill="both", expand=True, **pad)
+        self.style_tree(self.htree)
         self.htree.bind("<<TreeviewSelect>>", lambda e: self.show_history_detail())
         self.htree.bind("<Double-1>", lambda e: self.history_double())
         self.add_menu(self.htree, [("▶ 播放", self.history_play), ("📂 打開檔案位置", self.history_open),
@@ -3610,7 +3782,7 @@ class App:
                                    ("↻ 重新下載", self.history_redownload), None,
                                    ("刪除這筆紀錄", self.history_delete), ("清除全部紀錄", self.history_clear)])
 
-        self.hdetail = ttk.Label(parent, text="", foreground="#555", wraplength=680, justify="left")
+        self.hdetail = ttk.Label(parent, text="", foreground=C["muted"], wraplength=680, justify="left")
         self.hdetail.pack(fill="x", **pad)
 
         bar = ttk.Frame(parent)
@@ -3618,14 +3790,14 @@ class App:
         ttk.Button(bar, text="📂 打開檔案位置", command=self.history_open).pack(side="left")
         ttk.Button(bar, text="打開下載資料夾", command=lambda: open_path(self.settings.download_dir)).pack(side="left", padx=6)
         ttk.Button(bar, text="📝 AI 字幕", command=self.subtitle_dialog).pack(side="left")
-        ttk.Label(bar, text="雙擊播放；按右鍵有更多選項", foreground="#888").pack(side="right")
+        ttk.Label(bar, text="雙擊播放；按右鍵有更多選項", foreground=C["muted"]).pack(side="right")
         self.refresh_history()
 
     def refresh_history(self):
         self.htree.delete(*self.htree.get_children())
         icon = {"完成": "✅ 完成", "失敗": "❌ 失敗", "取消": "■ 取消"}
         for i, r in enumerate(self.history.items):
-            self.htree.insert("", "end", iid=str(i), values=(
+            self.htree.insert("", "end", iid=str(i), tags=({"失敗": "bad"}.get(r.get("status"), ""), "odd" if i % 2 else "even"), values=(
                 r.get("time", ""), r.get("title", ""), quality_label(r.get("height")), icon.get(r.get("status"), r.get("status", ""))))
         if not self.history.items:
             self.hdetail.config(text="還沒有紀錄。" if self.settings["keep_history"] else "已關閉下載紀錄（可在「③ 設定」→ 進階設定打開）。")
@@ -3724,7 +3896,7 @@ class App:
         self.settings.save()
 
     def build_security_tab(self, page):
-        canvas = tk.Canvas(page, highlightthickness=0)
+        canvas = tk.Canvas(page, highlightthickness=0, bg=C["bg"])
         bar = ttk.Scrollbar(page, orient="vertical", command=canvas.yview)
         f = ttk.Frame(canvas)
         f.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
@@ -3736,7 +3908,7 @@ class App:
         top = ttk.Frame(f)
         top.pack(fill="x")
         ttk.Label(top, text="這裡可以看到：誰配對過、AI 用了多少、連過哪些網站、用的元件和指紋。",
-                  foreground="#555").pack(side="left")
+                  foreground=C["muted"]).pack(side="left")
         ttk.Button(top, text="↻ 重新整理", command=self.refresh_security).pack(side="right")
         self.sec_body = ttk.Frame(f)
         self.sec_body.pack(fill="both", expand=True)
@@ -3745,7 +3917,7 @@ class App:
     def _sec_section(self, title, note=""):
         ttk.Label(self.sec_body, text=title, font=("", 10, "bold")).pack(anchor="w", pady=(12, 2))
         if note:
-            ttk.Label(self.sec_body, text=note, foreground="#666", wraplength=690, justify="left").pack(anchor="w")
+            ttk.Label(self.sec_body, text=note, foreground=C["muted"], wraplength=690, justify="left").pack(anchor="w")
         box = ttk.Frame(self.sec_body)
         box.pack(fill="x", anchor="w")
         return box
@@ -3773,7 +3945,7 @@ class App:
             ttk.Button(row, text="取消", command=lambda h=h: (self.bridge.unpair(h), self.refresh_bridge_label(),
                                                              self.refresh_security())).pack(side="left", padx=6)
         st = "開著（127.0.0.1:%s，只有這台電腦連得到）" % self.bridge.port if self.bridge.server else "關閉"
-        ttk.Label(box, text=f"連線服務：{st}", foreground="#555").pack(anchor="w", pady=(4, 0))
+        ttk.Label(box, text=f"連線服務：{st}", foreground=C["muted"]).pack(anchor="w", pady=(4, 0))
 
         # 2. AI 使用紀錄
         box = self._sec_section("🤖 AI 使用紀錄",
@@ -3902,7 +4074,7 @@ class App:
         skip = tk.BooleanVar(value=bool(self.settings["sub_skip_done"]))
         if len(videos) > 1:
             ttk.Checkbutton(f, text="已經有字幕的影片跳過", variable=skip).grid(row=6, column=0, columnspan=2, sticky="w")
-        ttk.Label(f, foreground="#666", wraplength=440, justify="left", text=(
+        ttk.Label(f, foreground=C["muted"], wraplength=440, justify="left", text=(
             "• 聽寫完全在你的電腦上跑，影片和聲音不會上傳。\n"
             "• 第一次用會下載聽寫程式和模型（只要一次）。沒有顯示卡的電腦，1 小時影片「快」約 10～20 分鐘，「準」慢 3～5 倍。\n"
             "• 影片本來就是中文：語言選「中文」，不用翻譯。\n"
@@ -3912,12 +4084,12 @@ class App:
         self.sub_stage.grid(row=8, column=0, columnspan=2, sticky="w")
         self.sub_bar = ttk.Progressbar(f, length=440, maximum=100)
         self.sub_bar.grid(row=9, column=0, columnspan=2, pady=4)
-        self.sub_info = ttk.Label(f, text="", foreground="#555", wraplength=440, justify="left")
+        self.sub_info = ttk.Label(f, text="", foreground=C["muted"], wraplength=440, justify="left")
         self.sub_info.grid(row=10, column=0, columnspan=2, sticky="w")
         btns = ttk.Frame(f)
         btns.grid(row=11, column=0, columnspan=2, sticky="e", pady=(6, 0))
         self.sub_cancel = threading.Event()
-        go = ttk.Button(btns, text="開始")
+        go = ttk.Button(btns, text="開始", style="Accent.TButton")
         stop = ttk.Button(btns, text="取消", command=lambda: (self.sub_cancel.set(), None) if self.sub_running else w.destroy())
         go.pack(side="left", padx=4)
         stop.pack(side="left")
@@ -4039,7 +4211,7 @@ class App:
         self.q_var = tk.StringVar(value=self.settings["default_quality"])
         ttk.Combobox(f, textvariable=self.q_var, values=QUALITY_CHOICES, state="readonly", width=10).grid(
             row=1, column=1, sticky="w", padx=6)
-        ttk.Label(f, text="（沒有這個畫質時，選比它低的最高畫質）", foreground="#555").grid(
+        ttk.Label(f, text="（沒有這個畫質時，選比它低的最高畫質）", foreground=C["muted"]).grid(
             row=1, column=1, sticky="w", padx=(110, 0))
         ttk.Button(f, text="💾 儲存", command=self.save_settings).grid(row=1, column=2)
 
@@ -4047,7 +4219,7 @@ class App:
         self.rate_var = tk.StringVar(value=str(self.settings["rate_limit_mbps"] or "不限制"))
         rate = ttk.Combobox(f, textvariable=self.rate_var, values=["不限制", "5", "10", "20", "50", "100"], width=10)
         rate.grid(row=2, column=1, sticky="w", padx=6)
-        ttk.Label(f, text="Mbps（下載時不想卡到別人上網就設一下；可以直接打數字，馬上生效）", foreground="#555").grid(
+        ttk.Label(f, text="Mbps（下載時不想卡到別人上網就設一下；可以直接打數字，馬上生效）", foreground=C["muted"]).grid(
             row=2, column=1, sticky="w", padx=(110, 0))
         rate.bind("<<ComboboxSelected>>", lambda e: self.apply_rate_limit())
         rate.bind("<FocusOut>", lambda e: self.apply_rate_limit())
@@ -4064,10 +4236,17 @@ class App:
         sm.bind("<<ComboboxSelected>>", lambda e: (self.settings.__setitem__("smart_segments", SMART_MODES[self.smart_var.get()]),
                                                    self.settings.save()))
         ttk.Button(f, text="📊 報告", command=lambda: messagebox.showinfo("智慧分段報告", smart_report())).grid(row=4, column=2)
-        ttk.Label(f, foreground="#555", wraplength=520, justify="left",
+        ttk.Label(f, foreground=C["muted"], wraplength=520, justify="left",
                   text="看下載時的速度和出錯情況，決定下一部影片同時開幾條線（1／2／4／6）。"
                        "網路不穩時開少一點反而比較快；先用「只觀察」累積紀錄，報告看得出有幫助再改「自動調整」。").grid(
             row=5, column=0, columnspan=3, sticky="w")
+        ttk.Label(f, text="外觀：").grid(row=6, column=0, sticky="w", pady=(8, 4))
+        self.theme_var = tk.StringVar(value=next((k for k, v in THEMES.items() if v == self.settings["theme"]), "跟系統"))
+        th = ttk.Combobox(f, textvariable=self.theme_var, values=list(THEMES), state="readonly", width=10)
+        th.grid(row=6, column=1, sticky="w", padx=6, pady=(8, 4))
+        th.bind("<<ComboboxSelected>>", lambda e: self.change_theme())
+        ttk.Label(f, text="（深色／淺色；部分文字顏色重新打開程式後才會全部換好）", style="Muted.TLabel").grid(
+            row=6, column=1, sticky="w", padx=(110, 0), pady=(8, 4))
 
         # --- 瀏覽器連動 ---
         c = box("瀏覽器連動（在影片網頁按「🖥 送到電腦版」）")
@@ -4078,9 +4257,9 @@ class App:
         self.refresh_bridge_label()
 
         ttk.Button(outer, text="⚙ 進階設定…", command=self.show_advanced).pack(anchor="w", pady=(14, 2))
-        ttk.Label(outer, foreground="#888", justify="left",
+        ttk.Label(outer, foreground=C["muted"], justify="left",
                   text="檔名格式、關閉視窗的行為、備份、檢查更新、錯誤日誌、統計都在這裡。\n平常用不到，出問題或換電腦時再打開。").pack(anchor="w")
-        self.ver_lbl = ttk.Label(outer, text=f"目前版本：v{VERSION}", foreground="#888")
+        self.ver_lbl = ttk.Label(outer, text=f"目前版本：v{VERSION}", foreground=C["muted"])
         self.ver_lbl.pack(side="bottom", anchor="w")
 
     def build_advanced(self):
@@ -4106,7 +4285,7 @@ class App:
         self.tpl_var = tk.StringVar(value=tpl if tpl in FILENAME_TEMPLATES else DEFAULT_TEMPLATE)
         cb = ttk.Combobox(g, textvariable=self.tpl_var, values=list(FILENAME_TEMPLATES), state="readonly", width=28)
         cb.grid(row=0, column=1, sticky="w", padx=6)
-        self.tpl_preview = ttk.Label(g, text="", foreground="#555")
+        self.tpl_preview = ttk.Label(g, text="", foreground=C["muted"])
         self.tpl_preview.grid(row=1, column=1, sticky="w", padx=6)
         cb.bind("<<ComboboxSelected>>", lambda e: self.update_tpl_preview())
         self.update_tpl_preview()
@@ -4118,7 +4297,7 @@ class App:
         ttk.Combobox(g, textvariable=self.close_var, values=choices, state="readonly", width=16).grid(
             row=2, column=1, sticky="w", padx=6, pady=(12, 4))
         ttk.Label(g, text=("縮到系統匣＝縮到右下角繼續下載，完成會跳通知" if pystray else "（這台電腦不支援系統匣）"),
-                  foreground="#555").grid(row=3, column=1, sticky="w", padx=6)
+                  foreground=C["muted"]).grid(row=3, column=1, sticky="w", padx=6)
 
         self.keep_var = tk.BooleanVar(value=bool(self.settings["keep_history"]))
         ttk.Checkbutton(g, text="保存下載紀錄", variable=self.keep_var).grid(
@@ -4130,7 +4309,7 @@ class App:
 
         # --- 瀏覽器連動 ---
         c = pages["link"]
-        ttk.Label(c, justify="left", foreground="#555", wraplength=700,
+        ttk.Label(c, justify="left", foreground=C["muted"], wraplength=700,
                   text="取消所有配對：所有配對過的瀏覽器都要重新配對（借別人用過電腦時可以按）。\n"
                        "關閉服務：電腦版不再接收瀏覽器送來的影片，下次按「配對瀏覽器…」會再打開。").pack(anchor="w")
         row = ttk.Frame(c)
@@ -4142,7 +4321,7 @@ class App:
 
         # --- 備份與更新 ---
         b = pages["backup"]
-        ttk.Label(b, text="換電腦、重灌時用；更新版本時也會自動備份一份", foreground="#555").pack(anchor="w")
+        ttk.Label(b, text="換電腦、重灌時用；更新版本時也會自動備份一份", foreground=C["muted"]).pack(anchor="w")
         row = ttk.Frame(b)
         row.pack(anchor="w", pady=(6, 16))
         ttk.Button(row, text="⬆ 匯出設定和紀錄…", command=self.export_settings).pack(side="left")
@@ -4158,30 +4337,30 @@ class App:
         # --- 問題排查 ---
         t = pages["debug"]
         ttk.Label(t, text="出錯時打開錯誤日誌，把內容傳給作者；換了網路、預估變很不準時清除網速紀錄。",
-                  foreground="#555", wraplength=700).pack(anchor="w")
+                  foreground=C["muted"], wraplength=700).pack(anchor="w")
         row = ttk.Frame(t)
         row.pack(anchor="w", pady=6)
         ttk.Button(row, text="📄 打開錯誤日誌", command=self.open_log).pack(side="left")
         ttk.Button(row, text="📂 打開設定資料夾", command=lambda: open_path(data_dir())).pack(side="left", padx=6)
         ttk.Button(row, text="清除網速紀錄", command=self.reset_speed).pack(side="left")
-        ttk.Label(t, text=f"設定資料夾：{data_dir()}", foreground="#888").pack(anchor="w", pady=(10, 0))
+        ttk.Label(t, text=f"設定資料夾：{data_dir()}", foreground=C["muted"]).pack(anchor="w", pady=(10, 0))
 
         # --- 廣告判斷 ---
         x = pages["ai"]
         ttk.Label(x, justify="left", wraplength=700, text=(
             "在影片網頁點左下角 🛡 →「🔍 檢查」，會判斷「這頁連到的其他網站」哪些是廣告。紅字＝建議封鎖，要不要封鎖還是你決定。")).pack(anchor="w")
         ttk.Label(x, text="① 公開廣告清單（免費，預設就會用）", font=("", 10, "bold")).pack(anchor="w", pady=(10, 0))
-        ttk.Label(x, justify="left", foreground="#555", wraplength=700, text=(
+        ttk.Label(x, justify="left", foreground=C["muted"], wraplength=700, text=(
             "使用 StevenBlack/hosts 整理的公開清單（MIT 授權），約 7 萬個已知廣告、追蹤、惡意網址。\n"
             "存在這台電腦、7 天自動更新一次；比對只在你的電腦做，不會送任何資料出去。")).pack(anchor="w")
         row = ttk.Frame(x)
         row.pack(anchor="w", pady=4)
         ttk.Button(row, text="立即更新清單", command=self.update_blocklist).pack(side="left")
-        self.bl_lbl = ttk.Label(row, text="", foreground="#555")
+        self.bl_lbl = ttk.Label(row, text="", foreground=C["muted"])
         self.bl_lbl.pack(side="left", padx=8)
 
         ttk.Label(x, text="② AI（選用，要付費；不設定也完全沒關係）", font=("", 10, "bold")).pack(anchor="w", pady=(14, 0))
-        ttk.Label(x, justify="left", foreground="#555", wraplength=700, text=(
+        ttk.Label(x, justify="left", foreground=C["muted"], wraplength=700, text=(
             "清單裡查不到的網域，有設定金鑰才會再問 AI。只送網域名稱和網站名稱，不送影片標題、網址。\n"
             "金鑰到 console.anthropic.com 申請（要先儲值）；只存在這台電腦，不會被匯出。問過的網域記住 30 天。")).pack(anchor="w")
         row = ttk.Frame(x)
@@ -4194,7 +4373,7 @@ class App:
         row.pack(anchor="w", pady=4)
         ttk.Button(row, text="測試", command=self.test_ai).pack(side="left")
         ttk.Button(row, text="清除 AI 記憶", command=self.clear_ai_cache).pack(side="left", padx=6)
-        self.ai_lbl = ttk.Label(x, text="", foreground="#555", wraplength=700, justify="left")
+        self.ai_lbl = ttk.Label(x, text="", foreground=C["muted"], wraplength=700, justify="left")
         self.ai_lbl.pack(anchor="w", pady=6)
         self.refresh_ai_label()
         self.refresh_bl_label()
@@ -4271,6 +4450,14 @@ class App:
             self.adv.focus_force()
         except Exception:
             pass
+
+    def change_theme(self):
+        self.settings["theme"] = THEMES[self.theme_var.get()]
+        self.settings.save()
+        self.theme = apply_theme(self.root, self.settings["theme"])
+        for t in (self.tree, self.qtree, self.htree):
+            self.style_tree(t)
+        self.header.draw()
 
     def apply_rate_limit(self):
         txt = self.rate_var.get().strip()
@@ -4361,7 +4548,7 @@ class App:
             self.stree.heading(c, text=name)
             self.stree.column(c, width=w, anchor="center")
         self.stree.pack(fill="both", expand=True, **pad)
-        ttk.Label(parent, foreground="#555", wraplength=740, justify="left",
+        ttk.Label(parent, foreground=C["muted"], wraplength=740, justify="left",
                   text="誤差＝原本的預估跟實際差多少（中位數）。同一個網站下載 3 次以上，之後的預估會自動用這些結果校正。\n"
                        "只記錄網站名稱和數字（大小、秒數、畫質），不記錄影片標題和網址。可以在「檔名與程式」關掉。").pack(fill="x", **pad)
         bar = ttk.Frame(parent)

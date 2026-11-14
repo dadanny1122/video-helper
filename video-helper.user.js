@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.20.0
+// @version      3.21.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @author       dadanny1122
 // @license      MIT
@@ -403,19 +403,28 @@
       if (!this.shield) {
         this.shield = document.createElement('div');
         this.shield.className = 'vh-ui';
-        this.shield.style.cssText = 'position:fixed;bottom:20px;left:20px;z-index:2147483647;background:rgba(0,120,60,.9);' +
-          'color:#fff;padding:6px 12px;border-radius:16px;font:bold 13px sans-serif;cursor:pointer;';
+        this.shield.style.cssText = 'position:fixed;bottom:20px;left:20px;z-index:2147483647;background:linear-gradient(135deg,rgba(16,185,129,.95),rgba(14,165,233,.95));' +
+          'color:#fff;padding:7px 14px;border-radius:999px;box-shadow:0 8px 24px rgba(14,165,233,.35),0 0 0 1px rgba(255,255,255,.18) inset;letter-spacing:.2px;font:bold 13px Inter,"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;cursor:pointer;';
         this.shield.title = '點一下：查看這頁連到的其他網站';
         this.shield.addEventListener('click', () => this.openPanel());
         this.toasts = document.createElement('div');
         this.toasts.className = 'vh-ui';
         this.toasts.style.cssText = 'position:fixed;bottom:60px;left:20px;z-index:2147483647;display:flex;' +
           'flex-direction:column-reverse;gap:6px;max-width:360px;';
-        document.body.append(this.shield, this.toasts);
+        const css = document.createElement('style');      // 設計語言：品牌色 #57C8FF → #8B7CFF（電腦版、即時介面共用）
+        css.textContent = '@keyframes vhIn{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}' +
+          '.vh-ui [style*="cursor:pointer"]{transition:filter .15s ease,transform .15s ease}' +
+          '.vh-ui [style*="cursor:pointer"]:hover{filter:brightness(1.15)}' +
+          '.vh-ui [style*="cursor:pointer"]:active{transform:scale(.97)}' +
+          '.vh-ui ::-webkit-scrollbar{width:8px}.vh-ui ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:8px}' +
+          '.vh-ui b{font-weight:700;letter-spacing:.2px}' +
+          '.vh-ui[style*="backdrop-filter"]::before,.vh-ui [style*="backdrop-filter"]::before{content:"";position:absolute;top:0;left:18px;' +
+          'right:18px;height:1px;background:linear-gradient(90deg,transparent,#57c8ff,#8b7cff,transparent);pointer-events:none}';
+        document.body.append(css, this.shield, this.toasts);
       }
       this.shield.textContent = PAUSED ? '⏸ 這個分頁暫停擋廣告中（點這裡恢復）'
         : `🛡 已攔截 ${this.count} 次` + (this.saved ? `｜省下 ${this.saved} 個廣告請求` : '');
-      if (PAUSED) this.shield.style.background = 'rgba(180,120,0,.95)';
+      if (PAUSED) this.shield.style.background = 'linear-gradient(135deg,rgba(245,158,11,.97),rgba(234,88,12,.97))';
       while (this.pending.length) this.toast(...this.pending.shift());
     },
 
@@ -449,16 +458,16 @@
       const p = this.panel = document.createElement('div');
       p.className = 'vh-ui';
       p.dataset.kind = 'list';
-      p.style.cssText = 'position:fixed;bottom:60px;left:20px;z-index:2147483647;background:rgba(20,20,20,.97);color:#fff;' +
-        'padding:12px 14px;border-radius:10px;font:13px/1.6 sans-serif;width:380px;max-height:70vh;overflow-y:auto;' +
-        'box-shadow:0 2px 12px rgba(0,0,0,.5);';
+      p.style.cssText = 'position:fixed;bottom:60px;left:20px;z-index:2147483647;background:rgba(15,19,29,.88);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.10);animation:vhIn .18s ease both;color:#fff;' +
+        'padding:12px 14px;border-radius:16px;font:13px/1.6 Inter,"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;width:380px;max-height:70vh;overflow-y:auto;' +
+        'box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 1px rgba(0,0,0,.25);';
       if (PAUSED) {
         const pb = document.createElement('div');
-        pb.style.cssText = 'margin-bottom:10px;padding:8px;background:#5d4300;border-radius:6px;';
+        pb.style.cssText = 'margin-bottom:10px;padding:8px;background:rgba(212,146,10,.20);border:1px solid rgba(212,146,10,.35);border-radius:10px;';
         pb.innerHTML = '⏸ <b>這個分頁暫停擋廣告中</b><br><small>關掉分頁就會自動恢復</small> ';
         const go = document.createElement('span');
         go.textContent = '▶ 現在恢復';
-        go.style.cssText = 'cursor:pointer;background:#2e7d32;padding:2px 10px;border-radius:4px;';
+        go.style.cssText = 'cursor:pointer;background:#16a34a;padding:2px 10px;border-radius:8px;';
         go.addEventListener('click', () => setPaused(false));
         pb.appendChild(go);
         p.appendChild(pb);
@@ -469,7 +478,7 @@
       evBox.innerHTML = '<b>最近攔截</b>' + (events.length ? '' : '<div style="opacity:.7;font-size:12px">這個分頁還沒有攔截任何東西</div>');
       for (const ev of events.slice(0, 12)) {
         const row = document.createElement('div');
-        row.style.cssText = 'margin-top:4px;padding:4px 8px;background:#2a2a2a;border-radius:6px;font-size:12px;';
+        row.style.cssText = 'margin-top:4px;padding:4px 8px;background:rgba(255,255,255,.06);border-radius:10px;font-size:12px;';
         const head = document.createElement('div');
         head.textContent = `${ev.time}　${ev.what}${ev.n > 1 ? ` ×${ev.n}` : ''}${ev.host ? `（${ev.host}）` : ''}`;
         const why = document.createElement('div');
@@ -502,7 +511,7 @@
         const aiBtn = document.createElement('span');
         aiBtn.textContent = `🔍 檢查這 ${unknown.length} 個是不是廣告`;
         aiBtn.title = '用電腦版裡的公開廣告清單比對（免費）；有設定 AI 金鑰才會再問 AI。只給建議，封不封鎖你決定';
-        aiBtn.style.cssText = 'cursor:pointer;background:#6a1b9a;padding:3px 10px;border-radius:4px;';
+        aiBtn.style.cssText = 'cursor:pointer;background:#7c5cff;padding:3px 10px;border-radius:8px;';
         const aiMsg = document.createElement('span');
         aiMsg.style.cssText = 'margin-left:8px;opacity:.8;';
         aiBtn.addEventListener('click', async () => {
@@ -535,7 +544,7 @@
         const builtIn = AD_RE.test(b);
         const mine = userBlock.has(b);
         const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:6px;padding:4px 8px;background:#333;border-radius:6px;';
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:6px;padding:4px 8px;background:rgba(255,255,255,.06);border-radius:10px;';
         const name = document.createElement('div');
         name.style.cssText = 'flex:1;min-width:0;';
         const dom = document.createElement('div');
@@ -554,21 +563,21 @@
         info.textContent = (st.blocked ? `擋 ${st.blocked}` : '') + (st.blocked && st.n ? '｜' : '') +
           (st.n ? `載入 ${st.n}${hows ? '（' + hows + '）' : ''}` : '');
         const btn = document.createElement('span');
-        btn.style.cssText = 'cursor:pointer;padding:2px 8px;border-radius:4px;font-size:12px;white-space:nowrap;';
+        btn.style.cssText = 'cursor:pointer;padding:2px 8px;border-radius:8px;font-size:12px;white-space:nowrap;';
         if (builtIn) {
           btn.textContent = '內建已擋';
-          btn.style.background = '#2e7d32';
+          btn.style.background = '#16a34a';
           btn.style.cursor = 'default';
         } else {
           btn.textContent = mine ? '解除封鎖' : '封鎖';
-          btn.style.background = mine ? '#555' : OWN.has(b) ? '#555' : '#c62828';
+          btn.style.background = mine ? 'rgba(255,255,255,.14)' : OWN.has(b) ? 'rgba(255,255,255,.14)' : '#dc2626';
           btn.addEventListener('click', () => {
             if (!userBlock.has(b) && OWN.has(b) &&
                 !confirm(`${b} 是這個網站自己的影片／圖片伺服器，封鎖後影片可能播不了。\n確定要封鎖嗎？`)) return;
             if (userBlock.has(b)) userBlock.delete(b); else userBlock.add(b);
             store.set('userBlock', [...userBlock]);
             btn.textContent = userBlock.has(b) ? '解除封鎖' : '封鎖';
-            btn.style.background = userBlock.has(b) ? '#555' : '#c62828';
+            btn.style.background = userBlock.has(b) ? 'rgba(255,255,255,.14)' : '#dc2626';
           });
         }
         row.append(name, btn);
@@ -579,7 +588,7 @@
       foot.style.cssText = 'margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
       const copy = document.createElement('span');
       copy.textContent = '📋 複製我的黑名單';
-      copy.style.cssText = 'cursor:pointer;background:#1565c0;padding:3px 10px;border-radius:4px;';
+      copy.style.cssText = 'cursor:pointer;background:#2f7cf6;padding:3px 10px;border-radius:8px;';
       copy.addEventListener('click', () => {
         const text = [...userBlock].join('\n') || '（黑名單是空的）';
         navigator.clipboard.writeText(text).then(() => { copy.textContent = '✅ 已複製'; }, () => { prompt('複製下面的內容：', text); });
@@ -590,16 +599,16 @@
       const mkBtn = (text, color, fn) => {
         const b = document.createElement('span');
         b.textContent = text;
-        b.style.cssText = `cursor:pointer;background:${color};padding:3px 10px;border-radius:4px;`;
+        b.style.cssText = `cursor:pointer;background:${color};padding:3px 10px;border-radius:8px;`;
         b.addEventListener('click', fn);
         return b;
       };
-      const settingsBtn = mkBtn('⚙ 功能開關', '#555', () => this.actions.settings && this.actions.settings());
-      const diagBtn = mkBtn('🔧 診斷', '#6a1b9a', () => this.actions.diagnose && this.actions.diagnose());
-      const healthBtn = mkBtn('🩺 狀態檢查', '#00695c', () => this.actions.health && this.actions.health());
+      const settingsBtn = mkBtn('⚙ 功能開關', 'rgba(255,255,255,.14)', () => this.actions.settings && this.actions.settings());
+      const diagBtn = mkBtn('🔧 診斷', '#7c5cff', () => this.actions.diagnose && this.actions.diagnose());
+      const healthBtn = mkBtn('🩺 狀態檢查', '#0d9488', () => this.actions.health && this.actions.health());
       const pauseBtn = PAUSED
-        ? mkBtn('▶ 恢復擋廣告', '#2e7d32', () => setPaused(false))
-        : mkBtn('⏸ 這個分頁先暫停擋廣告', '#8d6e00', () => {
+        ? mkBtn('▶ 恢復擋廣告', '#16a34a', () => setPaused(false))
+        : mkBtn('⏸ 這個分頁先暫停擋廣告', '#b7791f', () => {
           if (confirm('這個分頁先暫停擋廣告、擋彈窗嗎？\n\n網頁會重新整理。關掉這個分頁就會自動恢復，其他分頁不受影響。')) setPaused(true);
         });
       foot.append(copy, settingsBtn, healthBtn, diagBtn, pauseBtn, note);
@@ -610,8 +619,8 @@
 
     toast(msg, url) {
       const t = document.createElement('div');
-      t.style.cssText = 'background:rgba(20,20,20,.95);color:#fff;padding:8px 12px;border-radius:8px;' +
-        'font:13px/1.5 sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.4);word-break:break-all;';
+      t.style.cssText = 'background:rgba(15,19,29,.88);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.10);animation:vhIn .18s ease both;color:#fff;padding:8px 12px;border-radius:12px;' +
+        'font:13px/1.5 Inter,"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;box-shadow:0 12px 32px rgba(0,0,0,.4);word-break:break-all;';
       const line = document.createElement('div');
       line.textContent = '🛡 ' + msg;
       t.appendChild(line);
@@ -1623,8 +1632,8 @@
         let collapsed = false;
         const box = document.createElement('div');
         box.className = 'vh-ui';
-        box.style.cssText = 'position:fixed;top:10px;right:20px;z-index:2147483647;background:rgba(0,0,0,.8);' +
-          'color:#fff;padding:8px 12px;border-radius:8px;font:14px/1.6 sans-serif;cursor:move;' +
+        box.style.cssText = 'position:fixed;top:10px;right:20px;z-index:2147483647;background:rgba(15,19,29,.88);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.10);animation:vhIn .18s ease both;' +
+          'color:#fff;padding:8px 12px;border-radius:8px;font:14px/1.6 Inter,"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;cursor:move;' +
           'white-space:nowrap;display:none;touch-action:none;user-select:none;';
         box.title = '點一下收合 / 展開；按住可以拖到別的位置（雙擊還原位置）';
         document.body.appendChild(box);
@@ -2250,11 +2259,11 @@
 
     const btn = document.createElement('div');
     btn.textContent = '⬇ 下載';
-    btn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:2147483647;background:#e53935;color:#fff;' +
-      'padding:10px 16px;border-radius:24px;font:bold 15px sans-serif;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.4);';
+    btn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:2147483647;background:linear-gradient(135deg,#57c8ff,#8b7cff);color:#fff;' +
+      'padding:11px 20px;border-radius:999px;letter-spacing:.3px;font:bold 15px Inter,"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;cursor:pointer;box-shadow:0 10px 30px rgba(139,124,255,.45),0 0 0 1px rgba(255,255,255,.2) inset;';
     const panel = document.createElement('div');
-    panel.style.cssText = 'position:fixed;bottom:70px;right:20px;z-index:2147483647;background:rgba(20,20,20,.95);' +
-      'color:#fff;padding:12px 14px;border-radius:10px;font:14px/1.7 sans-serif;min-width:260px;' +
+    panel.style.cssText = 'position:fixed;bottom:70px;right:20px;z-index:2147483647;background:rgba(15,19,29,.88);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.10);animation:vhIn .18s ease both;' +
+      'color:#fff;padding:12px 14px;border-radius:16px;font:14px/1.7 Inter,"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;min-width:260px;' +
       'max-height:70vh;overflow-y:auto;display:none;';
     wrap.append(btn, panel);
 
@@ -2281,13 +2290,13 @@
         const typeText = s.kind === 'hls' ? '切片' : s.kind === 'page' ? '電腦版會自動選最高畫質' : 'MP4';
 
         const row = document.createElement('div');
-        row.style.cssText = 'margin-top:6px;padding:6px 8px;background:#333;border-radius:6px;cursor:pointer;';
+        row.style.cssText = 'margin-top:6px;padding:6px 8px;background:rgba(255,255,255,.06);border-radius:10px;cursor:pointer;';
         row.innerHTML = `<b>${s.label}</b> <small>（${typeText}）</small><br><small>${sizeText}｜${timeText}</small>`;
         // 「🖥」：送到電腦版下載（不在瀏覽器裡下載）
         const toPc = document.createElement('span');
         toPc.textContent = '🖥 送到電腦版';
         toPc.title = '用電腦版下載：大檔不吃瀏覽器記憶體，可以關掉網頁、在背景下載';
-        toPc.style.cssText = 'float:right;margin-left:8px;padding:1px 8px;border-radius:4px;background:#1565c0;font-size:12px;';
+        toPc.style.cssText = 'float:right;margin-left:8px;padding:1px 8px;border-radius:8px;background:#2f7cf6;font-size:12px;';
         toPc.addEventListener('click', async e => {
           e.stopPropagation();
           desk.textContent = '🖥 送到電腦版中…';
@@ -2338,7 +2347,7 @@
         const open = document.createElement('a');
         open.href = s.url; open.target = '_blank'; open.rel = 'noopener';
         open.textContent = '① 開啟影片檔（推薦）';
-        open.style.cssText = 'display:block;margin-top:8px;padding:8px 10px;border-radius:8px;background:#1565c0;color:#fff;text-align:center;text-decoration:none;';
+        open.style.cssText = 'display:block;margin-top:8px;padding:8px 10px;border-radius:8px;background:#2f7cf6;color:#fff;text-align:center;text-decoration:none;';
         const tip = document.createElement('div');
         tip.style.cssText = 'font-size:12px;opacity:.8;margin-top:4px;';
         tip.textContent = '影片開始播放後，點 Safari 的「分享」→「儲存到檔案」';
@@ -2413,9 +2422,9 @@
     if (ui.panel) { ui.panel.remove(); ui.panel = null; }
     const p = ui.panel = document.createElement('div');
     p.className = 'vh-ui';
-    p.style.cssText = 'position:fixed;bottom:60px;left:20px;z-index:2147483647;background:rgba(20,20,20,.97);color:#fff;' +
-      'padding:12px 14px;border-radius:10px;font:13px/1.7 sans-serif;width:400px;max-height:75vh;overflow-y:auto;' +
-      'box-shadow:0 2px 12px rgba(0,0,0,.5);';
+    p.style.cssText = 'position:fixed;bottom:60px;left:20px;z-index:2147483647;background:rgba(15,19,29,.88);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.10);animation:vhIn .18s ease both;color:#fff;' +
+      'padding:12px 14px;border-radius:16px;font:13px/1.7 Inter,"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;width:400px;max-height:75vh;overflow-y:auto;' +
+      'box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 1px rgba(0,0,0,.25);';
     const add = (html) => { const d = document.createElement('div'); d.innerHTML = html; p.appendChild(d); return d; };
     const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const ok = (cond, good, bad, warn) => cond ? `✅ ${good}` : (warn ? `⚠ ${bad}` : `❌ ${bad}`);
@@ -2468,8 +2477,8 @@
     if (ui.panel) { ui.panel.remove(); ui.panel = null; }
     const p = ui.panel = document.createElement('div');
     p.className = 'vh-ui';
-    p.style.cssText = 'position:fixed;bottom:60px;left:20px;z-index:2147483647;background:rgba(20,20,20,.97);color:#fff;' +
-      'padding:12px 14px;border-radius:10px;font:14px/1.8 sans-serif;width:360px;box-shadow:0 2px 12px rgba(0,0,0,.5);';
+    p.style.cssText = 'position:fixed;bottom:60px;left:20px;z-index:2147483647;background:rgba(15,19,29,.88);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.10);animation:vhIn .18s ease both;color:#fff;' +
+      'padding:12px 14px;border-radius:16px;font:14px/1.8 Inter,"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 1px rgba(0,0,0,.25);';
     p.innerHTML = `<b>功能開關（${site.name}）</b><div style="opacity:.7;font-size:12px">改完會自動重新整理網頁</div>`;
     for (const name of site.features) {
       const row = document.createElement('label');
