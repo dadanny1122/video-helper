@@ -44,13 +44,20 @@ def check_pornhub():
 
 def check_xvideos():
     home = get("https://www.xvideos.com/")
-    m = re.search(r'href="(/video\.?[a-z0-9]+/[^"]+)"', home)
-    if not m:
+    links = list(dict.fromkeys(re.findall(r'href="(/video\.?[a-z0-9]+/[^"]+)"', home)))
+    if not links:
         return "blocked" if BLOCKED_HINTS.search(home) else "broken", "首頁找不到影片連結"
-    page = get("https://www.xvideos.com" + m.group(1))
-    if not re.search(r"setVideo(UrlHigh|UrlLow|HLS)", page):
-        return "blocked" if BLOCKED_HINTS.search(page) else "broken", "影片頁找不到 setVideoHLS（腳本靠它找影片）"
-    return "ok", ""
+    page = ""
+    for path in links[:3]:            # 試 3 部：只有 1 部怪怪的（被刪、特殊頁面）不算改版，避免誤報
+        try:
+            page = get("https://www.xvideos.com" + path)
+        except Exception as e:
+            print(f"::notice title=XVideos::{path[:50]}：{e}")
+            continue
+        if re.search(r"setVideo(UrlHigh|UrlLow|HLS)", page):
+            return "ok", ""
+        print(f"::notice title=XVideos::{path[:50]} 找不到 setVideoHLS（{len(page)} 字），換下一部")
+    return "blocked" if BLOCKED_HINTS.search(page) else "broken", "3 部影片頁都找不到 setVideoHLS（腳本靠它找影片）"
 
 
 def media_hosts(page):
