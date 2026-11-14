@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.27.0"
+VERSION = "1.28.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -2184,9 +2184,10 @@ class Home(tk.Canvas):
     """
     DUR, GAP = 480, 90           # 每張卡片動畫多久、下一張晚多久開始（毫秒）
 
-    def __init__(self, master, on_pick, status=lambda: "", top=None, below=None):
+    def __init__(self, master, on_pick, status=lambda: "", top=None, below=None, kpis=None):
         super().__init__(master, highlightthickness=0, bd=0, bg=C["bg"])
-        self.on_pick, self.status, self.top, self.below = on_pick, status, top, below
+        self.on_pick, self.status, self.topw, self.below, self.kpis = on_pick, status, top, below, kpis
+        self.top, self.tiles = 0, []
         self.t0, self.hover, self.lift, self.leaving, self.anim = 0.0, None, [0.0] * len(HOME_CARDS), None, None
         self.bind("<Configure>", lambda e: self.draw())
         self.bind("<Motion>", self._motion)
@@ -2202,7 +2203,7 @@ class Home(tk.Canvas):
         self.configure(bg=C["bg"])
         self.t0, self.leaving = time.time(), None
         self.lift = [0.0] * len(HOME_CARDS)
-        y = sum(max(wd.winfo_height(), wd.winfo_reqheight()) for wd in (self.top, self.below) if wd is not None)
+        y = sum(max(wd.winfo_height(), wd.winfo_reqheight()) for wd in (self.topw, self.below) if wd is not None)
         self.place(x=0, y=y, relwidth=1, relheight=1, height=-y)
         self.lift_()
         self._run()
@@ -2234,11 +2235,14 @@ class Home(tk.Canvas):
         w, h = max(self.winfo_width(), 400), max(self.winfo_height(), 300)
         cols = 2
         cw = min(380, (w - 80) // cols)
-        ch = 132
-        gx, gy = 22, 22
+        ch = 118
+        gx, gy = 22, 18
         total_w = cols * cw + (cols - 1) * gx
         x0 = (w - total_w) // 2
-        y0 = max(170, (h - (2 * ch + gy)) // 2 + 50)
+        self.top = max(8, (h - 560) // 2)          # 整塊內容垂直置中
+        y0 = self.top + 236
+        tw = (total_w - 3 * 14) / 4                 # 數據卡：一排 4 張
+        self.tiles = [(x0 + i * (tw + 14), self.top + 124, tw, 88) for i in range(4)]
         return [(x0 + (i % cols) * (cw + gx), y0 + (i // cols) * (ch + gy), cw, ch) for i in range(len(HOME_CARDS))], x0, y0
 
     def draw(self):
@@ -2255,7 +2259,8 @@ class Home(tk.Canvas):
         w = max(self.winfo_width(), 400)
         # 標題（先淡入）
         a = ease_out(now / 420) * (1 - out)
-        ty = y0 - 96 + (1 - a) * 12
+        top = self.top
+        ty = top + 34 + (1 - a) * 12
         self.create_text(w // 2, ty, text="歡迎回來", font=self._font(22, True), fill=mix(C["bg"], C["text"], a))
         ln = ease_out((now - 200) / 500) * (1 - out) * 70      # 標題兩邊的細線（往外長出來）
         for sgn in (-1, 1):
@@ -2264,12 +2269,41 @@ class Home(tk.Canvas):
         typed = "安全・乾淨・穩定 —— 你的影片小幫手"           # 打字機效果：一個字一個字出現
         k = int(max(0, now - 350) / 45)
         cursor = "▍" if k < len(typed) or int(now / 500) % 2 else " "
-        self.create_text(w // 2, y0 - 62, text=typed[:k] + (cursor if not self.leaving else ""),
+        self.create_text(w // 2, top + 68, text=typed[:k] + (cursor if not self.leaving else ""),
                          font=self._font(11), fill=mix(C["bg"], C["accent"], a))
-        self.create_text(w // 2, y0 - 36, text=self.status() or "想做什麼？點一張卡片開始",
+        self.create_text(w // 2, top + 94, text=self.status() or "想做什麼？點一張卡片開始",
                          font=self._font(9), fill=mix(C["bg"], C["muted"], ease_out((now - 900) / 400) * (1 - out)))
+        # 數據卡（參考 Behance 上的金融儀表板）：大數字從 0 跳上去、今天下載附 7 天迷你長條圖
+        try:
+            kpis = self.kpis() if self.kpis else []
+        except Exception:
+            kpis = []
+        for i, ((x, y, tw, th), kp) in enumerate(zip(self.tiles, kpis)):
+            p = ease_out((now - 250 - i * 70) / 420) * (1 - out)
+            cnt = ease_out((now - 300 - i * 70) / 900)                # 數字往上跳的進度
+            dy = (1 - p) * 16
+            bg = mix(C["bg"], card, p)
+            round_rect(self, x, y + dy, x + tw, y + th + dy, 16, fill=bg, outline=mix(C["bg"], line, p), width=1)
+            self.create_text(x + 16, y + dy + 20, text=kp["label"], anchor="w", font=self._font(9), fill=mix(bg, C["muted"], p))
+            val = kp["fmt"].format(kp["value"] * cnt) if kp["value"] is not None else "—"
+            vid = self.create_text(x + 16, y + dy + 54, text=val, anchor="w", font=self._font(20, True), fill=mix(bg, C["text"], p))
+            bx = self.bbox(vid)
+            if bx and kp.get("unit"):
+                self.create_text(bx[2] + 5, y + dy + 59, text=kp["unit"], anchor="w", font=self._font(9), fill=mix(bg, C["muted"], p))
+            spark = kp.get("spark")
+            if spark:                                                  # 迷你長條圖：最近 7 天
+                m = max(spark) or 1
+                bw, gap = 6, 4
+                sx = x + tw - 16 - len(spark) * (bw + gap) + gap
+                for j, v in enumerate(spark):
+                    hgt = max(2, 34 * v / m * cnt)
+                    bx0 = sx + j * (bw + gap)
+                    self.create_rectangle(bx0, y + dy + 70 - hgt, bx0 + bw, y + dy + 70, outline="",
+                                          fill=mix(bg, mix(C["accent"], C["accent2"], j / 6), p * (0.55 + 0.45 * (j == len(spark) - 1))))
+            elif kp.get("dot"):
+                self.create_oval(x + tw - 24, y + dy + 16, x + tw - 16, y + dy + 24, outline="", fill=mix(bg, kp["dot"], p))
         for i, ((x, y, cw, ch), (icon, title, desc, _)) in enumerate(zip(boxes, HOME_CARDS)):
-            p = ease_out((now - 150 - i * self.GAP) / self.DUR)     # 這張卡片進場進度
+            p = ease_out((now - 450 - i * self.GAP) / self.DUR)     # 這張卡片進場進度
             if self.leaving:
                 p *= 1 - out
             self.lift[i] += ((1.0 if i == self.hover and not self.leaving else 0.0) - self.lift[i]) * 0.25
@@ -3057,7 +3091,7 @@ class App:
             self.refresh_bridge_label()
         root.bind("<FocusIn>", lambda e: self.check_clipboard() if e.widget is root else None)
 
-        self.home = Home(root, self.pick_home, self.home_status, top=self.header, below=self.ticker)
+        self.home = Home(root, self.pick_home, self.home_status, top=self.header, below=self.ticker, kpis=self.home_kpis)
         self.header.on_nav = self.nav
         self.header.active = self.nb.index("current")
         self.header.draw()
@@ -3934,6 +3968,27 @@ class App:
             self.home.hide()
         self.nb.select(idx)
         self.header.set_active(idx)
+
+    def home_kpis(self):
+        """首頁數據卡：今天下載（附 7 天長條圖）、近 30 天下載量、平均速度、成功率"""
+        now = datetime.now()
+        days = [(now - timedelta(days=d)).strftime("%Y-%m-%d") for d in range(6, -1, -1)]
+        since = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+        items = self.history.items
+        done = [r for r in items if r.get("status") == DONE]
+        spark = [sum(1 for r in done if str(r.get("time", "")).startswith(d)) for d in days]
+        recent = [r for r in items if str(r.get("time", "")) >= since and r.get("status") in (DONE, FAILED)]
+        ok = sum(1 for r in recent if r["status"] == DONE)
+        gb = sum(r.get("size") or 0 for r in recent if r["status"] == DONE) / 1e9
+        speeds = [r["mbps"] for r in self.stats.items[:20] if r.get("mbps")]
+        avg = sum(speeds) / len(speeds) if speeds else (self.mbps or None)
+        return [
+            {"label": "今天下載", "value": spark[-1], "fmt": "{:.0f}", "unit": "部", "spark": spark},
+            {"label": "近 30 天", "value": gb, "fmt": "{:.1f}", "unit": "GB", "dot": C["accent"]},
+            {"label": "平均速度", "value": avg, "fmt": "{:.0f}", "unit": "Mbps", "dot": C["ok"]},
+            {"label": "成功率", "value": ok / len(recent) * 100 if recent else None, "fmt": "{:.0f}", "unit": "%",
+             "dot": C["ok"] if not recent or ok / len(recent) >= .9 else C["warn"]},
+        ]
 
     def home_status(self):
         run = sum(1 for t in self.queue.tasks if t["status"] == RUNNING)

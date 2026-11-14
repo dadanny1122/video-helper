@@ -47,6 +47,9 @@ app.show_home(); r.update()
 assert app.home.visible()
 app.home.leaving = (1, time.time() - 1); app.home._run(); r.update()
 assert not app.home.visible() and app.nb.index("current") == 1, "點首頁卡片要進到那個分頁"
+_k = app.home_kpis()
+assert len(_k) == 4 and len(_k[0]["spark"]) == 7, _k
+app.home.draw()
 app.nav(2); r.update()
 assert app.nb.index("current") == 2 and app.header.active == 2, "頂部選單要能切到設定"
 app.nav(-1); r.update()
