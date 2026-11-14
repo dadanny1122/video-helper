@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.28.2"
+VERSION = "1.28.3"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -2243,7 +2243,7 @@ class Home(tk.Canvas):
     def show(self):
         self._kpi_t = 0                              # 打開首頁時重新算一次數字
         self.configure(bg=C["bg"])
-        self.t0, self.leaving = time.time(), None
+        self.t0, self.leaving = None, None
         self.lift = [0.0] * len(HOME_CARDS)
         y = sum(max(wd.winfo_height(), wd.winfo_reqheight()) for wd in (self.topw, self.below) if wd is not None)
         self.place(x=0, y=y, relwidth=1, relheight=1, height=-y)
@@ -2263,6 +2263,8 @@ class Home(tk.Canvas):
         return bool(self.winfo_manager())
 
     def _run(self):
+        if self.t0 is None:                          # 第一格才開始計時（打開首頁那一下的排版停頓不算）
+            self.t0 = time.time()
         self.draw()
         busy = (time.time() - self.t0) * 1000 < 2400 or self.leaving \
             or any(abs(v - (1.0 if i == self.hover else 0.0)) > 0.02 for i, v in enumerate(self.lift))
@@ -2299,7 +2301,7 @@ class Home(tk.Canvas):
         card = "#262a33" if dark else "#ffffff"
         card_hi = "#2f3542" if dark else "#f2f6ff"
         line = "#363b46" if dark else "#e3e7ee"
-        now = (time.time() - self.t0) * 1000
+        now = (time.time() - (self.t0 or time.time())) * 1000
         out = 0.0
         if self.leaving:
             out = ease_out((time.time() - self.leaving[1]) * 1000 / 240)
@@ -2452,8 +2454,10 @@ class Header(tk.Canvas):
 
     def _layout(self):
         w = max(self.winfo_width() / UI_S, 400)
-        f = self._font(10, True)
-        widths = [f.measure(name) / UI_S + 28 for name, _ in NAV_ITEMS]
+        if getattr(self, "_widths", None) is None:      # 字寬量一次就好（每格都量會拖慢動畫）
+            f = self._font(10, True)
+            self._widths = [f.measure(name) / UI_S + 28 for name, _ in NAV_ITEMS]
+        widths = self._widths
         x = w - 18 - sum(widths)
         out = []
         for (name, idx), iw in zip(NAV_ITEMS, widths):
@@ -2473,11 +2477,13 @@ class Header(tk.Canvas):
             self.bar = target
             self.draw_nav()
             return
-        self.bar_from, self.bar_to, self.bar_t0 = self.bar, target, time.time()
+        self.bar_from, self.bar_to, self.bar_t0 = self.bar, target, None
         if not self.anim:
-            self._tick()
+            self.anim = self.after_idle(self._tick)
 
     def _tick(self):
+        if self.bar_t0 is None:                      # 第一格：現在才開始計時
+            self.bar_t0 = time.time()
         t = (time.time() - self.bar_t0) / 0.35
         e = ease_out_circ(t)
         (a0, a1), (b0, b1) = self.bar_from, self.bar_to
@@ -3168,7 +3174,8 @@ class App:
         self.nb.bind("<<NotebookTabChanged>>", lambda e: self.home.visible() or self.header.set_active(self.nb.index("current")), add="+")
         # 程式自己切分頁（例如瀏覽器送影片來）→ 首頁讓開；剛出現的 0.5 秒內不算（那是之前排隊的切換事件）
         self.nb.bind("<<NotebookTabChanged>>", lambda e: self.home.visible() and not self.home.leaving
-                     and time.time() - self.home.t0 > 0.5 and self.home.hide(), add="+")
+                     and not getattr(self, "_warming", False)
+                     and time.time() - (self.home.t0 or time.time()) > 0.5 and self.home.hide(), add="+")
         if self.settings["show_home"] and self.settings["setup_seen"] and not first_run:
             root.after(80, self.show_home)
         self.refresh_header()
@@ -4035,6 +4042,23 @@ class App:
     def show_home(self):
         self.header.set_active(-1)
         self.home.show()
+        if not getattr(self, "_warmed", False):          # 第一次：在首頁後面把每個分頁偷偷畫一次，之後切換不會停頓
+            self._warmed = True
+            self.root.after(400, self._warm_tabs)
+
+    def _warm_tabs(self):
+        if not self.home.visible():
+            return
+        cur = self.nb.index("current")
+        self._warming = True                             # 這時候的「切換分頁」不要把首頁關掉
+        try:
+            for i in range(self.nb.index("end")):
+                self.nb.select(i)
+                self.root.update()
+            self.nb.select(cur)
+            self.root.update()
+        finally:
+            self._warming = False
 
     def pick_home(self, idx):
         self.nb.select(idx)
@@ -4049,6 +4073,7 @@ class App:
         if self.home.visible():
             self.home.hide()
         self.nb.select(idx)
+        self.root.update_idletasks()                  # 先把新分頁排版好，再開始播底線動畫（不然動畫會跳格）
         self.header.set_active(idx)
 
     def home_kpis(self):
