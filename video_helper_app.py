@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.25.0"
+VERSION = "1.26.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -154,6 +154,7 @@ DEFAULT_SETTINGS = {
     "default_quality": "最高",
     "rate_limit_mbps": 0,             # 下載速度上限（Mbps），0＝不限制
     "theme": "auto",                  # 外觀：auto 跟系統／dark 深色／light 淺色
+    "show_home": True,                # 打開時先顯示首頁（大卡片選單）
     "skip_downloaded": True,          # 批次、瀏覽器送來的：下載過（檔案還在）就跳過
     "smart_segments": "observe",      # 智慧分段：auto＝自動調整／observe＝只觀察（記錄建議、照舊 6 段）／off＝關閉
     "seg_state": {},                  # 每個網站的分段狀態：網站 → {"level", "stable", "hold"}
@@ -2089,6 +2090,14 @@ def apply_theme(root, mode="auto"):
     try:
         import sv_ttk
         sv_ttk.set_theme(m, root)
+        # 主題的文字／底色是靠 <<ThemeChanged>> 事件套上去的，有些 Windows 上事件沒生效 →
+        # 底色變預設淺灰、字變黑，分頁和表格標題黑字壓在深底上看不到。所以自己再套一次
+        try:
+            root.tk.call("configure_colors")
+        except tk.TclError:
+            pass
+        style.configure(".", background=C["bg"], foreground=C["text"], fieldbackground=C["bg"])
+        root.tk_setPalette(background=C["bg"], foreground=C["text"])
     except Exception as e:                          # 沒有主題檔就用系統內建的
         log.warning("Sun Valley 主題載入失敗，改用內建：%s", e)
         for t in ("vista", "clam"):
@@ -2114,10 +2123,189 @@ def apply_theme(root, mode="auto"):
     root.configure(background=C["bg"])
     dark_titlebar(root, m == "dark")
     if not getattr(root, "_vh_tb_hook", False):     # 之後打開的小視窗也換深色標題列
-        root.bind_class("Toplevel", "<Map>", lambda e: dark_titlebar(e.widget, C["bg"] == PALETTE["dark"]["bg"])
-                        if isinstance(e.widget, tk.Toplevel) else None, add="+")
+        root.bind_class("Toplevel", "<Map>", lambda e: (dark_titlebar(e.widget, C["bg"] == PALETTE["dark"]["bg"]),
+                                                        fade_in(e.widget)) if isinstance(e.widget, tk.Toplevel) else None, add="+")
         root._vh_tb_hook = True
     return m
+
+
+def mix(a, b, t):
+    """兩個顏色中間的顏色（t＝0 是 a、1 是 b）；用來做淡入淡出"""
+    a, b = int(a[1:], 16), int(b[1:], 16)
+    t = max(0.0, min(1.0, t))
+    return "#%02x%02x%02x" % tuple(int(((a >> k) & 255) * (1 - t) + ((b >> k) & 255) * t) for k in (16, 8, 0))
+
+
+def ease_out(t):
+    return 1 - (1 - max(0.0, min(1.0, t))) ** 3
+
+
+def round_rect(cv, x0, y0, x1, y1, r, **kw):
+    pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1, x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
+    return cv.create_polygon(pts, smooth=True, **kw)
+
+
+def fade_in(win, ms=220):
+    """視窗慢慢浮現（Windows 支援透明度；不支援的系統就直接出現）"""
+    if getattr(win, "_vh_faded", False):
+        return
+    win._vh_faded = True
+    try:
+        win.attributes("-alpha", 0.0)
+    except tk.TclError:
+        return
+    t0 = time.time()
+
+    def step():
+        t = (time.time() - t0) * 1000 / ms
+        try:
+            win.attributes("-alpha", ease_out(t))
+        except tk.TclError:
+            return
+        if t < 1:
+            win.after(15, step)
+    win.after(10, step)
+    win.after(ms + 400, lambda: win.winfo_exists() and win.attributes("-alpha", 1.0))   # 保險：一定會完全出現
+
+
+HOME_CARDS = (   # (圖示, 標題, 說明, 去哪個分頁)
+    ("⬇", "下載影片", "貼上網址、選畫質，排隊一部一部下載", 0),
+    ("🗂", "下載紀錄", "找回下載過的影片、做 AI 字幕", 1),
+    ("⚙", "設定", "下載資料夾、速度上限、智慧分段、外觀", 2),
+    ("🛡", "安裝擋廣告", "瀏覽器腳本、和電腦版配對", 3),
+)
+
+
+class Home(tk.Canvas):
+    """
+    進場首頁：歡迎標題＋四張大卡片，一張一張從下面浮上來（顏色從底色慢慢變出來＝淡入）
+    滑鼠移上去卡片會亮起來、往上浮一點；點了卡片 → 卡片淡出 → 進到那個分頁
+    """
+    DUR, GAP = 480, 90           # 每張卡片動畫多久、下一張晚多久開始（毫秒）
+
+    def __init__(self, master, on_pick, status=lambda: "", top=None):
+        super().__init__(master, highlightthickness=0, bd=0, bg=C["bg"])
+        self.on_pick, self.status, self.top = on_pick, status, top
+        self.t0, self.hover, self.lift, self.leaving, self.anim = 0.0, None, [0.0] * len(HOME_CARDS), None, None
+        self.bind("<Configure>", lambda e: self.draw())
+        self.bind("<Motion>", self._motion)
+        self.bind("<Leave>", lambda e: self._set_hover(None))
+        self.bind("<Button-1>", self._click)
+
+    def _font(self, size, bold=False):
+        from tkinter import font as tkfont
+        fam = tkfont.nametofont("TkDefaultFont").actual("family")
+        return (fam, size, "bold") if bold else (fam, size)
+
+    def show(self):
+        self.configure(bg=C["bg"])
+        self.t0, self.leaving = time.time(), None
+        self.lift = [0.0] * len(HOME_CARDS)
+        y = max(self.top.winfo_height(), self.top.winfo_reqheight()) if self.top is not None else 0
+        self.place(x=0, y=y, relwidth=1, relheight=1, height=-y)
+        self.lift_()
+        self._run()
+
+    def lift_(self):
+        tk.Misc.lift(self)
+
+    def hide(self):
+        self.place_forget()
+        if self.anim:
+            self.after_cancel(self.anim)
+            self.anim = None
+
+    def visible(self):
+        return bool(self.winfo_manager())
+
+    def _run(self):
+        self.draw()
+        busy = (time.time() - self.t0) * 1000 < self.DUR + self.GAP * len(HOME_CARDS) + 50 or self.leaving \
+            or any(abs(v - (1.0 if i == self.hover else 0.0)) > 0.02 for i, v in enumerate(self.lift))
+        if self.leaving and (time.time() - self.leaving[1]) * 1000 > 260:
+            idx = self.leaving[0]
+            self.hide()
+            self.on_pick(idx)
+            return
+        self.anim = self.after(15, self._run) if busy else None
+
+    def _layout(self):
+        w, h = max(self.winfo_width(), 400), max(self.winfo_height(), 300)
+        cols = 2
+        cw = min(380, (w - 80) // cols)
+        ch = 132
+        gx, gy = 22, 22
+        total_w = cols * cw + (cols - 1) * gx
+        x0 = (w - total_w) // 2
+        y0 = max(150, (h - (2 * ch + gy)) // 2 + 40)
+        return [(x0 + (i % cols) * (cw + gx), y0 + (i // cols) * (ch + gy), cw, ch) for i in range(len(HOME_CARDS))], x0, y0
+
+    def draw(self):
+        self.delete("all")
+        dark = C["bg"] == PALETTE["dark"]["bg"]
+        card = "#262a33" if dark else "#ffffff"
+        card_hi = "#2f3542" if dark else "#f2f6ff"
+        line = "#363b46" if dark else "#e3e7ee"
+        now = (time.time() - self.t0) * 1000
+        out = 0.0
+        if self.leaving:
+            out = ease_out((time.time() - self.leaving[1]) * 1000 / 240)
+        boxes, x0, y0 = self._layout()
+        w = max(self.winfo_width(), 400)
+        # 標題（先淡入）
+        a = ease_out(now / 420) * (1 - out)
+        self.create_text(w // 2, y0 - 92 + (1 - a) * 12, text="歡迎回來 👋", font=self._font(22, True), fill=mix(C["bg"], C["text"], a))
+        self.create_text(w // 2, y0 - 56 + (1 - a) * 12, text=self.status() or "想做什麼？點一張卡片開始",
+                         font=self._font(10), fill=mix(C["bg"], C["muted"], a))
+        for i, ((x, y, cw, ch), (icon, title, desc, _)) in enumerate(zip(boxes, HOME_CARDS)):
+            p = ease_out((now - 150 - i * self.GAP) / self.DUR)     # 這張卡片進場進度
+            if self.leaving:
+                p *= 1 - out
+            self.lift[i] += ((1.0 if i == self.hover and not self.leaving else 0.0) - self.lift[i]) * 0.25
+            hv = self.lift[i]
+            dy = (1 - p) * 34 - hv * 4
+            bg = mix(C["bg"], mix(card, card_hi, hv), p)
+            round_rect(self, x + 2, y + dy + 6, x + cw + 2, y + ch + dy + 6, 18, fill=mix(C["bg"], "#000000" if dark else "#d5dbe5", p * (0.35 + hv * 0.3)), outline="")
+            round_rect(self, x, y + dy, x + cw, y + ch + dy, 18, fill=bg,
+                       outline=mix(C["bg"], mix(line, C["accent"], hv), p), width=1.5, tags=(f"c{i}",))
+            for k in range(0, cw - 36, 3):          # 卡片上緣品牌色光帶
+                self.create_line(x + 18 + k, y + dy + 1, x + 21 + k, y + dy + 1,
+                                 fill=mix(bg, mix(C["accent"], C["accent2"], k / (cw - 36)), p * (0.45 + 0.55 * hv)))
+            # 圖示圓
+            cx, cy = x + 46, y + dy + ch / 2
+            self.create_oval(cx - 26, cy - 26, cx + 26, cy + 26, outline="",
+                             fill=mix(bg, mix(C["accent"], C["accent2"], i / 3), p * (0.22 + 0.25 * hv)))
+            self.create_text(cx, cy, text=icon, font=self._font(20), fill=mix(bg, C["text"], p))
+            self.create_text(x + 88, cy - 14, text=title, anchor="w", font=self._font(14, True), fill=mix(bg, C["text"], p))
+            self.create_text(x + 88, cy + 14, text=desc, anchor="w", width=cw - 108, font=self._font(9), fill=mix(bg, C["muted"], p))
+            self.create_text(x + cw - 22, cy - 14, text="›", font=self._font(18, True),
+                             fill=mix(bg, C["accent"], p * (0.3 + 0.7 * hv)))
+        tip = ease_out((now - 700) / 400) * (1 - out)
+        self.create_text(w // 2, boxes[-1][1] + boxes[-1][3] + 44, text="小技巧：之後按上面的「⌂ 首頁」可以回到這裡",
+                         font=self._font(9), fill=mix(C["bg"], C["muted"], tip * 0.8))
+
+    def _hit(self, ev):
+        for i, (x, y, cw, ch) in enumerate(self._layout()[0]):
+            if x <= ev.x <= x + cw and y <= ev.y <= y + ch:
+                return i
+        return None
+
+    def _set_hover(self, i):
+        if i != self.hover:
+            self.hover = i
+            self.configure(cursor="hand2" if i is not None else "")
+            if not self.anim:
+                self._run()
+
+    def _motion(self, ev):
+        self._set_hover(self._hit(ev))
+
+    def _click(self, ev):
+        i = self._hit(ev)
+        if i is not None and not self.leaving:
+            self.leaving = (HOME_CARDS[i][3], time.time())
+            if not self.anim:
+                self._run()
 
 
 class Header(tk.Canvas):
@@ -2125,7 +2313,7 @@ class Header(tk.Canvas):
 
     def __init__(self, master, **kw):
         super().__init__(master, height=68, highlightthickness=0, bd=0, **kw)
-        self.pills = []
+        self.pills, self.on_home = [], None
         self.bind("<Configure>", lambda e: self.draw())
 
     @staticmethod
@@ -2163,6 +2351,13 @@ class Header(tk.Canvas):
         fam = self._pill_font().actual("family")
         self.create_text(70, 25, text="Video Helper", anchor="w", fill="#ffffff", font=(fam, 15, "bold"))
         self.create_text(70, 47, text="安全・乾淨・穩定", anchor="w", fill="#c9d6ff", font=(fam, 9))
+        if self.on_home:                             # 回首頁的按鈕
+            bx = 230
+            round_rect(self, bx, 22, bx + 72, 46, 12, fill="#ffffff", outline="", tags=("home",))
+            self.create_text(bx + 36, 34, text="⌂ 首頁", fill="#1b1b1b", font=self._pill_font(), tags=("home",))
+            self.tag_bind("home", "<Button-1>", lambda e: self.on_home())
+            self.tag_bind("home", "<Enter>", lambda e: self.configure(cursor="hand2"))
+            self.tag_bind("home", "<Leave>", lambda e: self.configure(cursor=""))
         x = w - 16
         for text, color in reversed(self.pills):
             tw = self._pill_font().measure(text) + 34
@@ -2715,6 +2910,7 @@ class App:
         self.build_history(tabs["hist"])
         self.build_settings(tabs["set"])
         self.build_advanced()                 # 進階設定（另一個視窗，平常藏起來）
+        first_run = not self.settings["setup_seen"]
         if not self.settings["setup_seen"]:   # 第一次打開：先帶去裝擋廣告
             self.nb.select(self.tab_setup)
             self.settings["setup_seen"] = True
@@ -2725,6 +2921,15 @@ class App:
             self.refresh_bridge_label()
         root.bind("<FocusIn>", lambda e: self.check_clipboard() if e.widget is root else None)
 
+        self.home = Home(root, self.pick_home, self.home_status, top=self.header)
+        self.header.on_home = self.show_home
+        self.header.draw()
+        # 程式自己切分頁（例如瀏覽器送影片來）→ 首頁讓開；剛出現的 0.5 秒內不算（那是之前排隊的切換事件）
+        self.nb.bind("<<NotebookTabChanged>>", lambda e: self.home.visible() and not self.home.leaving
+                     and time.time() - self.home.t0 > 0.5 and self.home.hide(), add="+")
+        if self.settings["show_home"] and self.settings["setup_seen"] and not first_run:
+            root.after(80, self.show_home)
+        fade_in(root, 320)
         self.refresh_header()
         self.poll()
         threading.Thread(target=check_update, args=(self.q,), daemon=True).start()
@@ -3128,6 +3333,9 @@ class App:
     # ----- 佇列 -----
 
     def enqueue(self, task):
+        if getattr(self, "home", None) is not None and self.home.visible():   # 有新下載 → 離開首頁，看得到佇列
+            self.home.hide()
+            self.nb.select(0)
         f = task["fmt"]
         task.setdefault("est_bytes", f.get("size") or 0)       # 原始預估（沒校正過的），之後拿來跟實際比
         task.setdefault("est_exact", bool(f.get("exact")))
@@ -3569,6 +3777,23 @@ class App:
         self.url_var.set(self.last_clip)
         self.nb.select(self.tab_dl)
         self.analyze()
+
+    def show_home(self):
+        self.home.show()
+
+    def pick_home(self, idx):
+        self.nb.select(idx)
+
+    def home_status(self):
+        run = sum(1 for t in self.queue.tasks if t["status"] == RUNNING)
+        wait = sum(1 for t in self.queue.tasks if t["status"] in (WAITING, RETRY_WAIT))
+        parts = []
+        if run or wait:
+            parts.append(f"正在下載 {run} 部、排隊 {wait} 部")
+        if self.mbps:
+            parts.append(f"網速約 {self.mbps:.0f} Mbps")
+        parts.append("瀏覽器已連動" if self.bridge.server else "瀏覽器未連動")
+        return "・".join(parts)
 
     def refresh_header(self):
         """品牌列右邊的狀態膠囊：下載中幾個、網速、瀏覽器連動、版本"""
@@ -4245,6 +4470,10 @@ class App:
         th = ttk.Combobox(f, textvariable=self.theme_var, values=list(THEMES), state="readonly", width=10)
         th.grid(row=6, column=1, sticky="w", padx=6, pady=(8, 4))
         th.bind("<<ComboboxSelected>>", lambda e: self.change_theme())
+        self.home_var = tk.BooleanVar(value=bool(self.settings["show_home"]))
+        ttk.Checkbutton(f, text="打開時先顯示首頁", variable=self.home_var,
+                        command=lambda: (self.settings.__setitem__("show_home", self.home_var.get()), self.settings.save())).grid(
+            row=7, column=0, columnspan=3, sticky="w")
         ttk.Label(f, text="（深色／淺色；部分文字顏色重新打開程式後才會全部換好）", style="Muted.TLabel").grid(
             row=6, column=1, sticky="w", padx=(110, 0), pady=(8, 4))
 
@@ -4458,6 +4687,9 @@ class App:
         for t in (self.tree, self.qtree, self.htree):
             self.style_tree(t)
         self.header.draw()
+        if self.home.visible():
+            self.home.configure(bg=C["bg"])
+            self.home.draw()
 
     def apply_rate_limit(self):
         txt = self.rate_var.get().strip()
