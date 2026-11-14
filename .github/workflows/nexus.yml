@@ -45,4 +45,9 @@ jobs:
       - run: pip install --require-hashes -r requirements-dev.txt
       - run: pip install --require-hashes -r requirements.txt
       - name: 整合與安全測試
-        run: python -m pytest nexus/tests/integration nexus/tests/security -q -m "not manual"
+        shell: pwsh
+        run: |
+          python -m pytest nexus/tests/integration nexus/tests/security -q -m "not manual"
+          # pytest 回 5＝「這兩個資料夾還沒有測試」（PR5 以前）：不算失敗；其他非 0 都要擋
+          if ($LASTEXITCODE -eq 5) { Write-Host "還沒有整合測試（PR5 起才有）"; exit 0 }
+          exit $LASTEXITCODE
