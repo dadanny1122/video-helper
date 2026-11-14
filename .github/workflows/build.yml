@@ -6,6 +6,8 @@ on:
     branches: [main]
     paths:
       - 'video_helper_app.py'
+      - 'nexus/**'
+      - 'requirements.txt'
       - '.github/workflows/build.yml'
       - '.github/ci_smoke.py'
       - '.github/ffmpeg/**'

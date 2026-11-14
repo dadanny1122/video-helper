@@ -1,0 +1,48 @@
+# Nexus（節點連線層）的測試：改了 nexus/ 就跑
+#   unit（Ubuntu，幾秒）：ruff ＋ 單元測試
+#   windows：整合／安全測試（真的起 Master＋Worker，mTLS 在 127.0.0.1）
+# 既有下載器的回歸測試仍在 build.yml 的 ci_smoke（AT-020）
+name: nexus
+on:
+  push:
+    paths:
+      - 'nexus/**'
+      - 'requirements-dev.in'
+      - 'requirements-dev.txt'
+      - 'ruff.toml'
+      - 'pytest.ini'
+      - '.github/workflows/nexus.yml'
+  pull_request:
+    paths:
+      - 'nexus/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --require-hashes -r requirements-dev.txt
+      - name: 需要的執行期套件（之後 PR 會加 cryptography）
+        run: pip install --require-hashes -r requirements.txt || true
+      - run: ruff check nexus
+      - run: python -m pytest nexus/tests/unit -q
+
+  windows:
+    runs-on: windows-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --require-hashes -r requirements-dev.txt
+      - run: pip install --require-hashes -r requirements.txt
+      - name: 整合與安全測試
+        run: python -m pytest nexus/tests/integration nexus/tests/security -q -m "not manual"

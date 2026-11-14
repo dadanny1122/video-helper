@@ -1,0 +1,4 @@
+# 開發與測試用（不會打包進 EXE）
+# 改這個檔之後：pip-compile --generate-hashes --allow-unsafe --strip-extras -o requirements-dev.txt requirements-dev.in
+pytest
+ruff
