@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.28.3"
+VERSION = "1.28.4"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -5196,6 +5196,17 @@ def selftest(out_path):
     r["yt_dlp"] = yt_dlp.version.__version__
     r["tray"] = pystray is not None
     ok &= r["tray"]
+    try:                                            # Nexus（節點連線層）：套件與 cryptography 有沒有打包進來、能不能真的簽憑證
+        import cryptography
+        import nexus
+        from nexus.identity import certs as _nc
+        _k = _nc.new_key()
+        _cert = _nc.sign_device_cert(*_nc.make_ca(years=1), _nc.make_csr(_k, "selftest"), "selftest", days=1)
+        r["nexus"] = {"version": nexus.NEXUS_VERSION, "cryptography": cryptography.__version__,
+                      "sign_ok": bool(_nc.cert_fingerprint(_cert))}
+    except Exception as e:
+        r["nexus_error"] = repr(e)
+        ok = False
     r["ok"] = bool(ok)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(r, f, ensure_ascii=False, indent=1)

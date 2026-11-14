@@ -7,6 +7,7 @@ pystray
 pillow
 pyinstaller
 truststore
+cryptography      # Nexus：建立／簽發／驗證憑證（TLS 本身用標準庫 ssl）；決策 2026-11-15
 # PyInstaller 在 Windows 才需要的（在 Linux 產生清單時不會自動加進來）
 pefile!=2024.8.26
 pywin32-ctypes
