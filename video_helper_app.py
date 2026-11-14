@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.28.1"
+VERSION = "1.28.2"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -2080,6 +2080,9 @@ def dark_titlebar(win, dark):
         pass
 
 
+_SCALED_FONTS = set()
+
+
 def apply_theme(root, mode="auto"):
     """套用主題；回傳實際用的 dark／light"""
     from tkinter import font as tkfont
@@ -2106,19 +2109,25 @@ def apply_theme(root, mode="auto"):
                 break
     fams = set(tkfont.families(root))
     fam = next((f for f in ("Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans CJK TC", "PingFang TC") if f in fams), None)
-    if fam:
-        for name in tkfont.names(root):
-            try:
-                tkfont.nametofont(name, root).configure(family=fam)
-            except Exception:
-                pass
+    for name in tkfont.names(root):
+        try:
+            f = tkfont.nametofont(name, root)
+            if fam:
+                f.configure(family=fam)
+            size = int(f.cget("size"))
+            # 主題的字體用「像素」設大小（負數），Windows 螢幕縮放時不會自己放大 → 照縮放比例放大一次
+            if size < 0 and UI_S != 1 and name not in _SCALED_FONTS:
+                f.configure(size=int(round(size * UI_S)))
+                _SCALED_FONTS.add(name)
+        except Exception:
+            pass
     style.configure("Muted.TLabel", foreground=C["muted"])
     style.configure("Ok.TLabel", foreground=C["ok"])
     style.configure("Bad.TLabel", foreground=C["bad"])
     style.configure("Accent.TLabel", foreground=C["accent"])
     style.configure("H1.TLabel", font=(fam or "", 15, "bold"))
     style.configure("H2.TLabel", font=(fam or "", 11, "bold"))
-    style.configure("Treeview", rowheight=30)
+    style.configure("Treeview", rowheight=px(30))
     style.layout("Hidden.TNotebook.Tab", [])          # 主視窗的分頁籤藏起來，改用上面的選單（每次換主題都要重設）
     style.configure("Treeview.Heading", font=(fam or "", 10, "bold"))
     root.configure(background=C["bg"])
@@ -2128,6 +2137,32 @@ def apply_theme(root, mode="auto"):
                                                         fade_in(e.widget)) if isinstance(e.widget, tk.Toplevel) else None, add="+")
         root._vh_tb_hook = True
     return m
+
+
+UI_S = 1.0     # 螢幕縮放（Windows 設 150% → 1.5）；自己畫的元件用「100% 的座標」畫，最後再乘上它
+
+
+def px(n):
+    """100% 時的像素 → 現在螢幕縮放下的像素"""
+    return int(round(n * UI_S))
+
+
+def enable_dpi_awareness():
+    """
+    告訴 Windows「我自己會處理高解析度螢幕」。不說的話，螢幕縮放 125%／150% 時，
+    Windows 會把整個視窗當圖片放大 → 中文字糊糊的，而且放大也拖慢畫面
+    要在建立視窗（tk.Tk()）之前呼叫
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)     # 系統 DPI：Tk 8.6 支援得最好
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
 
 
 def mix(a, b, t):
@@ -2239,7 +2274,7 @@ class Home(tk.Canvas):
         self.anim = self.after(16, self._run) if busy else None
 
     def _layout(self):
-        w, h = max(self.winfo_width(), 400), max(self.winfo_height(), 300)
+        w, h = max(self.winfo_width() / UI_S, 400), max(self.winfo_height() / UI_S, 300)
         cols = 2
         cw = min(380, (w - 80) // cols)
         ch = 118
@@ -2253,6 +2288,12 @@ class Home(tk.Canvas):
         return [(x0 + (i % cols) * (cw + gx), y0 + (i // cols) * (ch + gy), cw, ch) for i in range(len(HOME_CARDS))], x0, y0
 
     def draw(self):
+        """用 100% 的座標畫，最後整個乘上螢幕縮放（字體 Windows 會自己放大）"""
+        self._draw()
+        if UI_S != 1:
+            self.scale("all", 0, 0, UI_S, UI_S)
+
+    def _draw(self):
         self.delete("all")
         dark = C["bg"] == PALETTE["dark"]["bg"]
         card = "#262a33" if dark else "#ffffff"
@@ -2263,7 +2304,7 @@ class Home(tk.Canvas):
         if self.leaving:
             out = ease_out((time.time() - self.leaving[1]) * 1000 / 240)
         boxes, x0, y0 = self._layout()
-        w = max(self.winfo_width(), 400)
+        w = max(self.winfo_width() / UI_S, 400)
         # 標題（先淡入）
         a = ease_out(now / 420) * (1 - out)
         top = self.top
@@ -2297,9 +2338,8 @@ class Home(tk.Canvas):
             self.create_text(x + 16, y + dy + 20, text=kp["label"], anchor="w", font=self._font(9), fill=mix(bg, C["muted"], p))
             val = kp["fmt"].format(kp["value"] * cnt) if kp["value"] is not None else "—"
             vid = self.create_text(x + 16, y + dy + 54, text=val, anchor="w", font=self._font(20, True), fill=mix(bg, C["text"], p))
-            bx = self.bbox(vid)
-            if bx and kp.get("unit"):
-                self.create_text(bx[2] + 5, y + dy + 59, text=kp["unit"], anchor="w", font=self._font(9), fill=mix(bg, C["muted"], p))
+            if kp.get("unit"):
+                self.create_text(x + 16 + self._font(20, True).measure(val) / UI_S + 5, y + dy + 59, text=kp["unit"], anchor="w", font=self._font(9), fill=mix(bg, C["muted"], p))
             spark = kp.get("spark")
             if spark:                                                  # 迷你長條圖：最近 7 天
                 m = max(spark) or 1
@@ -2333,7 +2373,7 @@ class Home(tk.Canvas):
                              fill=mix(bg, mix(C["accent"], C["accent2"], i / 3), p * (0.22 + 0.25 * hv)))
             self.create_text(cx, cy, text=icon, font=self._font(20), fill=mix(bg, C["text"], p))
             self.create_text(x + 88, cy - 14, text=title, anchor="w", font=self._font(14, True), fill=mix(bg, C["text"], p))
-            self.create_text(x + 88, cy + 14, text=desc, anchor="w", width=cw - 108, font=self._font(9), fill=mix(bg, C["muted"], p))
+            self.create_text(x + 88, cy + 14, text=desc, anchor="w", width=(cw - 108) * UI_S, font=self._font(9), fill=mix(bg, C["muted"], p))
             self.create_text(x + cw - 22, cy - 14, text="›", font=self._font(18, True),
                              fill=mix(bg, C["accent"], p * (0.3 + 0.7 * hv)))
         tip = ease_out((now - 700) / 400) * (1 - out)
@@ -2342,7 +2382,7 @@ class Home(tk.Canvas):
 
     def _hit(self, ev):
         for i, (x, y, cw, ch) in enumerate(self._layout()[0]):
-            if x <= ev.x <= x + cw and y <= ev.y <= y + ch:
+            if x <= ev.x / UI_S <= x + cw and y <= ev.y / UI_S <= y + ch:
                 return i
         return None
 
@@ -2382,7 +2422,7 @@ class Header(tk.Canvas):
     """
 
     def __init__(self, master, **kw):
-        super().__init__(master, height=68, highlightthickness=0, bd=0, **kw)
+        super().__init__(master, height=px(68), highlightthickness=0, bd=0, **kw)
         self.on_nav, self.active, self.hover = None, 0, None
         self.bar = None                               # 底線目前位置 (x0, x1)
         self.bar_from = self.bar_to = None
@@ -2411,9 +2451,9 @@ class Header(tk.Canvas):
         return self._font(9, True)
 
     def _layout(self):
-        w = max(self.winfo_width(), 400)
+        w = max(self.winfo_width() / UI_S, 400)
         f = self._font(10, True)
-        widths = [f.measure(name) + 28 for name, _ in NAV_ITEMS]
+        widths = [f.measure(name) / UI_S + 28 for name, _ in NAV_ITEMS]
         x = w - 18 - sum(widths)
         out = []
         for (name, idx), iw in zip(NAV_ITEMS, widths):
@@ -2446,9 +2486,10 @@ class Header(tk.Canvas):
         self.draw_nav()
 
     def _hit(self, ev):
-        if 14 <= ev.y <= 56:
+        x, y = ev.x / UI_S, ev.y / UI_S
+        if 14 <= y <= 56:
             for x0, x1, idx, _ in self._layout():
-                if x0 <= ev.x <= x1:
+                if x0 <= x <= x1:
                     return idx
         return None
 
@@ -2469,17 +2510,19 @@ class Header(tk.Canvas):
     def draw(self):
         """整個重畫（視窗大小、主題變了才需要）"""
         self.delete("all")
-        w, h = max(self.winfo_width(), 200), int(self["height"])
+        w, h = int(max(self.winfo_width() / UI_S, 200)), 68
         for x in range(0, w, 8):                     # 橫向漸層
             self.create_rectangle(x, 0, x + 8, h, fill=mix(C["head1"], C["head2"], x / w), width=0)
         self.create_line(0, h - 1, w, h - 1, fill=mix(C["accent"], C["accent2"], .5))
         # logo：圓角方塊＋播放三角形
-        for i in range(36):
-            self.create_line(18 + i, 16, 18 + i, 52, fill=mix("#57c8ff", "#8b7cff", i / 36))
+        for i in range(0, 36, 2):                    # logo 漸層（用小方塊，放大後才不會有縫）
+            self.create_rectangle(18 + i, 16, 20 + i, 52, width=0, fill=mix("#57c8ff", "#8b7cff", i / 36))
         round_rect(self, 16, 14, 56, 54, 12, fill="", outline="#ffffff", width=2)
         self.create_polygon(31, 24, 31, 44, 46, 34, fill="#ffffff", outline="")
         self.create_text(70, 25, text="Video Helper", anchor="w", fill="#ffffff", font=self._font(15, True))
         self.create_text(70, 47, text="安全・乾淨・穩定", anchor="w", fill="#c9d6ff", font=self._font(9))
+        if UI_S != 1:
+            self.scale("all", 0, 0, UI_S, UI_S)
         self.draw_nav()
 
     def draw_nav(self):
@@ -2500,8 +2543,10 @@ class Header(tk.Canvas):
             b0, b1 = self.bar
             n = (b1 - b0) / 6
             for k in range(6):
-                self.create_line(b0 + k * n, 50, b0 + (k + 1) * n, 50, width=3, tags=("nav",),
+                self.create_line(b0 + k * n, 50, b0 + (k + 1) * n, 50, width=px(3), tags=("nav",),
                                  fill=mix("#57c8ff", "#8b7cff", k / 5))
+        if UI_S != 1:
+            self.scale("nav", 0, 0, UI_S, UI_S)
 
 
 class Ticker(tk.Canvas):
@@ -2509,8 +2554,9 @@ class Ticker(tk.Canvas):
     SPEED = 1                                         # 每次移 1 像素（整數才不會一頓一頓）
 
     def __init__(self, master):
-        super().__init__(master, height=26, highlightthickness=0, bd=0)
+        super().__init__(master, height=px(26), highlightthickness=0, bd=0)
         self.text, self.x, self.anim = "", 0.0, None
+        self.SPEED = max(1, round(UI_S))           # 螢幕放大時每次多移一點，看起來速度一樣
         self.bind("<Configure>", lambda e: self.draw())
 
     def set_items(self, items):
@@ -2548,10 +2594,10 @@ class Ticker(tk.Canvas):
         tw = self._font().measure(self.text) or 1
         x = self.x
         while x < w:
-            self.create_text(x, 13, text=self.text, anchor="w", font=self._font(), tags=("run",),
+            self.create_text(x, px(13), text=self.text, anchor="w", font=self._font(), tags=("run",),
                              fill=C["muted"])
             x += tw
-        self.create_line(0, 25, w, 25, fill=C["line"])
+        self.create_line(0, px(26) - 1, w, px(26) - 1, fill=C["line"])
 
 
 # ======================================================================
@@ -3077,8 +3123,13 @@ class App:
         self.blocklist = BlockList()
 
         root.title(f"Video Helper v{VERSION}")
-        root.geometry("900x780")
-        root.minsize(760, 660)
+        global UI_S
+        try:
+            UI_S = max(1.0, min(3.0, root.winfo_fpixels("1i") / 96))
+        except Exception:
+            UI_S = 1.0
+        root.geometry(f"{px(900)}x{px(780)}")
+        root.minsize(px(760), px(660))
         root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.theme = apply_theme(root, self.settings["theme"])
 
@@ -3120,7 +3171,6 @@ class App:
                      and time.time() - self.home.t0 > 0.5 and self.home.hide(), add="+")
         if self.settings["show_home"] and self.settings["setup_seen"] and not first_run:
             root.after(80, self.show_home)
-        fade_in(root, 320)
         self.refresh_header()
         self.poll()
         threading.Thread(target=check_update, args=(self.q,), daemon=True).start()
@@ -3441,7 +3491,7 @@ class App:
     def open_batch(self):
         win = tk.Toplevel(self.root)
         win.title("一次加入多個網址")
-        win.geometry("560x360")
+        win.geometry(f"{px(560)}x{px(360)}")
         win.transient(self.root)
         ttk.Label(win, text="一行貼一個網址。每部都會用「預設畫質」"
                             f"（目前：{self.settings['default_quality']}）加入佇列。",
@@ -4072,7 +4122,7 @@ class App:
         code = self.bridge.new_pair_code()
         win = tk.Toplevel(self.root)
         win.title("配對瀏覽器腳本")
-        win.geometry("440x300")
+        win.geometry(f"{px(440)}x{px(300)}")
         win.transient(self.root)
         ttk.Label(win, text="在影片網頁按右下角「⬇ 下載」→「🖥 送到電腦版」，\n跳出配對視窗時輸入：",
                   justify="center").pack(pady=(18, 8))
@@ -4737,7 +4787,7 @@ class App:
         """進階設定視窗：一開始就建好但藏起來（按鈕、選項才都在），按「⚙ 進階設定…」才顯示"""
         win = self.adv = tk.Toplevel(self.root)
         win.title("進階設定")
-        win.geometry("760x560")
+        win.geometry(f"{px(760)}x{px(560)}")
         win.withdraw()
         win.protocol("WM_DELETE_WINDOW", win.withdraw)
         nb = self.adv_nb = ttk.Notebook(win)
@@ -5131,6 +5181,7 @@ if __name__ == "__main__":
     if "--selftest" in sys.argv:
         i = sys.argv.index("--selftest")
         sys.exit(selftest(sys.argv[i + 1] if len(sys.argv) > i + 1 else "selftest.json"))
+    enable_dpi_awareness()
     root = tk.Tk()
     App(root)
     root.mainloop()
