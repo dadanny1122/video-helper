@@ -40,7 +40,7 @@ assert _ttk.Style().theme_use().startswith("sun-valley"), "Sun Valley 主題沒�
 app.theme_var.set("深色"); app.change_theme(); app.theme_var.set("淺色"); app.change_theme()
 assert a.C["bg"] == a.PALETTE["light"]["bg"]
 _bg = _ttk.Style().lookup(".", "background")
-assert _bg.lower() == a.C["bg"], f"主題底色沒套上（{_bg}）：會變成淺灰底黑字"
+assert str(_bg).lower() == a.C["bg"], f"主題底色沒套上（{_bg}）：會變成淺灰底黑字"
 import time
 _tab0 = app.nb.index("current")
 app.show_home(); r.update()
