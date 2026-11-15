@@ -54,3 +54,44 @@ token 不對或註冊 1 小時沒核准 → `404 REGISTRATION_NOT_FOUND`。
 - 裝置狀態：`PENDING → ACTIVE ⇄ SUSPENDED → REVOKED`，`ACTIVE → EXPIRED`，`PENDING → REJECTED`；`REVOKED`／`REJECTED`／`EXPIRED` 是終點，重新配對＝新 `device_id`。
 - 連線狀態（只給人看）：`CONNECTED`（心跳 ≤30 秒）→ `STALE`（30 秒～5 分）→ `OFFLINE`（>5 分）；`DISCONNECTED`＝自己說再見。
 - 憑證：裝置 90 天（到期前 14 天更新）、伺服器 1 年（到期前 30 天或綁定位址變了就自動換）、CA 10 年。
+
+---
+
+# 協定 1.1（V2：任務派送，電腦版 v1.30.0 起）
+
+1.0 的 Worker 照樣能註冊、心跳（主版號相同），只是**不會被派任務**（排程排除原因：「節點版本太舊」）。
+
+## 心跳多帶的欄位（`POST /devices/{id}/heartbeat`，都可省略）
+
+| 欄位 | 內容 | 限制 |
+|---|---|---|
+| `resources` | `cpu_count`、`cpu_load`（0～1）、`memory_total_mb`、`memory_available_mb`、`disk_free_mb`、`platform`、`arch` | 不認得的欄位、超出範圍 → 整份能力資料丟掉（心跳照算）＋稽核 `capabilities.rejected` |
+| `adapters` | `{"test.echo": "1.0", …}` | ≤32 個；名稱、版本格式固定 |
+| `max_concurrency` | 1～4 | |
+| `accepting` | 要不要接任務 | |
+| `running` | 執行中任務 id | ≤64 個 UUID |
+
+> 這些是 Worker 自己報的：**只拿來挑節點，不拿來授權**。
+
+## `GET /workers/{id}/inbox?wait=25`　身分：mTLS　限制 60/分
+長輪詢：有東西就馬上回，沒有就等到 `wait` 秒（最多 25）。回應 `messages`：
+- `{"kind":"task", task_id, attempt_id, lease_id, lease_expires_at, manifest, manifest_sha256}`——**收到不代表可以開始**
+- `{"kind":"cancel", task_id, attempt_id, reason}`——`reason`＝`cancelled`（使用者取消）或 `timed_out`（Master 判逾時）
+
+同一份還沒 ACK 的派送，lease 到期前每次問都會再給一次（Worker 沒收到上一次回應也沒關係）。
+
+## `POST /workers/{id}/task-ack`　身分：mTLS　限制 120/分
+請求：`task_id`、`attempt_id`、`lease_id`、`accept`、`reason`（拒收原因，例如 `ADAPTER_UNSUPPORTED`、`MANIFEST_INVALID`、`FULL`）。
+回應：`{"start": true}` 才可以開始；`false` 時有 `reason`（`lease_invalid`＝已取消或收回、`lease_expired`＝太晚）。重送同一個 ACK 回同樣結果。
+
+## `POST /tasks/{task_id}/events`　身分：mTLS（裝置身分取自 `sender_id`＋憑證）　限制 600/分
+請求：`event_id`（UUID，去重用）、`attempt_id`、`seq`（每個 attempt 從 1 遞增）、`type`、`data`（≤8KB）。
+`type`：`PREPARING`／`RUNNING`／`PROGRESS`（`data.progress` 0～1）／`SUCCEEDED`（`data.result`）／`FAILED`（`data.error_code`、`data.message`）／`CANCELLED`／`TIMED_OUT`。
+回應：`{"status": 任務狀態, "stop": true/false}`（`stop: true`＝任務已結束或被取消，Worker 該停）；同一個 `event_id` 再送 → `{"duplicate": true}`；序號倒退 → `409 EVENT_OUT_OF_ORDER`；舊 attempt 的事件 → `{"stale": true, "stop": true}`（記錄但不影響任務）。
+`SUCCEEDED` 的結果由 **Master 自己驗證**（大小、回聲內容與 SHA-256、睡的秒數），不通過 → `RESULT_REJECTED`。
+
+## 新錯誤碼
+`TASK_NOT_FOUND`（404）、`TASK_NOT_ASSIGNED`（403，任務不是派給你的）、`LEASE_EXPIRED`（409）、`INVALID_TRANSITION`（409）、`CONCURRENT_UPDATE`（409，可重試）、`IDEMPOTENCY_CONFLICT`（409）、`MANIFEST_INVALID`（400）、`ADAPTER_UNSUPPORTED`（422）、`EVENT_OUT_OF_ORDER`（409）。
+
+## 仍然沒有的端點（刻意）
+建立／取消任務、看排程理由——只在 Master 那台的「⚙ 進階設定 → 📋 節點任務」（決策 D2）。

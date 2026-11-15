@@ -50,3 +50,21 @@
 2. **DPAPI 範圍**：同一個 Windows 帳號跑的惡意程式可以解開私鑰。這是 Windows 使用者層級的信任模型，V1 不另加密碼。
 3. **沒有 OS 級隔離**：Worker 是一般程序。V1 沒有任務，所以沒有「任務逃逸」問題；V3 沙箱（Job Object＋允許清單）文件已誠實標示不是 OS 級隔離。
 4. **時間**：兩台時鐘差超過 5 分鐘就連不上（會顯示 `CLOCK_SKEW`），不自動校時。
+
+## 5. V2（任務派送）新增的威脅
+
+| # | 威脅 | 對策（程式位置） | 驗證 |
+|---|---|---|---|
+| T18 | 有人透過網路下任務 | 沒有任何建立／取消任務的網路端點；只在 Master 本機 GUI（`TaskService`） | 程式碼審查、`api-v1.md` |
+| T19 | 惡意或寫錯的任務內容（未知欄位、超大、超範圍、不存在的類型） | `manifest.validate()` 嚴格驗證，排程前就 REJECTED；16KB 上限；Adapter 固定允許清單（沒有 shell／python 類） | AT-005、`test_tasks_model.py` |
+| T20 | 派送途中任務內容被改 | Master 存 `manifest_sha256`；Worker 收到重算，不符拒收 | T-05、`test_worker_tasks.py` |
+| T21 | 別台節點冒領或亂報別人的任務 | inbox／ACK／事件都要 mTLS；attempt 綁定 device_id，不是派給你的 → `TASK_NOT_ASSIGNED` | `test_events_from_other_device_refused` |
+| T22 | 未核准／暫停／撤銷的節點拿任務 | 跟心跳同一套 `authenticate()`；撤銷時它手上的任務改 UNKNOWN、未開始的收回改派 | AT-001、AT-010 |
+| T23 | 重送、亂序的事件讓任務重複完成或倒退 | `event_id` 去重、`(attempt, seq)` 遞增、狀態機只准合法轉移、終態不再改 | AT-012 |
+| T24 | 派出去了、節點沒收到就重派 → 同一個任務跑兩次 | Worker 一定要等 ACK 回 `start: true` 才開始；沒 ACK 的才收回，晚到的 ACK 一律 `start: false` | AT-009 |
+| T25 | 節點失聯後自動重跑有副作用的任務 | ACK 之後失聯 → UNKNOWN，**不自動重跑**，人工確認才標記失敗（V4 才做自動核對） | AT-010 |
+| T26 | Worker 謊報成功 | `SUCCEEDED` 進 VERIFYING，Master 自己驗證結果 | `test_master_verifies_result_itself` |
+| T27 | 節點謊報資源搶任務 | 資源數字只影響挑選，不影響授權；Worker 收到後自己再檢查一次 | 規格 25.3、程式碼審查 |
+| T28 | 長輪詢佔滿 Master 連線 | 每 IP inbox 60 次/分、最多等 25 秒、連線上限 64；停用 Master 時先放掉所有長輪詢 | AT-023 |
+
+V2 的測試 Adapter 不開子程序、不碰檔案、不連網，所以**還不需要沙箱**；任何會碰檔案或網路的 Adapter 都要等 V3 的沙箱。

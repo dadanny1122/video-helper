@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.29.2"
+VERSION = "1.30.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -4462,6 +4462,19 @@ class App:
             ttk.Label(page, text=f"節點功能無法載入：{type(e).__name__}\n（這版打包可能少了 cryptography 套件）",
                       foreground=C["bad"], justify="left").pack(anchor="w")
 
+    def build_tasks_tab(self, page):
+        """📋 節點任務（Nexus V2）：畫面在 nexus/gui/tasks_tab.py；用 build_nodes_tab 建好的 self.nexus"""
+        self.tasks_tab = None
+        if not getattr(self, "nexus", None):
+            ttk.Label(page, text="節點功能沒有載入，這頁不能用。", foreground=C["bad"]).pack(anchor="w")
+            return
+        try:
+            from nexus.gui.tasks_tab import TasksTab
+            self.tasks_tab = TasksTab(page, self.nexus, C, px)
+        except Exception as e:
+            log.warning("節點任務分頁無法載入：%r", e)
+            ttk.Label(page, text=f"節點任務分頁無法載入：{type(e).__name__}", foreground=C["bad"]).pack(anchor="w")
+
     def build_security_tab(self, page):
         canvas = tk.Canvas(page, highlightthickness=0, bg=C["bg"])
         bar = ttk.Scrollbar(page, orient="vertical", command=canvas.yview)
@@ -4843,7 +4856,7 @@ class App:
         nb = self.adv_nb = ttk.Notebook(win)
         nb.pack(fill="both", expand=True)
         pages = {}
-        for key, text in (("prog", "檔名與程式"), ("link", "瀏覽器連動"), ("security", "🔒 安全"), ("nodes", "🖧 節點"),
+        for key, text in (("prog", "檔名與程式"), ("link", "瀏覽器連動"), ("security", "🔒 安全"), ("nodes", "🖧 節點"), ("tasks", "📋 節點任務"),
                           ("backup", "備份與更新"), ("debug", "問題排查"), ("ai", "廣告判斷"), ("stats", "統計")):
             pages[key] = ttk.Frame(nb, padding=(12, 10))
             nb.add(pages[key], text=f"  {text}  ")
@@ -4890,6 +4903,7 @@ class App:
 
         self.build_security_tab(pages["security"])
         self.build_nodes_tab(pages["nodes"])
+        self.build_tasks_tab(pages["tasks"])
 
         # --- 備份與更新 ---
         b = pages["backup"]

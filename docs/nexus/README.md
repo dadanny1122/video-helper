@@ -12,6 +12,6 @@
 | 5 V1 Implementation | `nexus/`（PR1～8） | 完成（電腦版 v1.29.0～v1.29.2） |
 | 6＋7 Verification／Documentation | [threat-model.md](threat-model.md)、[api-v1.md](api-v1.md)、說明書「🖧 節點」 | 完成；63 個自動測試＋同一台電腦實機通過 |
 | 8 Handover | [05-V1交付報告.md](05-V1交付報告.md) | 完成；跨電腦實機未做（只有一台家用電腦） |
-| V2 規劃 | [06-V2技術規格.md](06-V2技術規格.md) | 4 項決策 2026-11-16 已確認；PR1 起實作中 |
+| V2 任務管理與排程 | [06-V2技術規格.md](06-V2技術規格.md)、`nexus/tasks/`、API 1.1（[api-v1.md](api-v1.md) 下半）、威脅模型 §5 | PR1～8 完成（電腦版 v1.30.0）；同機兩個 profile 的實機驗收待使用者做 |
 
 規格書的禁止事項摘要（每次動工前看）：不重寫整個專案、不用 TODO／mock 冒充完成、不做任意遠端執行、沙箱不足不靜默降級、沒跑過的測試不說通過、SHA-256／TLS／Job Object 不單獨宣稱為完整安全。
