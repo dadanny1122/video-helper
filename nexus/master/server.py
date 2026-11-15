@@ -19,6 +19,7 @@ from nexus import MIN_AGENT_VERSION, MIN_PEER_PROTOCOL, NEXUS_VERSION, PROTOCOL_
 from nexus.core.errors import NexusError
 from nexus.core.masking import mask
 from nexus.core.models import AuditEvent, parse_utc
+from nexus.core.tls import stdlib_ssl_context
 from nexus.identity import certs
 from nexus.master.connections import ConnectionRegistry
 from nexus.master.ratelimit import DEFAULT_RULES, RateLimiter
@@ -103,12 +104,14 @@ class MasterServer:
         chk = self.registry.selfcheck()
         if not chk["ok"]:
             raise RuntimeError("啟動自檢失敗：" + "；".join(chk["problems"]))
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         certfile, keyfile, pw = self.registry.ca.server_tls_material()
-        ctx.load_cert_chain(certfile, keyfile, password=pw)
-        ctx.load_verify_locations(cafile=self.registry.ca.ca_cert_path)
-        ctx.verify_mode = ssl.CERT_OPTIONAL           # 註冊時沒憑證；其他端點在請求層強制
+
+        def _cfg(ctx):
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            ctx.load_cert_chain(certfile, keyfile, password=pw)
+            ctx.load_verify_locations(cafile=self.registry.ca.ca_cert_path)
+            ctx.verify_mode = ssl.CERT_OPTIONAL       # 註冊時沒憑證；其他端點在請求層強制
+        ctx = stdlib_ssl_context(ssl.PROTOCOL_TLS_SERVER, _cfg)
         server = self
         max_payload = int(self.cfg["max_payload_bytes"])
 

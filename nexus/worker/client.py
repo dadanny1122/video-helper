@@ -12,6 +12,7 @@ import urllib.parse
 
 from nexus import PROTOCOL_VERSION
 from nexus.core.errors import NexusError
+from nexus.core.tls import stdlib_ssl_context
 from nexus.identity import certs
 from nexus.protocol.messages import envelope
 
@@ -37,18 +38,18 @@ class NexusClient:
 
     # ---- TLS ----
     def _context(self) -> ssl.SSLContext:
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-        if self.ca_pem:
-            ctx.check_hostname = True
-            ctx.verify_mode = ssl.CERT_REQUIRED
-            ctx.load_verify_locations(cadata=self.ca_pem)
-        else:                                      # 第一次接觸：還不知道 CA，只能先看指紋
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-        if self.certfile and self.keyfile:
-            ctx.load_cert_chain(self.certfile, self.keyfile, password=self.key_password)
-        return ctx
+        def _cfg(ctx):
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            if self.ca_pem:
+                ctx.check_hostname = True
+                ctx.verify_mode = ssl.CERT_REQUIRED
+                ctx.load_verify_locations(cadata=self.ca_pem)
+            else:                                  # 第一次接觸：還不知道 CA，只能先看指紋
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+            if self.certfile and self.keyfile:
+                ctx.load_cert_chain(self.certfile, self.keyfile, password=self.key_password)
+        return stdlib_ssl_context(ssl.PROTOCOL_TLS_CLIENT, _cfg)
 
     def connection(self) -> http.client.HTTPSConnection:
         if self._conn is None:
