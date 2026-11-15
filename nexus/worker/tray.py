@@ -63,6 +63,31 @@ def _hostname():
     return socket.gethostname()[:32]
 
 
+def friendly_error(e: Exception, url: str) -> str:
+    """把 Windows 的連線錯誤翻成「該檢查什麼」"""
+    import socket
+    import ssl
+    from urllib.parse import urlsplit
+
+    from nexus.core.errors import NexusError
+    if isinstance(e, NexusError):
+        return e.message
+    host = urlsplit(url).hostname or url
+    if isinstance(e, ValueError) or not url.startswith("https://"):
+        return "Master 位址格式不對，要像 https://192.168.1.10:47331（同一台測試用 https://127.0.0.1:47331）"
+    if isinstance(e, ConnectionRefusedError) or getattr(e, "winerror", None) == 10061:
+        return (f"{host} 有回應，但沒有 Master 在聽。\n請到主程式「⚙ 進階設定 → 🖧 節點」勾「啟用 Master」，"
+                "並確認埠號跟這裡一樣。")
+    if isinstance(e, (TimeoutError, socket.timeout)) or getattr(e, "winerror", None) in (10060, 10065, 10051):
+        return (f"等了很久 {host} 都沒有回應。\n請檢查：\n・位址是不是 Master 畫面上顯示的那個（同一台測試用 127.0.0.1）\n"
+                "・兩台是不是在同一個網路\n・Master 那台的 Windows 防火牆有沒有允許 VideoHelper.exe（私人網路）")
+    if isinstance(e, socket.gaierror):
+        return f"找不到 {host} 這台電腦，請改用 Master 畫面上顯示的 IP 位址。"
+    if isinstance(e, ssl.SSLError):
+        return f"連上了但加密握手失敗（{e}）。對方可能不是 Video Helper 的 Master。"
+    return f"連不上 Master：{e}"
+
+
 def run_window() -> int:
     import tkinter as tk
     from tkinter import messagebox, ttk
@@ -71,8 +96,10 @@ def run_window() -> int:
     store = CredStore()
     root = tk.Tk()
     root.title(f"Video Helper 節點（Worker）v{NEXUS_VERSION}")
-    root.geometry("520x420")
-    root.minsize(480, 380)
+    k = root.winfo_fpixels("1i") / 96          # 高 DPI（150% 等）：視窗跟字一起放大
+    W = lambda n: int(n * k)                   # noqa: E731
+    root.geometry(f"{W(600)}x{W(470)}")
+    root.minsize(W(560), W(430))
     try:
         import sv_ttk
         sv_ttk.set_theme("dark", root)
@@ -81,26 +108,30 @@ def run_window() -> int:
 
     f = ttk.Frame(root, padding=14)
     f.pack(fill="both", expand=True)
+    f.columnconfigure(1, weight=1)
     ttk.Label(f, text="這台電腦要當別台 Video Helper 的節點。第一版只會「連線、心跳、被管理」，不會接任務。",
-              wraplength=480, justify="left").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
+              wraplength=W(560), justify="left").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
     ttk.Label(f, text="Master 位址").grid(row=1, column=0, sticky="w")
     url = ttk.Entry(f, width=34)
-    url.insert(0, cfg["master_url"] or "https://192.168.1.10:47331")
+    if cfg["master_url"]:
+        url.insert(0, cfg["master_url"])
     url.grid(row=1, column=1, columnspan=2, sticky="we", pady=2)
-    ttk.Label(f, text="這台電腦的名稱").grid(row=2, column=0, sticky="w")
+    ttk.Label(f, foreground="#999", text="例：https://192.168.1.10:47331（照 Master 畫面上的；同一台測試用 https://127.0.0.1:47331）",
+              wraplength=W(550), justify="left").grid(row=2, column=0, columnspan=3, sticky="w")
+    ttk.Label(f, text="這台電腦的名稱").grid(row=3, column=0, sticky="w")
     name = ttk.Entry(f, width=34)
     name.insert(0, cfg["device_name"] or _hostname())
-    name.grid(row=2, column=1, columnspan=2, sticky="we", pady=2)
-    ttk.Label(f, text="配對碼（Master 畫面上的 6 位數）").grid(row=3, column=0, sticky="w")
+    name.grid(row=3, column=1, columnspan=2, sticky="we", pady=2)
+    ttk.Label(f, text="配對碼（Master 畫面上的 6 位數）").grid(row=4, column=0, sticky="w")
     code = ttk.Entry(f, width=12)
-    code.grid(row=3, column=1, sticky="w", pady=2)
-    status = ttk.Label(f, text="", wraplength=480, justify="left")
-    status.grid(row=5, column=0, columnspan=3, sticky="w", pady=(10, 4))
-    fps = ttk.Label(f, text="", foreground="#8ea3d6", wraplength=480, justify="left")
-    fps.grid(row=6, column=0, columnspan=3, sticky="w")
-    hint = ttk.Label(f, foreground="#999", wraplength=480, justify="left",
+    code.grid(row=4, column=1, sticky="w", pady=2)
+    status = ttk.Label(f, text="", wraplength=W(560), justify="left")
+    status.grid(row=6, column=0, columnspan=3, sticky="w", pady=(10, 4))
+    fps = ttk.Label(f, text="", foreground="#8ea3d6", wraplength=W(560), justify="left")
+    fps.grid(row=7, column=0, columnspan=3, sticky="w")
+    hint = ttk.Label(f, foreground="#999", wraplength=W(560), justify="left",
                      text="核准前請跟 Master 那邊核對「Master 指紋」前 8 碼是否一致，一樣才按核准。")
-    hint.grid(row=7, column=0, columnspan=3, sticky="w", pady=(6, 0))
+    hint.grid(row=8, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
     agent = WorkerAgent(cfg, store)
 
@@ -120,11 +151,11 @@ def run_window() -> int:
             agent.pair(url.get().strip(), code.get().strip(), name.get().strip() or _hostname())
             code.delete(0, "end")
         except Exception as e:
-            messagebox.showerror("配對失敗", str(e))
+            messagebox.showerror("配對失敗", friendly_error(e, url.get().strip()))
         refresh()
 
     btns = ttk.Frame(f)
-    btns.grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
+    btns.grid(row=5, column=0, columnspan=3, sticky="w", pady=(8, 0))
     ttk.Button(btns, text="配對", command=do_pair).pack(side="left")
     ttk.Button(btns, text="結束節點", command=lambda: (agent.stop(), root.destroy())).pack(side="left", padx=8)
 
