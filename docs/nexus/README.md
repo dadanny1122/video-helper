@@ -9,6 +9,9 @@
 | 2 Gap Analysis（需求追溯矩陣） | [01-差距分析.md](01-差距分析.md) | 完成（Existing 6／Partial 30／Missing 38／Blocked 2） |
 | 3 Architecture Decision Records | [02-架構決策.md](02-架構決策.md) | 完成，3 項待使用者確認 |
 | 4 Implementation Plan（V1） | [03-V1實作計畫.md](03-V1實作計畫.md)＋[04-V1技術規格.md](04-V1技術規格.md) | 完成；三項決策 2026-11-15 已確認（LAN 優先＋預留 VPN、加 cryptography、單 EXE 雙模式）＋額外 5 項強制要求 |
-| 5 V1 Implementation | PR1 起 | 進行中 |
+| 5 V1 Implementation | `nexus/`（PR1～8） | 完成（電腦版 v1.29.0～v1.29.2） |
+| 6＋7 Verification／Documentation | [threat-model.md](threat-model.md)、[api-v1.md](api-v1.md)、說明書「🖧 節點」 | 完成；63 個自動測試＋同一台電腦實機通過 |
+| 8 Handover | [05-V1交付報告.md](05-V1交付報告.md) | 完成；跨電腦實機未做（只有一台家用電腦） |
+| V2 規劃 | [06-V2技術規格.md](06-V2技術規格.md) | 草案，4 項決策待使用者確認 |
 
 規格書的禁止事項摘要（每次動工前看）：不重寫整個專案、不用 TODO／mock 冒充完成、不做任意遠端執行、沙箱不足不靜默降級、沒跑過的測試不說通過、SHA-256／TLS／Job Object 不單獨宣稱為完整安全。
