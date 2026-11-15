@@ -86,7 +86,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.29.1"
+VERSION = "1.29.2"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址

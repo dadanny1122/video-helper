@@ -117,3 +117,43 @@ def test_worker_mode_does_not_touch_downloader_state(master, tmp_path):
     assert not os.path.exists(root / "master")
     logtxt = open(root / "worker" / "worker.log", encoding="utf-8").read()
     assert code not in logtxt and "PRIVATE KEY" not in logtxt
+
+
+def test_repair_while_active_uses_new_identity_and_never_mixes_certs(master, agent):
+    """使用者實測踩到的：已核准後又配對一次 → 舊憑證留著、新身分對不上 → CREDENTIAL_MISMATCH 一直重連；
+    名單出現多筆同指紋。修好後：重配＝新金鑰、舊憑證刪掉；新的那筆被撤銷時 Agent 停下，不會拿舊憑證亂連。"""
+    agent.start()
+    agent.pair(master.url, master.registry.pair.new(), "pc-r")
+    a_id, a_fp = agent.store.state["device_id"], agent.store.public_fingerprint()
+    master.registry.approve(a_id, "owner", "ok")
+    assert wait_for(lambda: agent.state == "ACTIVE" and agent.detail == "心跳正常", 10)
+    # 已連線時又配對一次
+    agent.pair(master.url, master.registry.pair.new(), "pc-r")
+    b_id = agent.store.state["device_id"]
+    assert b_id != a_id and agent.store.public_fingerprint() != a_fp     # 新身分
+    assert not os.path.isfile(agent.store.cert_path)                      # 舊憑證刪掉了
+    fps = [d["public_key_fingerprint"] for d in master.repo.list_devices()]
+    assert len(fps) == len(set(fps))                                     # 名單沒有重複指紋
+    # 在等核准時被拒絕 → Agent 回到「尚未配對」，不會拿舊憑證出現 CREDENTIAL_MISMATCH 重連迴圈
+    master.registry.reject(b_id, "owner", "測試")
+    assert wait_for(lambda: agent.state == "UNCONFIGURED", 10), agent.status()
+    # 舊的 A 也撤銷（使用者名單上那幾筆舊的）
+    master.registry.revoke(a_id, "owner", "清掉舊的")
+    time.sleep(1.5)
+    assert agent.last_error != "CREDENTIAL_MISMATCH" and agent.state != "RECONNECTING"
+    # 再配一次、核准、撤銷 → 正常停下
+    agent.pair(master.url, master.registry.pair.new(), "pc-r")
+    c_id = agent.store.state["device_id"]
+    master.registry.approve(c_id, "owner", "ok")
+    assert wait_for(lambda: agent.state == "ACTIVE" and agent.detail == "心跳正常", 10), agent.status()
+    master.registry.revoke(c_id, "owner", "測試")
+    assert wait_for(lambda: agent.state == "REVOKED", 10), agent.status()
+
+
+def test_stale_cert_is_not_a_credential(master, agent):
+    agent.start()
+    agent.pair(master.url, master.registry.pair.new(), "pc-s")
+    master.registry.approve(agent.store.state["device_id"], "owner", "ok")
+    assert wait_for(lambda: agent.store.has_credential(), 10)
+    agent.store.save(device_id="00000000-0000-0000-0000-000000000000")  # 身分跟憑證不一致
+    assert not agent.store.has_credential()

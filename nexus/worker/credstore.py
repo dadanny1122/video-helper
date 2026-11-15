@@ -65,8 +65,15 @@ class CredStore:
 
     # ---- 憑證 ----
     def has_credential(self) -> bool:
-        return (os.path.isfile(self.cert_path) and os.path.isfile(self.ca_path) and self.ks.exists("device")
-                and bool(self.state["device_id"]))
+        """有憑證檔、狀態是 ACTIVE、而且憑證裡的裝置 id＝現在的身分（舊配對留下的憑證一律不算）"""
+        if not (self.state["status"] == "ACTIVE" and self.state["device_id"] and os.path.isfile(self.cert_path)
+                and os.path.isfile(self.ca_path) and self.ks.exists("device")):
+            return False
+        try:
+            with open(self.cert_path, encoding="utf-8") as f:
+                return certs.device_id_of(certs.load_cert(f.read())) == self.state["device_id"]
+        except Exception:
+            return False
 
     def save_credential(self, cert_pem: str, ca_pem: str):
         cert, ca = certs.load_cert(cert_pem), certs.load_cert(ca_pem)

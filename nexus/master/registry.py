@@ -104,9 +104,14 @@ class DeviceRegistry:
         except Exception as e:
             self._audit(self.db.conn(), "device.register_rejected", actor, "-", "denied", "bad_csr", correlation_id, source_ip=source_ip)
             raise NexusError("SCHEMA_INVALID", details={"field": "csr_pem"}) from e
+        fp = certs.public_key_fingerprint(csr.public_key())
+        old = self.repo.device_by_public_key(fp)
+        if old:                                       # 同一把金鑰只能對應一個裝置；撤銷過的金鑰也不能拿來重新註冊
+            self._audit(self.db.conn(), "device.register_rejected", actor, old["device_id"], "denied", "key_reused", correlation_id,
+                        source_ip=source_ip, fingerprint=fp, existing_status=old["status"])
+            raise NexusError("DEVICE_ALREADY_REGISTERED")
         device_id = str(uuid.uuid4())
         token = secrets.token_urlsafe(32)
-        fp = certs.public_key_fingerprint(csr.public_key())
         expires = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=REGISTRATION_TTL_SECONDS)).isoformat(timespec="seconds")
         with self.db.tx() as c:
             self.repo.insert_device(c, dict(device_id=device_id, name=name[:64], platform=platform[:32], agent_version=agent_version,

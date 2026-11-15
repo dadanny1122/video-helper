@@ -28,6 +28,7 @@ from nexus.worker.credstore import CredStore
 
 log = logging.getLogger("nexus.worker")
 STOP_CODES = {"CREDENTIAL_REVOKED": "REVOKED", "DEVICE_NOT_ACTIVE": "REVOKED", "CREDENTIAL_EXPIRED": "EXPIRED",
+              "CREDENTIAL_MISMATCH": "REVOKED",
               "PROTOCOL_INCOMPATIBLE": "INCOMPATIBLE", "AGENT_VERSION_TOO_OLD": "INCOMPATIBLE"}
 
 
@@ -90,8 +91,11 @@ class WorkerAgent:
     def pair(self, master_url: str, pair_code: str, device_name: str):
         """使用者在畫面輸入 Master 位址＋配對碼 → 送註冊（同步，馬上知道成功或錯誤）"""
         with self.lock:
-            if self.store.state["status"] in ("REVOKED", "EXPIRED") or not self.store.ks.exists("device"):
-                self.store.new_identity()
+            # 每次配對都是全新身分：新金鑰、清掉舊憑證（舊憑證留著會跟新身分對不上）
+            if self._client:
+                self._client.close()
+                self._client = None
+            self.store.new_identity()
             key = self.store.ensure_key()
             self.cfg["master_url"], self.cfg["device_name"] = master_url, device_name
             self.cfg.save()
@@ -121,60 +125,68 @@ class WorkerAgent:
     def _run(self):
         backoff = 5
         while not self._stop.is_set():
-            st = self.store.state
-            try:
-                if st["status"] == "PENDING" and st["device_id"]:
-                    self._set("PENDING", "等待 Master 那邊核准")
-                    self._poll_registration()
-                    wait = self.poll
-                elif self.store.has_credential():
-                    self._set("ACTIVE") if self.state in ("RECONNECTING", "PENDING", "UNCONFIGURED", "REGISTERING") else None
-                    self._heartbeat_once()
-                    backoff = 5
-                    wait = self.hb
-                elif st["status"] in ("REVOKED", "EXPIRED"):
-                    self._set(st["status"], "請重新配對（會用新的身分）")
-                    wait = 3600
-                else:
-                    self._set("UNCONFIGURED", "請輸入 Master 位址與配對碼")
-                    wait = 3600
-            except NexusError as e:
-                self.last_error = e.code
-                if e.code in STOP_CODES:
-                    self._stop_because(STOP_CODES[e.code], e)
-                    wait = 3600
-                elif e.code == "DEVICE_SUSPENDED":
-                    self._set("ACTIVE", "已被 Master 暫停，等待恢復")
-                    wait = self.hb
-                elif e.code == "RATE_LIMITED":
-                    wait = (e.retry_after or 5) + random.uniform(0, 1)
-                elif e.code == "REGISTRATION_NOT_FOUND" and st["status"] == "PENDING":
-                    self.store.save(status="REJECTED", registration_token=None)
-                    self._set("UNCONFIGURED", "註冊被拒絕或已過期，請重新配對")
-                    wait = 3600
-                else:
-                    self._set("RECONNECTING", f"{e.code}：{e.message}")
-                    wait = backoff
-                    backoff = min(int(self.cfg["reconnect_max_seconds"]), backoff * 2)
-            except ssl.SSLCertVerificationError as e:
-                # 釘住的 CA 驗不過＝Master 換了憑證或有人冒充 → 停下來，不自動信任
-                self.last_error = "MASTER_CHANGED"
-                self._stop_because("MASTER_CHANGED", e)
-                wait = 3600
-            except (OSError, ssl.SSLError, socket.timeout) as e:
-                self.last_error = type(e).__name__
-                if self._client:
-                    self._client.close()
-                    self._client = None
-                self._set("RECONNECTING", f"{backoff} 秒後重試（{type(e).__name__}）")
-                wait = backoff * random.uniform(0.8, 1.2)
-                backoff = min(int(self.cfg["reconnect_max_seconds"]), backoff * 2)
-            except Exception as e:                   # 不讓未知錯誤殺掉 Agent
-                log.exception("Worker 迴圈錯誤")
-                self.last_error = type(e).__name__
-                wait = backoff
+            with self.lock:                           # 跟 pair() 互斥：配對到一半不會拿到半新半舊的狀態
+                wait = self._step(backoff)
+                backoff = self._backoff
             self._wake.wait(wait)
             self._wake.clear()
+
+    def _step(self, backoff):
+        self._backoff = backoff
+        st = self.store.state
+        try:
+            if st["status"] == "PENDING" and st["device_id"]:
+                self._set("PENDING", "等待 Master 那邊核准")
+                self._poll_registration()
+                wait = self.poll
+            elif self.store.has_credential():
+                self._set("ACTIVE") if self.state in ("RECONNECTING", "PENDING", "UNCONFIGURED", "REGISTERING") else None
+                self._heartbeat_once()
+                backoff = 5
+                wait = self.hb
+            elif st["status"] in ("REVOKED", "EXPIRED"):
+                self._set(st["status"], "請重新配對（會用新的身分）")
+                wait = 3600
+            else:
+                self._set("UNCONFIGURED", "請輸入 Master 位址與配對碼")
+                wait = 3600
+        except NexusError as e:
+            self.last_error = e.code
+            if e.code in STOP_CODES:
+                self._stop_because(STOP_CODES[e.code], e)
+                wait = 3600
+            elif e.code == "DEVICE_SUSPENDED":
+                self._set("ACTIVE", "已被 Master 暫停，等待恢復")
+                wait = self.hb
+            elif e.code == "RATE_LIMITED":
+                wait = (e.retry_after or 5) + random.uniform(0, 1)
+            elif e.code == "REGISTRATION_NOT_FOUND" and st["status"] == "PENDING":
+                self.store.save(status="REJECTED", registration_token=None)
+                self._set("UNCONFIGURED", "註冊被拒絕或已過期，請重新配對")
+                wait = 3600
+            else:
+                self._set("RECONNECTING", f"{e.code}：{e.message}")
+                wait = backoff
+                backoff = min(int(self.cfg["reconnect_max_seconds"]), backoff * 2)
+        except ssl.SSLCertVerificationError as e:
+            # 釘住的 CA 驗不過＝Master 換了憑證或有人冒充 → 停下來，不自動信任
+            self.last_error = "MASTER_CHANGED"
+            self._stop_because("MASTER_CHANGED", e)
+            wait = 3600
+        except (OSError, ssl.SSLError, socket.timeout) as e:
+            self.last_error = type(e).__name__
+            if self._client:
+                self._client.close()
+                self._client = None
+            self._set("RECONNECTING", f"{backoff} 秒後重試（{type(e).__name__}）")
+            wait = backoff * random.uniform(0.8, 1.2)
+            backoff = min(int(self.cfg["reconnect_max_seconds"]), backoff * 2)
+        except Exception as e:                   # 不讓未知錯誤殺掉 Agent
+            log.exception("Worker 迴圈錯誤")
+            self.last_error = type(e).__name__
+            wait = backoff
+        self._backoff = backoff
+        return wait
 
     def _stop_because(self, state, err):
         if state in ("REVOKED", "EXPIRED"):

@@ -23,6 +23,16 @@ def _ago(ts):
     return f"{s} 秒前" if s < 90 else f"{s // 60} 分前" if s < 5400 else f"{s // 3600} 小時前"
 
 
+def _local(ts):
+    """UTC → 本機時間 MM-DD HH:MM"""
+    if not ts:
+        return "—"
+    try:
+        return parse_utc(ts).astimezone().strftime("%m-%d %H:%M")
+    except Exception:
+        return ts[5:16]
+
+
 class DevicesTab:
     def __init__(self, page, service, settings, colors, px=lambda n: n, log_path=""):
         self.page, self.svc, self.settings, self.C, self.px = page, service, settings, colors, px
@@ -83,10 +93,10 @@ class DevicesTab:
         mid.columnconfigure(0, weight=1)
         mid.rowconfigure(1, weight=1)
         ttk.Label(mid, text="節點名單（選一列再按下面的按鈕）", font=("", 10, "bold")).grid(row=0, column=0, sticky="w")
-        cols = ("name", "status", "conn", "seen", "ver", "ip", "fp")
+        cols = ("name", "status", "conn", "seen", "created", "ip", "fp")
         self.tree = ttk.Treeview(mid, columns=cols, show="headings", height=7, selectmode="browse")
         for c, t, w in (("name", "名稱", 130), ("status", "狀態", 80), ("conn", "連線", 80), ("seen", "最後心跳", 90),
-                        ("ver", "版本", 60), ("ip", "來源 IP", 110), ("fp", "指紋（前 16）", 150)):
+                        ("created", "配對時間", 110), ("ip", "來源 IP", 100), ("fp", "指紋（前 16）", 150)):
             self.tree.heading(c, text=t)
             self.tree.column(c, width=px(w), stretch=(c == "fp"))
         self.tree.grid(row=1, column=0, sticky="nsew")
@@ -230,12 +240,14 @@ class DevicesTab:
         sel = self._selected()
         self.tree.delete(*self.tree.get_children())
         self._rows = {}
-        for d in self.svc.devices():
+        order = {"PENDING": 0, "ACTIVE": 1, "SUSPENDED": 2}            # 要處理的在上面、最新的在前
+        devs = sorted(self.svc.devices(), key=lambda d: d["created_at"] or "", reverse=True)
+        for d in sorted(devs, key=lambda d: order.get(d["status"], 9)):
             iid = self.tree.insert("", "end", tags=(d["status"],), values=(
                 d["name"], STATE_NAME.get(d["status"], d["status"]),
                 CONN_NAME.get(d["connection_state"], d["connection_state"]) if d["status"] == "ACTIVE" else "—",
                 _ago(d["last_seen_at"]) if d["status"] == "ACTIVE" else "—",
-                d["agent_version"], d["source_ip_first"] or "—", d["public_key_fingerprint"][:16]))
+                _local(d["created_at"]), d["source_ip_first"] or "—", d["public_key_fingerprint"][:16]))
             self._rows[iid] = d
             if sel and sel["device_id"] == d["device_id"]:
                 self.tree.selection_set(iid)

@@ -393,3 +393,17 @@ def test_keepalive_idle_timeout_is_set(master, worker_factory):
     w.beat(c)
     time.sleep(0.2)
     assert master.conns.count(w.device_id) == 1          # keep-alive 連線有被追蹤
+
+
+def test_same_public_key_cannot_register_twice(master, worker_factory):
+    """同一把金鑰只能對應一個裝置；撤銷過的金鑰也不能重新註冊（舊身分不復活）"""
+    from nexus.core.errors import NexusError
+    w = worker_factory("dup").onboard()
+    with pytest.raises(NexusError) as e:
+        w.register(master.registry.pair.new())
+    assert e.value.code == "DEVICE_ALREADY_REGISTERED"
+    master.registry.revoke(w.device_id, "owner", "測試")
+    with pytest.raises(NexusError) as e:
+        w.register(master.registry.pair.new())
+    assert e.value.code == "DEVICE_ALREADY_REGISTERED"
+    assert "device.register_rejected" in master.audit_actions()

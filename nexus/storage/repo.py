@@ -25,6 +25,10 @@ class Repo:
         r = c.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
         return dict(r) if r else None
 
+    def device_by_public_key(self, fingerprint: str):
+        r = self.db.conn().execute("SELECT * FROM devices WHERE public_key_fingerprint=? LIMIT 1", (fingerprint,)).fetchone()
+        return dict(r) if r else None
+
     def list_devices(self, status=None):
         c = self.db.conn()
         if status:

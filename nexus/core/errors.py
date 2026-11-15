@@ -10,6 +10,7 @@ ERROR_CODES = {
     "REGISTRATION_NOT_FOUND": (404, False, "找不到這筆註冊"),
     "DEVICE_PENDING": (403, True, "裝置還沒被核准"),
     "DEVICE_NOT_ACTIVE": (403, False, "裝置不是啟用狀態"),
+    "DEVICE_ALREADY_REGISTERED": (409, False, "這把金鑰已經註冊過（每次配對都要用新的身分）"),
     "DEVICE_SUSPENDED": (403, True, "裝置已被暫停"),
     "CREDENTIAL_REVOKED": (403, False, "憑證已被撤銷，請重新配對"),
     "CREDENTIAL_EXPIRED": (403, False, "憑證已過期，請重新配對"),
