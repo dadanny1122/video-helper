@@ -76,5 +76,78 @@ MIGRATIONS = {
         BEGIN SELECT RAISE(ABORT, 'audit_events is append-only'); END;
     CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     """,
+    # V2：任務、嘗試、事件、排程決策、節點能力（只新增表，不改 V1 的表）
+    2: """
+    CREATE TABLE tasks (
+        task_id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        adapter_version TEXT NOT NULL,
+        manifest_json TEXT NOT NULL,
+        manifest_sha256 TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        priority INTEGER NOT NULL DEFAULT 0,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 1,
+        assigned_device_id TEXT,
+        current_attempt_id TEXT,
+        result_json TEXT,
+        error_code TEXT,
+        error_message TEXT,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_tasks_status ON tasks(status, priority, created_at);
+    CREATE INDEX idx_tasks_device ON tasks(assigned_device_id, status);
+    CREATE TABLE task_attempts (
+        attempt_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES tasks(task_id),
+        attempt_no INTEGER NOT NULL,
+        device_id TEXT NOT NULL,
+        lease_id TEXT NOT NULL UNIQUE,
+        lease_expires_at TEXT NOT NULL,
+        status TEXT NOT NULL,
+        offered_at TEXT NOT NULL,
+        accepted_at TEXT,
+        started_at TEXT,
+        ended_at TEXT,
+        last_seq INTEGER NOT NULL DEFAULT 0,
+        error_code TEXT,
+        UNIQUE(task_id, attempt_no)
+    );
+    CREATE INDEX idx_attempts_device ON task_attempts(device_id, status);
+    CREATE TABLE task_events (
+        event_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        attempt_id TEXT,
+        device_id TEXT,
+        seq INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        data_json TEXT NOT NULL DEFAULT '{}',
+        received_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX idx_events_attempt_seq ON task_events(attempt_id, seq) WHERE attempt_id IS NOT NULL;
+    CREATE INDEX idx_events_task ON task_events(task_id, received_at);
+    CREATE TABLE schedule_decisions (
+        decision_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        decided_at TEXT NOT NULL,
+        weights_version TEXT NOT NULL,
+        candidates_json TEXT NOT NULL,
+        chosen_device_id TEXT
+    );
+    CREATE INDEX idx_decisions_task ON schedule_decisions(task_id, decided_at);
+    CREATE TABLE device_capabilities (
+        device_id TEXT PRIMARY KEY,
+        resources_json TEXT NOT NULL,
+        adapters_json TEXT NOT NULL,
+        max_concurrency INTEGER NOT NULL DEFAULT 1,
+        accepting INTEGER NOT NULL DEFAULT 1,
+        observed_at TEXT NOT NULL
+    );
+    """,
 }
 LATEST = max(MIGRATIONS)

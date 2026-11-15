@@ -25,6 +25,16 @@ ERROR_CODES = {
     "NOT_FOUND": (404, False, "找不到"),
     "METHOD_NOT_ALLOWED": (405, False, "不支援的方法"),
     "INTERNAL_ERROR": (500, True, "內部錯誤"),
+    # V2 任務
+    "TASK_NOT_FOUND": (404, False, "找不到這個任務"),
+    "TASK_NOT_ASSIGNED": (403, False, "這個任務沒有派給你"),
+    "LEASE_EXPIRED": (409, False, "派送已過期，任務已收回"),
+    "INVALID_TRANSITION": (409, False, "任務目前的狀態不能這樣改"),
+    "CONCURRENT_UPDATE": (409, True, "任務剛被別人改過，請重試"),
+    "IDEMPOTENCY_CONFLICT": (409, False, "同一個 idempotency key 已用在內容不同的任務"),
+    "MANIFEST_INVALID": (400, False, "任務內容不合格"),
+    "ADAPTER_UNSUPPORTED": (422, False, "不支援這個任務類型或版本"),
+    "EVENT_OUT_OF_ORDER": (409, False, "事件順序不對"),
 }
 
 

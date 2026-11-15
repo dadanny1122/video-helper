@@ -43,6 +43,7 @@ def test_migration_failure_keeps_original_and_backup(tmp_path, monkeypatch):
         repo.insert_device(c, dict(device_id="d1", name="pc", platform="win", agent_version="0.1.0", protocol_version="1.0",
                                    status="PENDING", public_key_fingerprint="fp1", created_at="2026-01-01T00:00:00Z"))
     db.close()
+    good_latest = migrations.LATEST
     bad = dict(migrations.MIGRATIONS)
     bad[migrations.LATEST + 1] = "ALTER TABLE devices ADD COLUMN extra TEXT; CREATE TABLE devices (x);"   # 第二句一定失敗
     monkeypatch.setattr(migrations, "MIGRATIONS", bad)
@@ -55,7 +56,7 @@ def test_migration_failure_keeps_original_and_backup(tmp_path, monkeypatch):
         db2.migrate()
     assert ei.value.backup_path and os.path.isfile(ei.value.backup_path)
     db3 = Database(db.path)
-    assert db3.user_version() == 1
+    assert db3.user_version() == good_latest
     cols = [r[1] for r in db3.conn().execute("PRAGMA table_info(devices)")]
     assert "extra" not in cols                               # 半套升級沒留下來
     assert Repo(db3).get_device("d1")["name"] == "pc"
