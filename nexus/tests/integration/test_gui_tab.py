@@ -57,7 +57,7 @@ def test_service_bad_bind_raises(tmp_path):
     cfg = Config("master")
     cfg["bind_host"], cfg["port"] = "8.8.8.8", _port()
     s = MasterService(cfg, rules=RULES)
-    with pytest.raises(Exception):
+    with pytest.raises(RuntimeError):
         s.start()
     assert not s.running and "8.8.8.8" in s.error
     s.close()
