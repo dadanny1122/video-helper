@@ -52,7 +52,9 @@ class WorkerAgent:
         # V2：資源回報＋執行中任務（Executor 在 PR6 接上；沒有就回空清單）
         from nexus.worker.resources import ResourceProbe
         self.probe = ResourceProbe(self.store.dir)
-        self.running_ids = lambda: []
+        from nexus.worker.executor import Executor
+        self.executor = Executor(self)
+        self.running_ids = self.executor.running_ids
 
     # ---- 對外 ----
     def _set(self, state, detail=""):
@@ -77,10 +79,12 @@ class WorkerAgent:
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="nexus-worker", daemon=True)
         self._thread.start()
+        self.executor.start()
 
     def stop(self, disconnect=True):
         self._stop.set()
         self._wake.set()
+        self.executor.stop()
         if disconnect and self.state == "ACTIVE" and self.store.state["device_id"]:
             try:
                 self._auth_client().disconnect(self.store.state["device_id"])
@@ -240,10 +244,9 @@ class WorkerAgent:
         return self._client
 
     def capabilities(self) -> dict:
-        from nexus.tasks import adapters
         running = list(self.running_ids())
         mc = max(1, min(4, int(self.cfg.get("max_concurrency", 1) or 1)))
-        return {"resources": self.probe.snapshot(), "adapters": {n: a.version for n, a in adapters.ADAPTERS.items()},
+        return {"resources": self.probe.snapshot(), "adapters": dict(self.executor.versions),
                 "max_concurrency": mc, "accepting": bool(self.cfg.get("accept_tasks", True)), "running": running}
 
     def _heartbeat_once(self):

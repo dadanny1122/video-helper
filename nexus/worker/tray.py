@@ -109,7 +109,7 @@ def run_window() -> int:
     f = ttk.Frame(root, padding=14)
     f.pack(fill="both", expand=True)
     f.columnconfigure(1, weight=1)
-    ttk.Label(f, text="這台電腦要當別台 Video Helper 的節點。第一版只會「連線、心跳、被管理」，不會接任務。",
+    ttk.Label(f, text="這台電腦要當別台 Video Helper 的節點：跟 Master 連線、心跳、被管理；勾最下面那格才會接 Master 派來的測試任務。",
               wraplength=W(560), justify="left").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
     ttk.Label(f, text="Master 位址").grid(row=1, column=0, sticky="w")
     url = ttk.Entry(f, width=34)
@@ -133,6 +133,16 @@ def run_window() -> int:
     hint = ttk.Label(f, foreground="#999", wraplength=W(560), justify="left",
                      text="核准前請跟 Master 那邊核對「Master 指紋」前 8 碼是否一致，一樣才按核准。")
     hint.grid(row=8, column=0, columnspan=3, sticky="w", pady=(6, 0))
+    # V2：任務
+    accept = tk.BooleanVar(value=bool(cfg["accept_tasks"]))
+
+    def on_accept():
+        cfg["accept_tasks"] = bool(accept.get())
+        cfg.save()
+    ttk.Checkbutton(f, text="接收 Master 派來的測試任務（第二版只有回聲、等待、故意失敗，不會下載、不碰檔案）", variable=accept,
+                    command=on_accept).grid(row=9, column=0, columnspan=3, sticky="w", pady=(10, 0))
+    tasks_lbl = ttk.Label(f, text="", wraplength=W(560), justify="left")
+    tasks_lbl.grid(row=10, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
     agent = WorkerAgent(cfg, store)
 
@@ -146,6 +156,10 @@ def run_window() -> int:
         mfp = s["master_ca_fingerprint"] or s["master_server_fingerprint"] or "—"
         exp = f"\n憑證到期：{s['credential_expires_at'][:10]}" if s["credential_expires_at"] else ""
         fps.config(text=f"我的指紋：{s['my_fingerprint']}　Master 指紋：{mfp}{exp}")
+        names = {"test.echo": "回聲", "test.sleep": "等待", "test.fail": "故意失敗"}
+        run = agent.executor.summary()
+        tasks_lbl.config(text="目前任務：" + ("、".join(f"{names.get(r['type'], r['type'])} {int(r['progress'] * 100)}%" for r in run)
+                                             if run else "沒有"))
 
     def do_pair():
         try:
