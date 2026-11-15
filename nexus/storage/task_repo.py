@@ -44,10 +44,10 @@ class TaskRepo:
         c = c or self.db.conn()
         if statuses:
             q = ",".join("?" * len(statuses))
-            rows = c.execute(f"SELECT * FROM tasks WHERE status IN ({q}) ORDER BY priority DESC, created_at LIMIT ?",
+            rows = c.execute(f"SELECT * FROM tasks WHERE status IN ({q}) ORDER BY priority DESC, created_at, rowid LIMIT ?",
                              (*statuses, limit))
         else:
-            rows = c.execute("SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,))
+            rows = c.execute("SELECT * FROM tasks ORDER BY created_at DESC, rowid DESC LIMIT ?", (limit,))
         return [dict(r) for r in rows]
 
     def tasks_on_device(self, device_id: str, statuses, c=None):
