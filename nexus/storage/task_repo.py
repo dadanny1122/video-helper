@@ -127,6 +127,9 @@ class TaskRepo:
             " observed_at=excluded.observed_at",
             (device_id, json.dumps(resources), json.dumps(adapters), int(max_concurrency), 1 if accepting else 0, utcnow()))
 
+    def clear_capabilities(self, device_id: str, c=None):
+        (c or self.db.conn()).execute("DELETE FROM device_capabilities WHERE device_id=?", (device_id,))
+
     def capabilities(self, device_id: str, c=None):
         r = (c or self.db.conn()).execute("SELECT * FROM device_capabilities WHERE device_id=?", (device_id,)).fetchone()
         if not r:

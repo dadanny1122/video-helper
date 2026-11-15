@@ -6,6 +6,7 @@ import time
 
 import pytest
 
+import nexus
 from nexus import NEXUS_VERSION
 from nexus.core.errors import NexusError
 from nexus.identity import certs
@@ -72,7 +73,7 @@ def test_at002_approved_worker_connects_with_mtls_and_heartbeats(master, worker_
     assert dev2["last_sequence"] == 2 and dev2["connection_state"] == "CONNECTED"
     assert r2["correlation_id"] != r["correlation_id"]
     info = c.info()
-    assert info["protocol_version"] == "1.0"
+    assert info["protocol_version"] == nexus.PROTOCOL_VERSION
     acts = master.audit_actions(w.device_id)
     for a in ("device.register_requested", "device.approved", "credential.issued", "credential.delivered", "device.connected"):
         assert a in acts, a

@@ -34,7 +34,10 @@ WORKER_DEFAULTS = {
     "device_name": "",
     "heartbeat_seconds": 10,
     "reconnect_max_seconds": 300,
+    "accept_tasks": True,                # V2：關掉＝Master 不會派任務給這台
+    "max_concurrency": 1,                # V2：同時最多跑幾個任務（1～4）
 }
+_PROFILE = None                          # `--worker --profile 名稱`：同一台電腦開好幾個獨立節點
 
 
 def nexus_root() -> str:
@@ -45,9 +48,27 @@ def nexus_root() -> str:
     return os.environ.get("VH_NEXUS_ROOT") or os.path.join(base, "nexus")
 
 
+def valid_profile(name: str) -> bool:
+    import re
+    return bool(re.fullmatch(r"[A-Za-z0-9_-]{1,24}", name or ""))
+
+
+def set_worker_profile(name: str | None):
+    """設定這個程序的 Worker profile（要在讀設定、開日誌之前呼叫）"""
+    global _PROFILE
+    if name is not None and not valid_profile(name):
+        raise ValueError("profile 名稱只能用英數、- 和 _（1～24 字）")
+    _PROFILE = name
+
+
+def worker_profile() -> str | None:
+    return _PROFILE
+
+
 def mode_dir(mode: str) -> str:
     assert mode in ("master", "worker")
-    d = os.path.join(nexus_root(), mode)
+    sub = f"worker-{_PROFILE}" if mode == "worker" and _PROFILE else mode
+    d = os.path.join(nexus_root(), sub)
     os.makedirs(d, exist_ok=True)
     return d
 

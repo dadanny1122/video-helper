@@ -32,7 +32,10 @@ MASTER_ID = "master"
 # 各端點的內容 schema（外框另外驗）
 S_REGISTER = {"pair_code": (str, True, 8), "name": (str, True, 64), "platform": (str, True, 32),
               "agent_version": (str, True, 32), "csr_pem": (str, True, 4096)}
-S_HEARTBEAT = {"sequence": (int, True, 2**53), "agent_version": (str, True, 32), "status": (str, True, 16)}
+S_HEARTBEAT = {"sequence": (int, True, 2**53), "agent_version": (str, True, 32), "status": (str, True, 16),
+               # 協定 1.1（V2）：節點能力；細節在 nexus/tasks/capabilities.py 驗證
+               "resources": (dict, False, None), "adapters": (dict, False, None), "max_concurrency": (int, False, None),
+               "accepting": (bool, False, None), "running": (list, False, None)}
 S_RENEW = {"csr_pem": (str, True, 4096)}
 S_EMPTY = {}
 
@@ -297,7 +300,8 @@ class MasterServer:
                 raise NexusError("REGISTRATION_NOT_FOUND")
             out = self.registry.registration_status(path_id, auth[len("Registration "):].strip())
         elif name == "heartbeat":
-            out = self.registry.heartbeat(dev, int(body["sequence"]), body["agent_version"], data["protocol_version"], body["status"])
+            out = self.registry.heartbeat(dev, int(body["sequence"]), body["agent_version"], data["protocol_version"], body["status"],
+                                          body=body, correlation_id=corr)
         elif name == "renew":
             out = self.registry.renew(dev, body["csr_pem"], h.peer_fp)
         elif name == "disconnect":

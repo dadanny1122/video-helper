@@ -49,6 +49,10 @@ class WorkerAgent:
         self._thread = None
         self._client = None
         self.lock = threading.Lock()
+        # V2：資源回報＋執行中任務（Executor 在 PR6 接上；沒有就回空清單）
+        from nexus.worker.resources import ResourceProbe
+        self.probe = ResourceProbe(self.store.dir)
+        self.running_ids = lambda: []
 
     # ---- 對外 ----
     def _set(self, state, detail=""):
@@ -235,10 +239,18 @@ class WorkerAgent:
                                        ca_pem=self.store.ca_pem(), certfile=certfile, keyfile=keyfile, key_password=pw)
         return self._client
 
+    def capabilities(self) -> dict:
+        from nexus.tasks import adapters
+        running = list(self.running_ids())
+        mc = max(1, min(4, int(self.cfg.get("max_concurrency", 1) or 1)))
+        return {"resources": self.probe.snapshot(), "adapters": {n: a.version for n, a in adapters.ADAPTERS.items()},
+                "max_concurrency": mc, "accepting": bool(self.cfg.get("accept_tasks", True)), "running": running}
+
     def _heartbeat_once(self):
         c = self._auth_client()
         self.seq += 1
-        r = c.heartbeat(self.store.state["device_id"], self.seq, NEXUS_VERSION, "IDLE")
+        caps = self.capabilities()
+        r = c.heartbeat(self.store.state["device_id"], self.seq, NEXUS_VERSION, "BUSY" if caps["running"] else "IDLE", **caps)
         self._set("ACTIVE", "心跳正常")
         exp = self.store.state["credential_expires_at"]
         days_left = (parse_utc(exp) - parse_utc(r.get("server_time") or exp)).total_seconds() / 86400 if exp else 99

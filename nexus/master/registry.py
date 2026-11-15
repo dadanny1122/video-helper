@@ -63,6 +63,10 @@ class PairCode:
 class DeviceRegistry:
     def __init__(self, db, repo, ca, connections, config):
         self.db, self.repo, self.ca, self.conns, self.cfg = db, repo, ca, connections, config
+        from nexus.storage.task_repo import TaskRepo
+        self.tr = TaskRepo(db)                 # V2：節點能力
+        self.last_running = {}                 # device_id → 心跳回報的執行中任務（給派送層核對）
+        self.on_device_change = lambda device_id, status: None   # V2：撤銷／暫停時通知派送層（任務改 UNKNOWN）
         self.pair = PairCode()
         self.lock = threading.Lock()           # 管理操作一次一個（樂觀鎖是第二道）
 
@@ -243,9 +247,24 @@ class DeviceRegistry:
             raise NexusError("DEVICE_NOT_ACTIVE")
         return dev
 
-    def heartbeat(self, dev: dict, sequence: int, agent_version: str, protocol_version: str, status: str) -> dict:
+    def heartbeat(self, dev: dict, sequence: int, agent_version: str, protocol_version: str, status: str,
+                  body: dict | None = None, correlation_id: str = "") -> dict:
         if not protocol_compatible(protocol_version):
             raise NexusError("PROTOCOL_INCOMPATIBLE", details={"min_protocol": MIN_PEER_PROTOCOL})
+        # V2：節點能力（不合格就丟掉這份＋稽核；心跳照算，只是這台暫時不會被派任務）
+        if body is not None:
+            from nexus.tasks import capabilities
+            try:
+                caps = capabilities.normalize(body)
+            except NexusError as e:
+                caps = None
+                self._audit(self.db.conn(), "capabilities.rejected", f"worker:{dev['device_id']}", dev["device_id"], "denied",
+                            str(e.details.get("field", "")), correlation_id)
+                self.tr.clear_capabilities(dev["device_id"])
+            if caps:
+                self.tr.upsert_capabilities(dev["device_id"], caps["resources"], caps["adapters"], caps["max_concurrency"],
+                                            caps["accepting"])
+                self.last_running[dev["device_id"]] = caps["running"]
         was = dev["connection_state"]
         self.repo.touch_seen(dev["device_id"], sequence, ConnectionState.CONNECTED.value)
         if was != ConnectionState.CONNECTED.value:

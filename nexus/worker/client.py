@@ -112,8 +112,10 @@ class NexusClient:
     def poll_registration(self, device_id: str, token: str) -> dict:
         return self._request("GET", f"/devices/{device_id}/registration", headers={"Authorization": f"Registration {token}"})
 
-    def heartbeat(self, device_id: str, sequence: int, agent_version: str, status: str = "IDLE") -> dict:
-        return self._request("POST", f"/devices/{device_id}/heartbeat", dict(sequence=sequence, agent_version=agent_version, status=status))
+    def heartbeat(self, device_id: str, sequence: int, agent_version: str, status: str = "IDLE", **caps) -> dict:
+        """caps（協定 1.1）：resources、adapters、max_concurrency、accepting、running"""
+        return self._request("POST", f"/devices/{device_id}/heartbeat",
+                             dict(sequence=sequence, agent_version=agent_version, status=status, **caps))
 
     def renew(self, device_id: str, csr_pem: str) -> dict:
         return self._request("POST", f"/devices/{device_id}/renew", dict(csr_pem=csr_pem))
