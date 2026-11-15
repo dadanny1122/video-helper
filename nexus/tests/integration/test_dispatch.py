@@ -147,10 +147,11 @@ def test_at012_duplicate_and_out_of_order_events(master, worker_factory):
 
 
 def test_events_from_other_device_refused(master, worker_factory):
-    a, b = ready(worker_factory("a").onboard()), ready(worker_factory("b").onboard())
+    a = ready(worker_factory("a").onboard())
     master.tasks.create("test.echo", {"text": "x"})
     run, _ = take(master, a)
     run.ack()
+    b = ready(worker_factory("b").onboard())                    # 任務派給 a 之後才加入的另一台
     intruder = Run(b, run.msg)
     with pytest.raises(NexusError) as e:
         intruder.ev("SUCCEEDED", {"result": echo_result("x")})
@@ -211,8 +212,8 @@ def test_at010_revoke_while_running_becomes_unknown_not_rerun(master, worker_fac
     assert master.tasks.mark_failed(t["task_id"], "owner", "確認節點已關")["status"] == "FAILED"
 
 
-def test_offline_device_tasks_become_unknown_and_scheduled_requeued(master, worker_factory):
-    a, b = ready(worker_factory("a").onboard()), ready(worker_factory("b").onboard())
+def test_offline_device_tasks_become_unknown_then_resume(master, worker_factory):
+    a = ready(worker_factory("a").onboard())
     t1 = master.tasks.create("test.sleep", {"seconds": 60})
     run, _ = take(master, a)
     run.ack()
@@ -224,7 +225,6 @@ def test_offline_device_tasks_become_unknown_and_scheduled_requeued(master, work
     master.repo.set_connection_state(a.device_id, "CONNECTED")
     r = run.ev("SUCCEEDED", {"result": {"slept": 60}})
     assert r["status"] == "SUCCEEDED"
-    assert b
 
 
 def test_timeout_master_side(master, worker_factory):
