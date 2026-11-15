@@ -10,6 +10,7 @@ on:
       - 'requirements.txt'
       - '.github/workflows/build.yml'
       - '.github/ci_smoke.py'
+      - '.github/net_test.py'
       - '.github/ffmpeg/**'
       - '.github/discord_notify.py'
       - 'requirements.txt'
