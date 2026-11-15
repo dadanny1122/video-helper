@@ -155,6 +155,13 @@ class MasterService:
         self._ro_repo = Repo(self._ro_db)
         return self._ro_repo
 
+    def task_view(self) -> TaskService | None:
+        """任務資料：Master 開著就用正式的 TaskService；沒開也能看以前的任務（不能新增／取消）"""
+        if self.tasks:
+            return self.tasks
+        repo = self._any_repo()
+        return TaskService(self._ro_db, repo) if repo and self._ro_db else None
+
     def devices(self) -> list:
         repo = self._any_repo()
         return repo.list_devices() if repo else []

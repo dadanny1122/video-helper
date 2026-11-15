@@ -68,7 +68,7 @@ assert app.settings["setup_seen"], "看過安裝頁應該記下來"
 # 進階設定：一開始藏著，按了才出現，關掉又藏起來
 assert app.adv.state() == "withdrawn", "進階設定一開始應該藏起來"
 app.show_advanced(); r.update()
-assert app.adv.state() == "normal" and len(app.adv_nb.tabs()) == 8, "進階設定打不開"
+assert app.adv.state() == "normal" and len(app.adv_nb.tabs()) == 9, "進階設定打不開"
 app.adv.withdraw(); r.update()
 assert not app.btn_retry.winfo_manager(), "沒有失敗的時候不該出現「重試」"
 app.nb.select(app.tab_dl); r.update()
@@ -354,6 +354,20 @@ _nt.tree.selection_set(_nt.tree.get_children()[0]); _nt._update_buttons(); _nt.a
 wait(lambda: _agent.state == "ACTIVE" and _agent.detail == "心跳正常", 10)
 _nt.refresh(); r.update()
 assert _nt.tree.item(_nt.tree.get_children()[0])["values"][1] == "已核准", "名單沒顯示已核准"
+# 7b3. 📋 節點任務（V2）：派一個回聲任務給剛核准的節點 → 成功；詳情的排程理由有「選中」
+_tt = app.tasks_tab
+assert _tt is not None, "節點任務分頁沒載入"
+app.adv_nb.select(_tt.page); r.update()
+wait(lambda: app.nexus.registry.tr.capabilities(_agent.store.state["device_id"]) is not None, 10)
+_t = _tt.submit("test.echo", {"text": "ci 回聲"})
+wait(lambda: app.nexus.tasks.get(_t["task_id"])["status"] == "SUCCEEDED", 30)
+_tt.refresh(); r.update()
+_tt.tree.selection_set(_tt.tree.get_children()[0])
+_dw = _tt.show_detail(); r.update()
+_why = _dw.why.winfo_children()[1]
+assert _why.item(_why.get_children()[0])["values"][1] == "✔ 選中", "排程理由沒顯示選中"
+_dw.win.destroy()
+print("::notice title=節點任務::派送回聲任務→節點執行→Master 驗證結果→成功；排程理由 OK")
 _nt.tree.selection_set(_nt.tree.get_children()[0]); _nt._update_buttons(); _nt.act("revoke"); r.update()
 wait(lambda: _agent.state == "REVOKED", 10)
 _acts = [e["action"] for e in app.nexus.audit(50)]

@@ -1,0 +1,394 @@
+"""
+「⚙ 進階設定 → 📋 節點任務」分頁（06-V2 §7）：任務只能在這裡建立（決策 D2：沒有網路端點）。
+只呼叫 TaskService（不碰資料庫）。
+    任務列表（進行中／全部）、新增測試任務、任務詳情（時間軸、結果、排程理由）、取消（要理由）、狀態不明時人工標記失敗
+"""
+import json
+import tkinter as tk
+import uuid
+from tkinter import messagebox, simpledialog, ttk
+
+from nexus.core.models import parse_utc
+from nexus.tasks import adapters
+from nexus.tasks.scheduler import REASONS, WEIGHTS
+
+TYPE_NAME = {"test.echo": "回聲", "test.sleep": "等待", "test.fail": "故意失敗"}
+STATE_NAME = {
+    "CREATED": "已建立", "VALIDATING": "檢查中", "QUEUED": "排隊中", "SCHEDULED": "已選節點", "DISPATCHED": "已派出（等確認）",
+    "ACCEPTED": "節點已接受", "PREPARING": "準備中", "RUNNING": "執行中", "UPLOADING": "回傳中", "VERIFYING": "驗證結果",
+    "CANCELLING": "取消中…", "SUCCEEDED": "成功", "FAILED": "失敗", "REJECTED": "不合格（已拒絕）", "RESULT_REJECTED": "結果不通過",
+    "CANCELLED": "已取消", "TIMED_OUT": "逾時", "UNKNOWN": "狀態不明（節點失聯）", "RECONCILING": "核對中"}
+TAG = {"SUCCEEDED": "ok", "FAILED": "bad", "REJECTED": "bad", "RESULT_REJECTED": "bad", "TIMED_OUT": "bad", "UNKNOWN": "warn",
+       "CANCELLED": "muted", "CANCELLING": "warn", "QUEUED": "muted"}
+SCORE_NAME = {"cpu": "CPU", "memory": "記憶體", "disk": "磁碟", "queue": "空閒", "reliability": "可靠度"}
+
+
+def local(ts):
+    if not ts:
+        return "—"
+    try:
+        return parse_utc(ts).astimezone().strftime("%m-%d %H:%M:%S")
+    except Exception:
+        return ts
+
+
+def summary_of(task: dict) -> str:
+    try:
+        p = json.loads(task["manifest_json"]).get("params", {})
+    except Exception:
+        return ""
+    if "text" in p:
+        t = str(p["text"])
+        return t if len(t) <= 24 else t[:23] + "…"
+    if "seconds" in p:
+        return f"{p['seconds']} 秒"
+    if "code" in p:
+        return str(p["code"])
+    return ""
+
+
+class TasksTab:
+    def __init__(self, page, service, colors, px=lambda n: n):
+        self.page, self.svc, self.C, self.px = page, service, colors, px
+        self._after = None
+        self._rows = {}
+        self._build()
+        self.refresh()
+        page.bind("<Map>", lambda e: self._start_timer(), add="+")
+        page.bind("<Unmap>", lambda e: self._stop_timer(), add="+")
+
+    # ---------- 畫面 ----------
+    def _build(self):
+        C, px, p = self.C, self.px, self.page
+        ttk.Label(p, foreground=C["muted"], wraplength=px(720), justify="left",
+                  text="派測試任務給已核准的節點，看它們怎麼被分配、執行、取消。這一版只有三種無害的測試任務（回聲、等待、故意失敗），"
+                       "不會下載、不碰檔案、不連網；真的讓節點下載要等之後的版本。").pack(anchor="w")
+        bar = ttk.Frame(p)
+        bar.pack(fill="x", pady=(8, 4))
+        self.new_btn = ttk.Button(bar, text="＋ 新增測試任務", style="Accent.TButton", command=self.new_task)
+        self.new_btn.pack(side="left")
+        self.active_only = tk.BooleanVar(value=False)
+        ttk.Checkbutton(bar, text="只看進行中", variable=self.active_only, command=self.refresh).pack(side="left", padx=12)
+        self.status = ttk.Label(bar, text="", foreground=C["muted"])
+        self.status.pack(side="left", padx=8)
+
+        mid = ttk.Frame(p)
+        mid.pack(fill="both", expand=True)
+        mid.columnconfigure(0, weight=1)
+        mid.rowconfigure(0, weight=1)
+        cols = ("type", "what", "status", "node", "tries", "created")
+        self.tree = ttk.Treeview(mid, columns=cols, show="headings", height=10, selectmode="browse")
+        for c, t, w in (("type", "類型", 80), ("what", "內容", 150), ("status", "狀態", 150), ("node", "節點", 130),
+                        ("tries", "嘗試", 50), ("created", "建立時間", 120)):
+            self.tree.heading(c, text=t)
+            self.tree.column(c, width=px(w), stretch=(c in ("what", "status")))
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        sb = ttk.Scrollbar(mid, orient="vertical", command=self.tree.yview)
+        sb.grid(row=0, column=1, sticky="ns")
+        self.tree.configure(yscrollcommand=sb.set)
+        for tag, color in (("ok", C["ok"]), ("bad", C["bad"]), ("warn", C["accent"]), ("muted", C["muted"])):
+            self.tree.tag_configure(tag, foreground=color)
+        self.tree.bind("<<TreeviewSelect>>", lambda e: self._update_buttons())
+        self.tree.bind("<Double-1>", lambda e: self.show_detail())
+
+        btns = ttk.Frame(p)
+        btns.pack(fill="x", pady=(6, 0))
+        self.b = {}
+        for key, text, cmd in (("detail", "🔍 詳情與排程理由", self.show_detail), ("cancel", "⏹ 取消", self.cancel),
+                               ("fail", "✘ 標記失敗（狀態不明時）", self.mark_failed), ("refresh", "↻ 重新整理", self.refresh)):
+            self.b[key] = ttk.Button(btns, text=text, command=cmd)
+            self.b[key].pack(side="left", padx=(0, 6))
+
+    # ---------- 資料 ----------
+    def _ts(self):
+        return self.svc.task_view()
+
+    def _names(self):
+        return {d["device_id"]: d["name"] for d in self.svc.devices()}
+
+    def _selected(self):
+        sel = self.tree.selection()
+        return self._rows.get(sel[0]) if sel else None
+
+    def _update_buttons(self):
+        t = self._selected()
+        on = self.svc.running
+        st = t["status"] if t else None
+        self.b["detail"].state(["!disabled"] if t else ["disabled"])
+        self.b["cancel"].state(["!disabled"] if on and st in ("CREATED", "QUEUED", "SCHEDULED", "DISPATCHED", "ACCEPTED",
+                                                                    "PREPARING", "RUNNING") else ["disabled"])
+        self.b["fail"].state(["!disabled"] if on and st == "UNKNOWN" else ["disabled"])
+        self.new_btn.state(["!disabled"] if on else ["disabled"])
+
+    def refresh(self):
+        on = self.svc.running
+        ts = self._ts()
+        self.status.config(text="" if on else "Master 沒開：只能看以前的任務。要派任務請先到「🖧 節點」勾「啟用 Master」。")
+        sel = self._selected()
+        self.tree.delete(*self.tree.get_children())
+        self._rows = {}
+        if ts:
+            names = self._names()
+            for t in ts.list(active_only=self.active_only.get()):
+                iid = self.tree.insert("", "end", tags=(TAG.get(t["status"], ""),), values=(
+                    TYPE_NAME.get(t["type"], t["type"]), summary_of(t), STATE_NAME.get(t["status"], t["status"]),
+                    names.get(t["assigned_device_id"], "—") if t["assigned_device_id"] else "—",
+                    f"{t['attempt_count']}/{t['max_attempts']}", local(t["created_at"])))
+                self._rows[iid] = t
+                if sel and sel["task_id"] == t["task_id"]:
+                    self.tree.selection_set(iid)
+        self._update_buttons()
+
+    # ---------- 操作 ----------
+    def new_task(self):
+        if not self.svc.running:
+            return
+        NewTaskDialog(self.page, self, self.px)
+
+    def submit(self, ttype, params, **opts):
+        t = self.svc.tasks.create(ttype, params, actor="owner", **opts)
+        self.refresh()
+        return t
+
+    def cancel(self):
+        t = self._selected()
+        if not t:
+            return
+        reason = simpledialog.askstring("取消任務", "為什麼取消？（會寫進稽核紀錄）", parent=self.page)
+        if not reason or not reason.strip():
+            return
+        try:
+            r = self.svc.tasks.cancel(t["task_id"], "owner", reason.strip())
+            if r["status"] == "CANCELLING":
+                messagebox.showinfo("取消中", "已通知節點停止；節點確認停下後才會變成「已取消」。", parent=self.page)
+        except Exception as e:
+            messagebox.showerror("取消失敗", str(e), parent=self.page)
+        self.refresh()
+
+    def mark_failed(self):
+        t = self._selected()
+        if not t or t["status"] != "UNKNOWN":
+            return
+        if not messagebox.askyesno("標記失敗", "這個任務的節點失聯了，不知道它有沒有跑完。\n確定要標記成失敗嗎？（不會自動重跑）",
+                                   parent=self.page):
+            return
+        reason = simpledialog.askstring("標記失敗", "理由（例如：已確認節點關機）：", parent=self.page)
+        if not reason or not reason.strip():
+            return
+        try:
+            self.svc.tasks.mark_failed(t["task_id"], "owner", reason.strip())
+        except Exception as e:
+            messagebox.showerror("失敗", str(e), parent=self.page)
+        self.refresh()
+
+    def show_detail(self, task_id=None):
+        t = self._selected() if task_id is None else {"task_id": task_id}
+        ts = self._ts()
+        if not t or not ts:
+            return None
+        return DetailWindow(self.page, ts.detail(t["task_id"]), self._names(), self.C, self.px)
+
+    # ---------- 每 2 秒 ----------
+    def _start_timer(self):
+        self._stop_timer()
+        self._tick()
+
+    def _stop_timer(self):
+        if self._after:
+            try:
+                self.page.after_cancel(self._after)
+            except Exception:
+                pass
+            self._after = None
+
+    def _tick(self):
+        try:
+            if self.page.winfo_viewable():
+                self.refresh()
+        except tk.TclError:
+            return
+        self._after = self.page.after(2000, self._tick)
+
+
+class NewTaskDialog:
+    def __init__(self, parent, tab: TasksTab, px):
+        self.tab = tab
+        w = self.win = tk.Toplevel(parent)
+        w.title("新增測試任務")
+        w.transient(parent.winfo_toplevel())
+        f = ttk.Frame(w, padding=14)
+        f.pack(fill="both", expand=True)
+        f.columnconfigure(1, weight=1)
+        ttk.Label(f, text="類型").grid(row=0, column=0, sticky="w")
+        self.types = {f"{TYPE_NAME[n]}（{n}）": n for n in adapters.ADAPTERS}
+        self.type = ttk.Combobox(f, state="readonly", values=list(self.types), width=28)
+        self.type.current(0)
+        self.type.grid(row=0, column=1, sticky="we", pady=2)
+        self.type.bind("<<ComboboxSelected>>", lambda e: self._switch())
+        self.desc = ttk.Label(f, text="", foreground=tab.C["muted"], wraplength=px(380), justify="left")
+        self.desc.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        self.plabel = ttk.Label(f, text="")
+        self.plabel.grid(row=2, column=0, sticky="w")
+        self.pframe = ttk.Frame(f)
+        self.pframe.grid(row=2, column=1, sticky="we", pady=2)
+        ttk.Label(f, text="執行時間上限（秒）").grid(row=3, column=0, sticky="w")
+        self.runtime = ttk.Spinbox(f, from_=1, to=900, width=8)
+        self.runtime.grid(row=3, column=1, sticky="w", pady=2)
+        ttk.Label(f, text="最多嘗試幾次").grid(row=4, column=0, sticky="w")
+        self.tries = ttk.Spinbox(f, from_=1, to=5, width=8)
+        self.tries.set(2)
+        self.tries.grid(row=4, column=1, sticky="w", pady=2)
+        ttk.Label(f, text="重複送出檢查碼").grid(row=5, column=0, sticky="w")
+        self.key = ttk.Entry(f)
+        self.key.insert(0, str(uuid.uuid4())[:8])
+        self.key.grid(row=5, column=1, sticky="we", pady=2)
+        ttk.Label(f, foreground=tab.C["muted"], wraplength=px(380), justify="left",
+                  text="同一個檢查碼再送一次，不會多建一個任務（會回到原本那個）；內容不同會被拒絕。").grid(
+            row=6, column=0, columnspan=2, sticky="w")
+        b = ttk.Frame(f)
+        b.grid(row=7, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        ttk.Button(b, text="送出", style="Accent.TButton", command=self.ok).pack(side="left")
+        ttk.Button(b, text="關閉", command=w.destroy).pack(side="left", padx=6)
+        self._switch()
+
+    def _switch(self):
+        n = self.types[self.type.get()]
+        spec = adapters.get(n)
+        self.desc.config(text=spec.description)
+        for c in self.pframe.winfo_children():
+            c.destroy()
+        if n == "test.echo":
+            self.plabel.config(text="文字")
+            self.pv = ttk.Entry(self.pframe)
+            self.pv.insert(0, "哈囉 Nexus")
+        elif n == "test.sleep":
+            self.plabel.config(text="等幾秒")
+            self.pv = ttk.Spinbox(self.pframe, from_=1, to=600, width=8)
+            self.pv.set(10)
+        else:
+            self.plabel.config(text="失敗原因")
+            self.pv = ttk.Combobox(self.pframe, state="readonly", values=["ADAPTER_ERROR", "RESOURCE_LIMIT", "INVALID_INPUT"])
+            self.pv.current(0)
+        self.pv.pack(fill="x")
+        self.runtime.set(spec.default_runtime_seconds if spec.default_runtime_seconds <= 900 else 900)
+
+    def params(self):
+        n = self.types[self.type.get()]
+        v = self.pv.get()
+        if n == "test.echo":
+            return n, {"text": v}
+        if n == "test.sleep":
+            return n, {"seconds": int(v)}
+        return n, {"code": v}
+
+    def ok(self):
+        try:
+            n, p = self.params()
+            t = self.tab.submit(n, p, idempotency_key=self.key.get().strip() or None, max_runtime_seconds=int(self.runtime.get()),
+                                max_attempts=int(self.tries.get()))
+        except ValueError:
+            messagebox.showerror("新增任務", "數字格式不對", parent=self.win)
+            return
+        except Exception as e:
+            messagebox.showerror("新增任務", getattr(e, "message", str(e)), parent=self.win)
+            return
+        if t["status"] == "REJECTED":
+            messagebox.showwarning("任務不合格", t.get("error_message") or "內容不合格", parent=self.win)
+        self.win.destroy()
+
+
+class DetailWindow:
+    def __init__(self, parent, d: dict, names: dict, C, px):
+        t = d["task"]
+        w = self.win = tk.Toplevel(parent)
+        w.title(f"任務詳情　{TYPE_NAME.get(t['type'], t['type'])}　{t['task_id'][:8]}")
+        w.geometry(f"{px(860)}x{px(600)}")
+        f = ttk.Frame(w, padding=12)
+        f.pack(fill="both", expand=True)
+        res = ""
+        if t["result_json"]:
+            res = "結果：" + t["result_json"][:200]
+        elif t["error_message"]:
+            res = f"錯誤：{t['error_code']}　{t['error_message'][:200]}"
+        ttk.Label(f, text=f"狀態：{STATE_NAME.get(t['status'], t['status'])}　節點：{names.get(t['assigned_device_id'], '—')}　"
+                          f"嘗試：{t['attempt_count']}/{t['max_attempts']}　內容：{summary_of(t)}",
+                  font=("", 10, "bold")).pack(anchor="w")
+        if res:
+            ttk.Label(f, text=res, foreground=C["ok"] if t["result_json"] else C["bad"], wraplength=px(820)).pack(anchor="w", pady=(2, 0))
+        nb = ttk.Notebook(f)
+        nb.pack(fill="both", expand=True, pady=(8, 0))
+        self.why = self._why_tab(nb, d, names, C, px)
+        self.timeline = self._timeline_tab(nb, d, names, px)
+        nb.add(self.why, text="  為什麼選這台  ")
+        nb.add(self.timeline, text="  時間軸  ")
+
+    @staticmethod
+    def _why_tab(nb, d, names, C, px):
+        page = ttk.Frame(nb, padding=8)
+        decs = d["decisions"]
+        if not decs:
+            ttk.Label(page, text="還沒排程過。").pack(anchor="w")
+            return page
+        last = decs[-1]
+        chosen = last["chosen_device_id"]
+        w = WEIGHTS.get(last["weights_version"], {})
+        ttk.Label(page, foreground=C["muted"], wraplength=px(800), justify="left",
+                  text=f"最近一次排程：{local(last['decided_at'])}（權重版本 {last['weights_version']}：" +
+                       "、".join(f"{SCORE_NAME[k]} {int(v * 100)}%" for k, v in w.items()) +
+                       "）。先排除不合格的節點，再替合格的打 0～100 分，最高分的拿到；"
+                       "同分時選目前任務較少的、再依節點 ID。").pack(anchor="w")
+        cols = ("node", "result", "total", "detail")
+        tv = ttk.Treeview(page, columns=cols, show="headings", height=8)
+        for c, txt, wd in (("node", "節點", 140), ("result", "結果", 90), ("total", "分數", 60), ("detail", "子分數／排除原因", 480)):
+            tv.heading(c, text=txt)
+            tv.column(c, width=px(wd), stretch=(c == "detail"))
+        tv.pack(fill="both", expand=True, pady=(6, 0))
+        tv.tag_configure("chosen", foreground=C["ok"])
+        tv.tag_configure("out", foreground=C["muted"])
+        for cand in last["candidates"]:
+            if cand["eligible"]:
+                detail = "　".join(f"{SCORE_NAME[k]} {v:.2f}" for k, v in cand["scores"].items())
+                result = "✔ 選中" if cand["device_id"] == chosen else "合格"
+                total = f"{cand['total']:.1f}"
+            else:
+                detail = "；".join(REASONS.get(r, r) for r in cand["reasons"])
+                result, total = "排除", "—"
+            tv.insert("", "end", tags=("chosen" if cand["device_id"] == chosen else ("out" if not cand["eligible"] else ""),),
+                      values=(names.get(cand["device_id"], cand["name"]), result, total, detail))
+        if len(decs) > 1:
+            ttk.Label(page, foreground=C["muted"],
+                      text=f"（這個任務一共排程過 {len(decs)} 次，例如重試或節點拒收後重新分配）").pack(anchor="w")
+        return page
+
+    @staticmethod
+    def _timeline_tab(nb, d, names, px):
+        page = ttk.Frame(nb, padding=8)
+        cols = ("ts", "who", "what", "note")
+        tv = ttk.Treeview(page, columns=cols, show="headings")
+        for c, txt, wd in (("ts", "時間", 130), ("who", "誰", 130), ("what", "發生什麼", 160), ("note", "說明", 380)):
+            tv.heading(c, text=txt)
+            tv.column(c, width=px(wd), stretch=(c == "note"))
+        sb = ttk.Scrollbar(page, orient="vertical", command=tv.yview)
+        tv.configure(yscrollcommand=sb.set)
+        tv.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        rows = []
+        for a in d["audit"]:
+            st = a["action"].split(".", 1)[-1].upper()
+            rows.append((a["ts"], _who(a["actor"], names), STATE_NAME.get(st, a["action"]), a["reason"] or ""))
+        for e in d["events"]:
+            if e["type"] == "PROGRESS":
+                try:
+                    pct = int(json.loads(e["data_json"]).get("progress", 0) * 100)
+                except Exception:
+                    pct = 0
+                rows.append((e["received_at"], names.get(e["device_id"], "節點"), "進度", f"{pct}%"))
+        for r in sorted(rows, key=lambda x: x[0]):
+            tv.insert("", "end", values=(local(r[0]), *r[1:]))
+        return page
+
+
+def _who(actor: str, names: dict) -> str:
+    if actor.startswith("worker:"):
+        return "節點 " + names.get(actor[7:], actor[7:15])
+    return {"owner": "你", "scheduler": "排程器", "dispatcher": "派送", "master": "Master 驗證"}.get(actor, actor)

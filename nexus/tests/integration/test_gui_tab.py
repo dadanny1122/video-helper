@@ -139,3 +139,66 @@ def _wait(cond, timeout):
             return
         time.sleep(0.1)
     raise AssertionError("等太久")
+
+
+@pytest.mark.skipif(not _display_ok(), reason="需要顯示器")
+def test_tasks_tab_create_run_detail_cancel(svc, tmp_path, monkeypatch):
+    """V2 PR7：📋 節點任務——新增測試任務 → 真 Worker 執行 → 成功；詳情看得到「選中」與時間軸；取消執行中的任務"""
+    import tkinter as tk
+    from tkinter import ttk
+
+    from nexus.gui import tasks_tab as tt
+
+    root = tk.Tk()
+    root.withdraw()
+    page = ttk.Frame(root)
+    page.pack()
+    C = {"muted": "#888", "ok": "#2a2", "bad": "#c33", "accent": "#57C8FF", "bg": "#fff"}
+    tab = tt.TasksTab(page, svc, C)
+    assert tab.new_btn.instate(["disabled"])                          # Master 沒開 → 不能派
+    svc.start()
+    os.environ["VH_NEXUS_ROOT"] = str(tmp_path / "w")
+    wcfg = Config("worker")
+    agent = WorkerAgent(wcfg, CredStore(), heartbeat_seconds=1, poll_seconds=0.3)
+    agent.executor.poll_wait = 2
+    os.environ["VH_NEXUS_ROOT"] = str(tmp_path)
+    try:
+        agent.start()
+        agent.pair(f"https://127.0.0.1:{svc.port}", svc.registry.pair.new(), "pc-tasks")
+        svc.registry.approve(agent.store.state["device_id"], "owner", "ok")
+        _wait(lambda: svc.registry.tr.capabilities(agent.store.state["device_id"]) is not None, 10)
+        tab.refresh()
+        assert not tab.new_btn.instate(["disabled"])
+        # 用對話框新增
+        dlg = tt.NewTaskDialog(page, tab, lambda n: n)
+        dlg.pv.delete(0, "end")
+        dlg.pv.insert(0, "GUI 測試")
+        key = dlg.key.get()
+        dlg.ok()
+        t = svc.tasks.list()[0]
+        _wait(lambda: svc.tasks.get(t["task_id"])["status"] == "SUCCEEDED", 15)
+        tab.refresh()
+        assert tab.tree.item(tab.tree.get_children()[0])["values"][2] == "成功"
+        tab.tree.selection_set(tab.tree.get_children()[0])
+        win = tab.show_detail()
+        rows = [win.why.winfo_children()[1].item(i)["values"] for i in win.why.winfo_children()[1].get_children()]
+        assert rows and rows[0][1] == "✔ 選中"
+        win.win.destroy()
+        # 同一個檢查碼再送一次 → 不會多一個
+        tab.submit("test.echo", {"text": "GUI 測試"}, idempotency_key=key, max_runtime_seconds=30, max_attempts=2)
+        assert len(svc.tasks.list()) == 1
+        # 取消執行中的等待任務
+        t2 = tab.submit("test.sleep", {"seconds": 60})
+        _wait(lambda: svc.tasks.get(t2["task_id"])["status"] == "RUNNING", 10)
+        tab.refresh()
+        iid = next(i for i, r in tab._rows.items() if r["task_id"] == t2["task_id"])
+        tab.tree.selection_set(iid)
+        tab._update_buttons()
+        monkeypatch.setattr(tt.simpledialog, "askstring", lambda *a, **k: "測試取消")
+        monkeypatch.setattr(tt.messagebox, "showinfo", lambda *a, **k: None)
+        tab.cancel()
+        _wait(lambda: svc.tasks.get(t2["task_id"])["status"] == "CANCELLED", 10)
+    finally:
+        agent.stop(disconnect=False)
+        tab._stop_timer()
+        root.destroy()
