@@ -123,6 +123,22 @@ class NexusClient:
     def disconnect(self, device_id: str) -> dict:
         return self._request("POST", f"/devices/{device_id}/disconnect", {})
 
+    # ---- V2 任務 ----
+    def inbox(self, device_id: str, wait: int = 25) -> dict:
+        return self._request("GET", f"/workers/{device_id}/inbox?wait={int(wait)}")
+
+    def task_ack(self, device_id: str, task_id: str, attempt_id: str, lease_id: str, accept: bool, reason: str = "") -> dict:
+        body = dict(task_id=task_id, attempt_id=attempt_id, lease_id=lease_id, accept=accept)
+        if reason:
+            body["reason"] = reason[:64]
+        return self._request("POST", f"/workers/{device_id}/task-ack", body)
+
+    def task_event(self, task_id: str, attempt_id: str, seq: int, etype: str, data: dict | None = None,
+                   event_id: str | None = None) -> dict:
+        import uuid
+        return self._request("POST", f"/tasks/{task_id}/events", dict(event_id=event_id or str(uuid.uuid4()), attempt_id=attempt_id,
+                                                                      seq=seq, type=etype, data=data or {}))
+
     def info(self) -> dict:
         return self._request("GET", "/system/info")
 

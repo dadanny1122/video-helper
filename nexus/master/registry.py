@@ -186,6 +186,7 @@ class DeviceRegistry:
                 raise NexusError("NOT_FOUND")
             self._transition(c, dev, DeviceStatus.SUSPENDED, actor, "device.suspended", reason)
         self.conns.close_all(device_id)
+        self._notify(device_id, "SUSPENDED")
 
     def resume(self, device_id: str, actor: str, reason: str):
         with self.lock, self.db.tx() as c:
@@ -208,7 +209,14 @@ class DeviceRegistry:
         closed = self.conns.close_all(device_id)
         self.repo.set_connection_state(device_id, ConnectionState.DISCONNECTED.value)
         log.warning("撤銷裝置 %s：%s（關閉 %d 條連線）", device_id[:8], reason, closed)
+        self._notify(device_id, "REVOKED")
         return closed
+
+    def _notify(self, device_id: str, status: str):
+        try:
+            self.on_device_change(device_id, status)
+        except Exception:
+            log.exception("通知派送層失敗")
 
     # ---------- 已驗證 Worker 的請求（server 在每個請求前呼叫） ----------
     def authenticate(self, peer_fingerprint: str, claimed_device_id: str | None, correlation_id: str = "") -> dict:
@@ -335,6 +343,7 @@ class DeviceRegistry:
                         for x in creds:
                             self.repo.set_credential_status(c, x["credential_id"], CredentialStatus.EXPIRED.value)
                     self.conns.close_all(did)
+                    self._notify(did, "EXPIRED")
                     changed.append((did, "EXPIRED"))
         return changed
 

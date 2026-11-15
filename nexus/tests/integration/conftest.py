@@ -17,6 +17,8 @@ from nexus.master.registry import DeviceRegistry
 from nexus.master.server import MasterServer
 from nexus.storage.db import Database
 from nexus.storage.repo import Repo
+from nexus.tasks.dispatch import Dispatcher
+from nexus.tasks.service import TaskService
 from nexus.worker.client import NexusClient
 
 
@@ -29,7 +31,8 @@ def free_port():
 
 
 class Master:
-    def __init__(self, root, rules=None, **cfg_overrides):
+    def __init__(self, root, rules=None, auto_dispatch=False, tick=0.2, **cfg_overrides):
+        self.auto_dispatch, self.tick = auto_dispatch, tick
         os.environ["VH_NEXUS_ROOT"] = str(root)
         self.root = root
         self.cfg = Config("master")
@@ -39,7 +42,8 @@ class Master:
             self.cfg[k] = v
         # 測試打得很快：心跳速率放寬（AT-023 另外用嚴格規則測）
         self.rules = rules or {"register": (5, 60), "registration_poll": (12, 60), "heartbeat": (200, 1),
-                               "renew": (20, 60), "disconnect": (6, 60), "info": (30, 60)}
+                               "renew": (20, 60), "disconnect": (6, 60), "info": (30, 60),
+                               "inbox": (500, 1), "task_ack": (500, 1), "task_event": (500, 1)}
         self.open()
 
     def open(self):
@@ -51,17 +55,23 @@ class Master:
         self.ca.ensure(["127.0.0.1"])
         self.conns = ConnectionRegistry()
         self.registry = DeviceRegistry(self.db, self.repo, self.ca, self.conns, self.cfg)
-        self.server = MasterServer(self.registry, self.cfg, self.repo, rules=self.rules)
+        self.tasks = TaskService(self.db, self.repo)
+        self.dispatcher = Dispatcher(self.tasks, self.registry, tick_seconds=self.tick)
+        self.server = MasterServer(self.registry, self.cfg, self.repo, rules=self.rules, dispatcher=self.dispatcher)
         self.host, self.port = self.server.start()
+        if self.auto_dispatch:
+            self.dispatcher.start()
         self.url = f"https://{self.host}:{self.port}"
 
     def restart(self):
         """模擬 Master 重啟：關服務、丟掉所有記憶體狀態、從磁碟重新載入（同一個埠）"""
+        self.dispatcher.stop()
         self.server.stop()
         self.db.close()
         self.open()
 
     def stop(self):
+        self.dispatcher.stop()
         self.server.stop()
         self.db.close()
 

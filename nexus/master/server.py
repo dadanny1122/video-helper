@@ -37,6 +37,11 @@ S_HEARTBEAT = {"sequence": (int, True, 2**53), "agent_version": (str, True, 32),
                "resources": (dict, False, None), "adapters": (dict, False, None), "max_concurrency": (int, False, None),
                "accepting": (bool, False, None), "running": (list, False, None)}
 S_RENEW = {"csr_pem": (str, True, 4096)}
+# V2 任務派送
+S_ACK = {"task_id": (str, True, 36), "attempt_id": (str, True, 36), "lease_id": (str, True, 36), "accept": (bool, True, None),
+         "reason": (str, False, 64)}
+S_EVENT = {"event_id": (str, True, 36), "attempt_id": (str, True, 36), "seq": (int, True, 1_000_000), "type": (str, True, 16),
+           "data": (dict, False, None)}
 S_EMPTY = {}
 
 
@@ -89,8 +94,9 @@ class BindPolicy:
 
 
 class MasterServer:
-    def __init__(self, registry, config, repo, rules=None):
+    def __init__(self, registry, config, repo, rules=None, dispatcher=None):
         self.registry, self.cfg, self.repo = registry, config, repo
+        self.dispatcher = dispatcher            # V2：沒有的話任務端點一律 404
         self.conns: ConnectionRegistry = registry.conns
         self.limiter = RateLimiter(rules or DEFAULT_RULES)
         self.httpd = None
@@ -233,7 +239,12 @@ class MasterServer:
         ("POST", re.compile(rf"^{API}/devices/([0-9a-f-]{{36}})/renew$"), "renew", "renew", True),
         ("POST", re.compile(rf"^{API}/devices/([0-9a-f-]{{36}})/disconnect$"), "disconnect", "disconnect", True),
         ("GET", re.compile(rf"^{API}/system/info$"), "info", "info", True),
+        # V2：派送（Worker 主動來拿；Master 不連 Worker）
+        ("GET", re.compile(rf"^{API}/workers/([0-9a-f-]{{36}})/inbox$"), "inbox", "inbox", True),
+        ("POST", re.compile(rf"^{API}/workers/([0-9a-f-]{{36}})/task-ack$"), "task_ack", "task_ack", True),
+        ("POST", re.compile(rf"^{API}/tasks/([0-9a-f-]{{36}})/events$"), "task_event", "task_event", True),
     ]
+    _TASK_PATH = {"task_event"}                 # 路徑上的 id 是任務，不是裝置 → 裝置身分從 sender_id 拿
 
     def _dispatch(self, h, method):
         source = h.client_address[0]
@@ -271,8 +282,10 @@ class MasterServer:
                 data = json.loads(raw.decode("utf-8")) if raw else {}
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 raise NexusError("SCHEMA_INVALID", details={"where": "body"}) from e
+        if name in ("inbox", "task_ack", "task_event") and self.dispatcher is None:
+            raise NexusError("NOT_FOUND")
         schema = {"register": S_REGISTER, "registration": S_EMPTY, "heartbeat": S_HEARTBEAT, "renew": S_RENEW,
-                  "disconnect": S_EMPTY, "info": S_EMPTY}[name]
+                  "disconnect": S_EMPTY, "info": S_EMPTY, "inbox": S_EMPTY, "task_ack": S_ACK, "task_event": S_EVENT}[name]
         body = check_envelope(data, schema, require_nonce=(method == "POST"))
         corr = data["correlation_id"]
         sender = data["sender_id"]
@@ -286,7 +299,10 @@ class MasterServer:
                 self.repo.audit(AuditEvent("credential.rejected", "anonymous", "device", path_id or "-", "denied", "no client cert", corr,
                                            {"source_ip": source}))
                 raise NexusError("CREDENTIAL_MISMATCH", message="這個端點需要裝置憑證")
-            dev = self.registry.authenticate(h.peer_fp, path_id, corr)
+            claimed = path_id
+            if name in self._TASK_PATH:
+                claimed = sender[len("worker:"):] if sender.startswith("worker:") else "-"
+            dev = self.registry.authenticate(h.peer_fp, claimed, corr)
             if sender != f"worker:{dev['device_id']}":
                 raise NexusError("CREDENTIAL_MISMATCH", message="sender_id 與憑證不符")
         # 端點
@@ -304,6 +320,18 @@ class MasterServer:
                                           body=body, correlation_id=corr)
         elif name == "renew":
             out = self.registry.renew(dev, body["csr_pem"], h.peer_fp)
+        elif name == "inbox":
+            from urllib.parse import parse_qs, urlsplit
+            q = parse_qs(urlsplit(h.path).query)
+            try:
+                wait = float((q.get("wait") or ["0"])[0])
+            except ValueError:
+                wait = 0.0
+            out = self.dispatcher.inbox(dev, wait)
+        elif name == "task_ack":
+            out = self.dispatcher.ack(dev, body)
+        elif name == "task_event":
+            out = self.dispatcher.event(dev, path_id, body)
         elif name == "disconnect":
             self.registry.disconnect(dev)
             out = {"status": "ok"}

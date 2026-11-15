@@ -37,5 +37,8 @@ DEFAULT_RULES = {
     "renew": (2, 60),
     "disconnect": (6, 60),
     "info": (30, 60),
+    "inbox": (60, 60),                 # long-poll 25 秒一次；同一台開兩個 profile 也夠
+    "task_ack": (120, 60),
+    "task_event": (600, 60),           # test.sleep 每秒回報進度
     "other": (30, 60),
 }

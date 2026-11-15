@@ -20,6 +20,8 @@ from nexus.master.registry import DeviceRegistry
 from nexus.master.server import BindPolicy, MasterServer
 from nexus.storage.db import Database
 from nexus.storage.repo import Repo
+from nexus.tasks.dispatch import Dispatcher
+from nexus.tasks.service import TaskService
 
 log = logging.getLogger("nexus.master")
 _LOG_READY = False
@@ -53,6 +55,7 @@ class MasterService:
         self.rules = rules
         self.dir = mode_dir("master")
         self.db = self.repo = self.ca = self.conns = self.registry = self.server = None
+        self.tasks = self.dispatcher = None
         self.host = self.port = None
         self.error = ""
         self.lock = threading.Lock()
@@ -87,8 +90,11 @@ class MasterService:
                 self.ca = self._make_ca()
                 self.conns = ConnectionRegistry()
                 self.registry = DeviceRegistry(self.db, self.repo, self.ca, self.conns, self.cfg)
-                self.server = MasterServer(self.registry, self.cfg, self.repo, rules=self.rules)
+                self.tasks = TaskService(self.db, self.repo)
+                self.dispatcher = Dispatcher(self.tasks, self.registry)
+                self.server = MasterServer(self.registry, self.cfg, self.repo, rules=self.rules, dispatcher=self.dispatcher)
                 self.host, self.port = self.server.start()
+                self.dispatcher.start()
                 self.error = ""
                 log.info("Master 已啟動 %s:%s", self.host, self.port)
                 return self.host, self.port
@@ -105,6 +111,11 @@ class MasterService:
             self._teardown()
 
     def _teardown(self):
+        if self.dispatcher:
+            try:
+                self.dispatcher.stop()          # 先放掉 long-poll，再關 HTTPS
+            except Exception:
+                pass
         if self.server:
             try:
                 self.server.stop()
@@ -116,6 +127,7 @@ class MasterService:
             except Exception:
                 pass
         self.server = self.registry = self.conns = self.repo = self.db = None
+        self.tasks = self.dispatcher = None
         self.host = self.port = None
 
     # ---- 給畫面用的唯讀資料（Master 沒開也能看名單、紀錄） ----
