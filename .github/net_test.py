@@ -40,8 +40,11 @@ ALLOWED = ("github.com", "githubusercontent.com",        # 檢查更新、廣告
            "localhost", "127.0.0.1")                     # 電腦版自己的連線服務
 
 
+SELF = socket.gethostname().lower()                   # 節點分頁列本機網卡時會查自己的主機名（不是對外連線）
+
+
 def allowed(h):
-    return any(h == d or h.endswith("." + d) for d in ALLOWED)
+    return h == SELF or any(h == d or h.endswith("." + d) for d in ALLOWED)
 
 
 import tkinter as tk  # noqa: E402
