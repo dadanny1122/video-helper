@@ -1,6 +1,6 @@
 # Video Helper
 
-影片網站輔助腳本（使用者腳本 / userscript）。
+影片網站輔助腳本（使用者腳本 / userscript）。　*English: [see below](#english)*
 
 📖 **[說明書（第一次用請看這裡）](https://dadanny1122.github.io/video-helper/manual/)**
 
@@ -67,3 +67,43 @@
 ## 安全
 
 哪些資料會離開你的電腦、會連到哪裡、怎麼自己驗證，寫在 [SECURITY.md](SECURITY.md)。
+
+---
+
+## English
+
+A userscript (Violentmonkey / Tampermonkey) that makes adult video sites safer and cleaner. Everything runs locally in your browser — no server, no tracking. **The on-page interface is in Traditional Chinese**; this section explains what each part does.
+
+**Features**
+- **Protection** — blocks pop-ups, forced redirects, dangerous file downloads (.exe / .apk …) and notification prompts. The shield in the bottom-left corner shows how many were blocked.
+- **Data saver** — known ad networks are blocked before they download, so bandwidth goes to the video.
+- **Ad hiding & skipping** — hides third-party ad boxes and invisible click layers; skips pre-roll ads.
+- **Status & estimates** — current speed, time until playback starts / full video loaded, buffering count; estimated load time on listing pages.
+- **One-click download** (supported sites only) — pick a quality, see file size and estimated time; HLS streams are converted to MP4. Encrypted videos are not supported.
+- **Boss key** (off by default) — press Esc twice quickly to mute and leave the page (target URL configurable; default Google).
+- **Settings** — click the Violentmonkey icon to switch each feature on or off.
+
+**Supported sites**
+- Full features incl. download: Pornhub, XVideos, XNXX, YouPorn, RedTube, xHamster, Tube8, YouJizz, SpankBang
+- Ad blocking only (no download): MissAV, Jable, Hanime1, Eporner, HQporner, Beeg, YourPorn, XMoviesForYou, PornTrex, PornOne, 3Movs, PornDig, CumLouder, TXXX, PornDoe
+
+Downloads are deliberately not offered on pirated re-upload sites or paid platforms.
+
+**Install** — install [Violentmonkey](https://violentmonkey.github.io/), then open [`video-helper.user.js`](https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js) (raw) or install from [Greasy Fork](https://greasyfork.org/scripts/601901-video-helper).
+
+**Common labels you will see**
+
+| Chinese | English |
+|---|---|
+| 安全防護 | Protection |
+| 省流模式 | Data saver |
+| 隱藏廣告 / 自動略過廣告 | Hide ads / Auto-skip ads |
+| 載入時間評估 | Load-time estimate |
+| 下載 / 選擇畫質 | Download / Choose quality |
+| 送到電腦版 | Send to desktop app (optional Windows companion app) |
+| 狀態檢查 | Health check |
+| 這是誤擋？ | Wrongly blocked? (report) |
+| 老闆鍵 | Boss key |
+
+Questions or bugs: [GitHub Issues](https://github.com/dadanny1122/video-helper/issues) (English is fine).
+
