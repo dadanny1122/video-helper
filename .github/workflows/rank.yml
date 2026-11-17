@@ -30,7 +30,7 @@ jobs:
   rank:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main   # 拿最新的狀態檔（才知道今天貼過了沒）
 
