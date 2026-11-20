@@ -12,8 +12,8 @@
   "why": "伺服器：xnxx-cdn.com"
  },
  "YouPorn": {
-  "status": "blocked",
-  "why": "網站回應 403"
+  "status": "ok",
+  "why": "有：['mediaDefinitions', 'mediaDefinition', 'playervars', 'videoUrl']｜伺服器：ypncdn.com"
  },
  "RedTube": {
   "status": "ok",
