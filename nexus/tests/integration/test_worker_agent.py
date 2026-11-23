@@ -157,3 +157,20 @@ def test_stale_cert_is_not_a_credential(master, agent):
     assert wait_for(lambda: agent.store.has_credential(), 10)
     agent.store.save(device_id="00000000-0000-0000-0000-000000000000")  # 身分跟憑證不一致
     assert not agent.store.has_credential()
+
+
+def test_bad_input_does_not_wipe_existing_identity(master, agent):
+    """v1.30.1：已配對的節點，配對時位址空白或配對碼格式錯 → 不能先把現在的身分清掉（會在 Master 留下孤兒紀錄）"""
+    agent.start()
+    r = agent.pair(master.url, master.registry.pair.new(), "pc-keep")
+    master.registry.approve(r["device_id"], "owner", "測試")
+    assert wait_for(lambda: agent.state == "ACTIVE", 10), agent.status()
+    for url, code in (("", master.registry.pair.new()), ("http://127.0.0.1:1", "123456"), (master.url, "12a456")):
+        with pytest.raises(ValueError):
+            agent.pair(url, code, "pc-keep")
+    assert agent.store.has_credential() and agent.store.state["device_id"] == r["device_id"]
+    assert wait_for(lambda: agent.state == "ACTIVE", 10), agent.status()
+    # 照抄畫面上的「945 083」（中間有空格）也要能配對
+    code = master.registry.pair.new()
+    r2 = agent.pair(master.url, f"{code[:3]} {code[3:]}", "pc-keep")
+    assert r2["device_id"] != r["device_id"]

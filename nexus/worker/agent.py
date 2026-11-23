@@ -98,6 +98,11 @@ class WorkerAgent:
 
     def pair(self, master_url: str, pair_code: str, device_name: str):
         """使用者在畫面輸入 Master 位址＋配對碼 → 送註冊（同步，馬上知道成功或錯誤）"""
+        pair_code = "".join(pair_code.split()).replace("-", "")     # 畫面上顯示成「945 083」，照抄空格也要能用
+        # 先檢查輸入：位址或配對碼格式錯，不要先把現在的身分清掉（不然 Master 那邊會留下一筆找不到主人的舊紀錄）
+        c = NexusClient(master_url, sender_id="anonymous")          # 位址格式錯 → ValueError
+        if not (len(pair_code) == 6 and pair_code.isdigit()):
+            raise ValueError("配對碼要是 6 位數字")
         with self.lock:
             # 每次配對都是全新身分：新金鑰、清掉舊憑證（舊憑證留著會跟新身分對不上）
             if self._client:
@@ -108,7 +113,6 @@ class WorkerAgent:
             self.cfg["master_url"], self.cfg["device_name"] = master_url, device_name
             self.cfg.save()
             self._set("REGISTERING")
-            c = NexusClient(master_url, sender_id="anonymous")
             try:
                 r = c.register(pair_code=pair_code, name=device_name, platform="windows", agent_version=NEXUS_VERSION,
                                csr_pem=certs.csr_pem(certs.make_csr(key, "pending")))

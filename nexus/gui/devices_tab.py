@@ -48,8 +48,8 @@ class DevicesTab:
         C, px = self.C, self.px
         p = self.page
         ttk.Label(p, foreground=C["muted"], wraplength=px(700), justify="left",
-                  text="讓另一台電腦（跑 VideoHelper.exe --worker）安全地連到這台。第一版只做「連線、核准、心跳、撤銷」，"
-                       "不會派任務。兩台都要在同一個區域網路或 VPN；每台節點都要你在這裡按核准才算數。").pack(anchor="w")
+                  text="讓另一台電腦（跑 VideoHelper.exe --worker）安全地連到這台。核准後可以到「📋 節點任務」派測試任務給它，"
+                       "還不會真的下載影片。兩台都要在同一個區域網路或 VPN；每台節點都要你在這裡按核准才算數。").pack(anchor="w")
 
         top = ttk.LabelFrame(p, text=" Master（這台電腦） ", padding=(10, 6))
         top.pack(fill="x", pady=(8, 4))
@@ -146,7 +146,7 @@ class DevicesTab:
             self.cfg["bind_host"], self.cfg["port"] = host, port
             self.cfg.save()
             if self.svc.running:
-                self.status_lbl.config(text="位址／埠改了，重新啟用才會生效", foreground=self.C["muted"])
+                self.refresh()
 
     def toggle(self):
         want = self.enabled.get()
@@ -202,6 +202,12 @@ class DevicesTab:
                   "revoke": ("撤銷節點", "⚠ 撤銷不能復原：連線立刻切斷、憑證永久作廢，就算它拿舊憑證也進不來；\n"
                                        "要再用得重新配對（新身分）。")}
         title, note = titles[what]
+        if what == "approve":
+            same = [o for o in self._rows.values() if o["device_id"] != d["device_id"] and o["name"] == d["name"]
+                    and o["status"] in ("ACTIVE", "SUSPENDED", "PENDING")]
+            if same:
+                note += (f"\n\n⚠ 名單裡已經有 {len(same)} 筆也叫「{d['name']}」、還沒撤銷的節點"
+                         "（通常是同一台重新配對留下的舊身分）。核准這筆之後，記得把舊的撤銷。")
         fp = d["public_key_fingerprint"][:16]
         if not messagebox.askyesno(title, f"{d['name']}\n指紋 {fp}\n來源 {d['source_ip_first'] or '—'}\n\n{note}\n\n確定要{title[:2]}嗎？",
                                    icon="warning" if what == "revoke" else "question", parent=self.page):
@@ -220,7 +226,14 @@ class DevicesTab:
         C = self.C
         on = self.svc.running
         if on:
-            self.status_lbl.config(text=f"● 執行中 https://{self.svc.host}:{self.svc.port}", foreground=C["ok"])
+            want = (str(self.cfg["bind_host"]), int(self.cfg["port"]))
+            if (str(self.svc.host), int(self.svc.port)) != want:
+                # 位址／埠改了但 Master 還在舊位址跑：每次重新整理都要提醒，不然會被「執行中」蓋掉
+                self.status_lbl.config(
+                    text=f"● 執行中 https://{self.svc.host}:{self.svc.port}　⚠ 設定已改成 {want[0]}:{want[1]}，"
+                         "取消再勾「啟用 Master」才會換", foreground=C["bad"])
+            else:
+                self.status_lbl.config(text=f"● 執行中 https://{self.svc.host}:{self.svc.port}", foreground=C["ok"])
         elif not self.svc.error:
             self.status_lbl.config(text="○ 未啟用", foreground=C["muted"])
         self.enabled.set(on)

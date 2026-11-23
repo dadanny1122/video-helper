@@ -73,6 +73,8 @@ def friendly_error(e: Exception, url: str) -> str:
     if isinstance(e, NexusError):
         return e.message
     host = urlsplit(url).hostname or url
+    if isinstance(e, ValueError) and "配對碼" in str(e):
+        return str(e)
     if isinstance(e, ValueError) or not url.startswith("https://"):
         return "Master 位址格式不對，要像 https://192.168.1.10:47331（同一台測試用 https://127.0.0.1:47331）"
     if isinstance(e, ConnectionRefusedError) or getattr(e, "winerror", None) == 10061:
@@ -162,6 +164,10 @@ def run_window() -> int:
                                              if run else "沒有"))
 
     def do_pair():
+        if agent.store.state["status"] in ("ACTIVE", "PENDING") and agent.store.state["device_id"] and not messagebox.askyesno(
+                "重新配對？", "這個節點已經配對過了。\n\n重新配對會換一個全新身分，Master 名單上舊的那筆不會自己消失，"
+                "配對完要到 Master 的「🖧 節點」把舊的撤銷。\n\n確定要重新配對嗎？"):
+            return
         try:
             agent.pair(url.get().strip(), code.get().strip(), name.get().strip() or default_name)
             code.delete(0, "end")
