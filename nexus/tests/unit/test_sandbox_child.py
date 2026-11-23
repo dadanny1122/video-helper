@@ -53,3 +53,18 @@ def test_missing_task_file_is_error_without_traceback(tmp_path, capsys):
 def test_child_command_is_argument_list_without_shell(tmp_path):
     cmd = child_command(str(tmp_path))
     assert isinstance(cmd, list) and cmd[-2:] == ["--nexus-run", str(tmp_path)] and "-I" in cmd
+
+
+def test_events_are_ascii_safe(tmp_path, capsys):
+    """中文訊息也要用 ASCII 寫出去：子程序的輸出編碼不一定是 UTF-8（Windows 管線＋python -I）"""
+    ws = Workspace(str(tmp_path))
+    with open(os.path.join(ws.input, child.TASK_FILE), "w", encoding="utf-8") as f:
+        json.dump({"type": "不存在"}, f, ensure_ascii=False)
+    cwd = os.getcwd()
+    try:
+        child.main(ws.path)
+    finally:
+        os.chdir(cwd)
+    out = capsys.readouterr().out
+    out.encode("ascii")                                  # 不是 ASCII 會丟 UnicodeEncodeError
+    assert "沙箱不支援" in json.loads(out.splitlines()[-1])["message"]

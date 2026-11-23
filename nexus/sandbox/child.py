@@ -24,7 +24,8 @@ class ChildError(Exception):
 
 
 def emit(event: str, **kw):
-    sys.stdout.write(json.dumps({"event": event, **kw}, ensure_ascii=False) + "\n")
+    # ensure_ascii：中文寫成 \uXXXX，不管子程序的輸出編碼是什麼（Windows 管線預設不是 UTF-8）都不會寫壞
+    sys.stdout.write(json.dumps({"event": event, **kw}, ensure_ascii=True) + "\n")
     sys.stdout.flush()
 
 
@@ -101,6 +102,11 @@ def main(workdir: str) -> int:
 def entry(argv: list[str] | None = None) -> int:
     """命令列入口：--nexus-run <資料夾>；--probe-sleeper＝孫程序（只睡覺）"""
     argv = list(sys.argv[1:] if argv is None else argv)
+    try:                                              # python -I 會忽略 PYTHONIOENCODING，這裡自己設 UTF-8
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
     if "--probe-sleeper" in argv:
         time.sleep(120)
         return 0
