@@ -83,14 +83,18 @@ def test_deliver_never_overwrites(tmp_path):
     assert out[0]["name"] == "v (2).mp4" and (dest / "v.mp4").read_bytes() == b"old"
 
 
-def test_ntfs_alternate_data_stream_name_rejected(tmp_path):
-    """Windows：「v.mp4:hidden」會寫進 v.mp4 的隱藏資料流；收成果時不能被它騙過"""
+def test_drive_letter_name_cannot_escape(tmp_path):
+    """Windows：os.path.join(資料夾, "C:\\evil.mp4") 會整個換成 C:\\evil.mp4（磁碟機代號讓路徑跳走）。
+    sanitize_filename 會先把冒號換掉；就算沒清理直接給 unique_target，也要被 is_inside 擋下。"""
+    assert ":" not in sanitize_filename("C:\\evil.mp4") and ":" not in sanitize_filename("x:hidden.mp4")
     if sys.platform != "win32":
-        pytest.skip("只有 NTFS 有替代資料流")
-    ws = Workspace(str(tmp_path / "root"))
-    open(os.path.join(ws.output, "x:hidden.mp4"), "wb").write(b"evil")
-    with pytest.raises(WorkspaceError):
-        ws.deliver(str(tmp_path / "dl"))
+        pytest.skip("磁碟機代號只有 Windows 有")
+    dest = tmp_path / "dl"
+    dest.mkdir()
+    for bad in ("C:\\evil.mp4", "x:hidden.mp4", "\\\\server\\share\\v.mp4"):
+        with pytest.raises(WorkspaceError) as e:
+            Workspace.unique_target(str(dest), bad)
+        assert e.value.code == "PATH_ESCAPE"
 
 
 def test_deliver_rejects_bad_extension_whole_batch(tmp_path):
