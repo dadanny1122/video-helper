@@ -89,3 +89,18 @@ def test_symlink_escape_not_delivered(runner, tmp_path):
 def test_output_size_limit(runner):
     r = runner.run(probe(mode="write", bytes=4096), max_output_bytes=1000)
     assert r.status == "failed" and r.code == "TOO_BIG" and no_workdirs(runner)
+
+
+def test_video_download_unlisted_site_blocked_in_sandbox(runner):
+    r = runner.run({"type": "video.download", "params": {"url": "https://jable.tv/videos/abc/"}})
+    assert r.status == "failed" and r.code == "NET_BLOCKED" and no_workdirs(runner), r
+
+
+def test_worker_advertises_video_download_only_with_sandbox():
+    from nexus.worker.executor import Executor, sandbox_status
+
+    class A:
+        cfg = {}
+    ex = Executor(A())
+    assert sandbox_status()["isolation"] == "basic"
+    assert "video.download" in ex.versions

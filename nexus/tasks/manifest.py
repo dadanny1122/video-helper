@@ -13,6 +13,11 @@ from nexus.tasks import adapters
 MANIFEST_VERSION = 1
 MAX_MANIFEST_BYTES = 16 * 1024
 MAX_RESULT_BYTES = 4096
+MAX_OUTPUT_BYTES = 8 << 30          # V3 D4：單部影片最大 8 GB
+# 可有可無的欄位（舊版節點不認得也沒關係：只有 video.download 會帶，舊節點本來就不接這種任務）
+OPTIONAL = {("limits", "max_output_bytes")}
+# 這些任務類型一定要帶的選用欄位
+REQUIRED_FOR = {"video.download": {("limits", "max_output_bytes")}}
 DEFAULT_TTL_SECONDS = 3600
 PLATFORMS = ("windows", "any")
 
@@ -23,7 +28,8 @@ TOP = {
     "limits": (dict, True), "requirements": (dict, True), "retry_policy": (dict, True), "priority": (int, True),
 }
 SUB = {
-    "limits": {"max_runtime_seconds": (int, 1, 900), "max_result_bytes": (int, 1, MAX_RESULT_BYTES)},
+    "limits": {"max_runtime_seconds": (int, 1, 7200), "max_result_bytes": (int, 1, MAX_RESULT_BYTES),
+               "max_output_bytes": (int, 1, MAX_OUTPUT_BYTES)},
     "requirements": {"platform": (str, None, None), "min_memory_mb": (int, 0, 1_048_576), "min_disk_mb": (int, 0, 10_485_760)},
     "retry_policy": {"max_attempts": (int, 1, 5)},
 }
@@ -53,7 +59,8 @@ def build(task_type: str, params: dict, *, idempotency_key: str | None = None, m
         "idempotency_key": idempotency_key or str(uuid.uuid4()),
         "params": params,
         "limits": {"max_runtime_seconds": max_runtime_seconds or (spec.default_runtime_seconds if spec else 60),
-                   "max_result_bytes": MAX_RESULT_BYTES},
+                   "max_result_bytes": MAX_RESULT_BYTES,
+                   **({"max_output_bytes": MAX_OUTPUT_BYTES} if task_type in REQUIRED_FOR else {})},
         "requirements": {"platform": platform, "min_memory_mb": min_memory_mb, "min_disk_mb": min_disk_mb},
         "retry_policy": {"max_attempts": max_attempts},
         "priority": priority,
@@ -96,7 +103,8 @@ def validate(m) -> list[str]:
         problems += [f"{name} 不認得的欄位：{k}" for k in sorted(set(sub) - set(fields))]
         for k, (typ, lo, hi) in fields.items():
             if k not in sub:
-                problems.append(f"{name} 缺少：{k}")
+                if (name, k) not in OPTIONAL or (name, k) in REQUIRED_FOR.get(m.get("type"), ()):
+                    problems.append(f"{name} 缺少：{k}")
                 continue
             v = sub[k]
             if (typ is int and isinstance(v, bool)) or not isinstance(v, typ):

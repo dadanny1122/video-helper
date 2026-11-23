@@ -77,7 +77,10 @@ class SandboxRunner:
 
     def _run_in(self, ws, task, on_event, cancel, timeout, max_output_bytes) -> RunResult:
         with open(os.path.join(ws.input, TASK_FILE), "w", encoding="utf-8") as f:
-            json.dump({"type": task["type"], "params": task.get("params") or {}}, f, ensure_ascii=False)
+            params = dict(task.get("params") or {})
+            if max_output_bytes is not None:            # 節點自己加的上限（Master 的參數檢查不准有底線開頭的欄位）
+                params["_max_output_bytes"] = int(max_output_bytes)
+            json.dump({"type": task["type"], "params": params}, f, ensure_ascii=False)
         events, final = [], {}
         with jobs.Job(self.limits) as job, open(os.path.join(ws.tmp, "stderr.log"), "wb") as err:
             p = job.spawn(child_command(ws.path), cwd=ws.tmp, env=safe_env(ws, self.extra_path),

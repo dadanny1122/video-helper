@@ -1,16 +1,21 @@
 """
 Worker 端任務執行（06-V2 §8）：長輪詢 inbox → 自己再檢查一次 → ACK → **等 Master 回 start=true 才開始** → 回報事件。
   ・收到任務先驗：manifest 雜湊（T-05）、格式、Adapter 版本（AT-018）、接不接任務、名額、記憶體／磁碟 → 不合就拒收＋原因
-  ・Adapter 只有 test.echo／test.sleep／test.fail：在這個程序的執行緒裡跑，不開子程序、不碰檔案、不連網
+  ・test.echo／test.sleep／test.fail：在這個程序的執行緒裡跑，不開子程序、不碰檔案、不連網
+  ・video.download（V3）：交給 nexus.sandbox.runner 在沙箱子程序裡跑；沙箱不能用就不宣稱支援
   ・自己也守執行時間上限（逾時就停、回報 TIMED_OUT）；收到取消就停、回報 CANCELLED
   ・事件送失敗會用同一個 event_id 重送（Master 會去重）
 """
 import hashlib
 import logging
+import os
+import shutil
+import sys
 import threading
 import time
 import uuid
 
+from nexus.core.config import mode_dir, worker_profile
 from nexus.core.errors import NexusError
 from nexus.tasks import adapters, manifest
 from nexus.worker.client import NexusClient
@@ -72,13 +77,66 @@ def run_fail(params, ctx):
     raise AdapterFailure(params["code"], f"test.fail 照要求失敗：{params['code']}")
 
 
-RUNNERS = {"test.echo": run_echo, "test.sleep": run_sleep, "test.fail": run_fail}
+# ---- V3：video.download 在沙箱子程序裡跑（不在這個程序裡） ----
+def default_download_dir(profile: str | None = None) -> str:
+    base = os.path.join(os.path.expanduser("~"), "Downloads")
+    return os.path.join(base, "VideoHelper 節點" + (f" {profile}" if profile else ""))
+
+
+def _ffmpeg_dirs() -> list[str]:
+    """原始碼執行時把 PATH 上的 ffmpeg 資料夾交給沙箱；打包後子程序用自己解壓出來的迷你 ffmpeg"""
+    ff = shutil.which("ffmpeg")
+    return [os.path.dirname(ff)] if ff and not getattr(sys, "frozen", False) else []
+
+
+def run_video_download(params, ctx):
+    from nexus.sandbox.jobs import JobLimits
+    from nexus.sandbox.runner import SandboxRunner
+    cfg = getattr(ctx, "cfg", None) or {}
+    dest = (cfg.get("download_dir") if hasattr(cfg, "get") else "") or default_download_dir(worker_profile())
+    runner = SandboxRunner(os.path.join(mode_dir("worker"), "sandbox"), dest, JobLimits(), _ffmpeg_dirs())
+    limits = getattr(ctx, "limits", {}) or {}
+    left = max(1.0, ctx.deadline - time.monotonic())
+    r = runner.run({"type": "video.download", "params": dict(params)},
+                   on_event=lambda ev: ctx.progress(float(ev.get("progress") or 0.0)),
+                   cancel=ctx.cancel, timeout=left, max_output_bytes=limits.get("max_output_bytes"))
+    if r.status == "cancelled":
+        raise Cancelled()
+    if r.status == "timed_out":
+        raise TimedOut()
+    if not r.ok:
+        raise AdapterFailure(r.code or "ADAPTER_ERROR", r.message)
+    files = [{k: f[k] for k in ("name", "size", "sha256", "path")} for f in r.files]
+    return {"files": files, **{k: v for k, v in r.result.items() if k in ("title", "site", "id", "height")}}
+
+
+RUNNERS = {"test.echo": run_echo, "test.sleep": run_sleep, "test.fail": run_fail, "video.download": run_video_download}
+SANDBOXED = {"video.download"}          # 要沙箱的任務：這台的沙箱不能用就不宣稱支援（D6，不降級）
+
+
+def sandbox_status() -> dict:
+    """沙箱能力（啟動時測一次）；不是 Windows 或建不起來 → isolation none＋原因"""
+    global _SANDBOX
+    if _SANDBOX is None:
+        try:
+            from nexus.sandbox.jobs import probe
+            _SANDBOX = probe()
+        except Exception as e:
+            _SANDBOX = {"isolation": "none", "reasons": [f"偵測失敗：{type(e).__name__}"]}
+    return _SANDBOX
+
+
+_SANDBOX = None
 
 
 class Executor:
     def __init__(self, agent, versions: dict | None = None, poll_wait: int = 25):
         self.agent = agent
-        self.versions = versions or {n: a.version for n, a in adapters.ADAPTERS.items() if n in RUNNERS}
+        if versions is None:
+            versions = {n: a.version for n, a in adapters.ADAPTERS.items() if n in RUNNERS}
+            if sandbox_status().get("isolation") != "basic":
+                versions = {n: v for n, v in versions.items() if n not in SANDBOXED}
+        self.versions = versions
         self.poll_wait = poll_wait
         self.running = {}                          # task_id → {"attempt_id", "cancel": Event, "thread", "type", "progress"}
         self.lock = threading.Lock()
@@ -257,6 +315,7 @@ class Executor:
                 send("PROGRESS", {"progress": p})
 
         ctx = Ctx(time.monotonic() + mf["limits"]["max_runtime_seconds"], entry["cancel"], progress)
+        ctx.limits, ctx.cfg = mf["limits"], self.agent.cfg
         try:
             send("PREPARING")
             send("RUNNING")

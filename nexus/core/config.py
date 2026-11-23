@@ -36,6 +36,7 @@ WORKER_DEFAULTS = {
     "reconnect_max_seconds": 300,
     "accept_tasks": True,                # V2：關掉＝Master 不會派任務給這台
     "max_concurrency": 1,                # V2：同時最多跑幾個任務（1～4）
+    "download_dir": "",                  # V3：節點下載的影片放哪（空白＝「下載\VideoHelper 節點」）
 }
 _PROFILE = None                          # `--worker --profile 名稱`：同一台電腦開好幾個獨立節點
 

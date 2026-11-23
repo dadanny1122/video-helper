@@ -11,6 +11,7 @@ import datetime as dt
 import hashlib
 import json
 import logging
+import re
 import threading
 import uuid
 
@@ -26,7 +27,10 @@ LEASE_SECONDS = 30            # 派出去多久沒 ACK 就收回
 SCHEDULED_STALE_SECONDS = 30  # 指派了但節點一直沒來拿 → 重新排程
 TIMEOUT_GRACE_SECONDS = 15    # 超過執行上限再給 Worker 這麼久自己停
 EVENT_TYPES = ("PREPARING", "RUNNING", "PROGRESS", "SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT")
-WORKER_ERROR_CODES = ("ADAPTER_ERROR", "RESOURCE_LIMIT", "INVALID_INPUT", "MANIFEST_INVALID", "ADAPTER_UNSUPPORTED", "TIMED_OUT")
+WORKER_ERROR_CODES = ("ADAPTER_ERROR", "RESOURCE_LIMIT", "INVALID_INPUT", "MANIFEST_INVALID", "ADAPTER_UNSUPPORTED", "TIMED_OUT",
+                      "NETWORK", "RATE_LIMITED", "NET_BLOCKED", "NOT_FOUND", "DISK_FULL", "SANDBOX_UNAVAILABLE",
+                      "OUTPUT_REJECTED", "TOO_BIG", "CLEANUP_FAILED", "LEFTOVER_PROCESSES", "PROTOCOL_UNSUPPORTED")
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _now():
@@ -267,6 +271,20 @@ class Dispatcher:
             return False, "睡的秒數不符"
         if t["type"] == "test.fail":
             return False, "test.fail 不該成功"
+        if t["type"] == "video.download":
+            files = result.get("files")
+            if not isinstance(files, list) or not 1 <= len(files) <= 10:
+                return False, "下載結果沒有檔案清單"
+            for f in files:
+                if not isinstance(f, dict):
+                    return False, "檔案資料格式不對"
+                name, sz, h = f.get("name"), f.get("size"), f.get("sha256")
+                if not (isinstance(name, str) and 0 < len(name) <= 255 and not any(c in name for c in '\\/:')):
+                    return False, "檔名不合規"
+                if not (isinstance(sz, int) and not isinstance(sz, bool) and 0 < sz <= m["limits"].get("max_output_bytes", 8 << 30)):
+                    return False, "檔案大小不合理"
+                if not (isinstance(h, str) and _HEX64.match(h)):
+                    return False, "檔案雜湊格式不對"
         return True, ""
 
     # ---------- 清查（每秒） ----------

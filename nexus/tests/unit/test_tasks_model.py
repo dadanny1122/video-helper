@@ -54,11 +54,35 @@ def test_on_worker_states_can_go_unknown_and_cancellable_ok():
 
 
 # ---------- Adapter ----------
-def test_only_test_adapters_and_no_shell():
-    assert set(adapters.ADAPTERS) == {"test.echo", "test.sleep", "test.fail"}
+def test_only_known_adapters_and_no_shell():
+    # V3 起多一個 video.download（有副作用：連網＋寫檔，只在沙箱跑）；永遠不會有 shell／python 類
+    assert set(adapters.ADAPTERS) == {"test.echo", "test.sleep", "test.fail", "video.download"}
     for name, spec in adapters.ADAPTERS.items():
-        assert spec.side_effects == "none"
+        assert spec.side_effects == ("network,files" if name == "video.download" else "none")
         assert not any(w in name for w in ("shell", "python", "powershell", "cmd", "exec"))
+
+
+def test_video_download_params_checked_on_master():
+    spec = adapters.get("video.download")
+    assert adapters.check_params(spec, {"url": "https://www.xvideos.com/video.abc/x"}) == []
+    assert adapters.check_params(spec, {"url": "https://www.xvideos.com/video.abc/x", "quality": "720"}) == []
+    for bad in ("http://www.xvideos.com/x", "https://jable.tv/videos/x", "https://127.0.0.1/x",
+                "https://www.xvideos.com:8080/x", "https://u:p@www.pornhub.com/x"):
+        assert adapters.check_params(spec, {"url": bad}), bad
+    assert adapters.check_params(spec, {"url": "https://www.xvideos.com/x", "quality": "4k"})
+    assert adapters.check_params(spec, {"url": "https://www.xvideos.com/x", "cmd": "dir"})
+
+
+def test_video_manifest_needs_output_limit_and_allows_two_hours():
+    m = manifest.build("video.download", {"url": "https://www.pornhub.com/view_video.php?viewkey=1"})
+    assert manifest.validate(m) == []
+    assert m["limits"]["max_runtime_seconds"] == 7200 and m["limits"]["max_output_bytes"] == 8 << 30
+    del m["limits"]["max_output_bytes"]
+    assert manifest.validate(m)
+    t = manifest.build("test.sleep", {"seconds": 1})
+    assert "max_output_bytes" not in t["limits"] and manifest.validate(t) == []   # 舊節點收到的測試任務不變
+    t["limits"]["max_runtime_seconds"] = 1000
+    assert manifest.validate(t)                                                  # 測試任務還是最多 900 秒
 
 
 def test_adapter_params():

@@ -12,7 +12,7 @@ from nexus.core.models import parse_utc
 from nexus.tasks import adapters
 from nexus.tasks.scheduler import REASONS, WEIGHTS
 
-TYPE_NAME = {"test.echo": "回聲", "test.sleep": "等待", "test.fail": "故意失敗"}
+TYPE_NAME = {"test.echo": "回聲", "test.sleep": "等待", "test.fail": "故意失敗", "video.download": "下載影片（節點）"}
 STATE_NAME = {
     "CREATED": "已建立", "VALIDATING": "檢查中", "QUEUED": "排隊中", "SCHEDULED": "已選節點", "DISPATCHED": "已派出（等確認）",
     "ACCEPTED": "節點已接受", "PREPARING": "準備中", "RUNNING": "執行中", "UPLOADING": "回傳中", "VERIFYING": "驗證結果",
@@ -220,7 +220,8 @@ class NewTaskDialog:
         f.pack(fill="both", expand=True)
         f.columnconfigure(1, weight=1)
         ttk.Label(f, text="類型").grid(row=0, column=0, sticky="w")
-        self.types = {f"{TYPE_NAME[n]}（{n}）": n for n in adapters.ADAPTERS}
+        # V3 PR7 才把「下載影片」做進這個視窗（要貼網址、選畫質）；現在只列測試任務
+        self.types = {f"{TYPE_NAME[n]}（{n}）": n for n in adapters.ADAPTERS if n.startswith("test.")}
         self.type = ttk.Combobox(f, state="readonly", values=list(self.types), width=28)
         self.type.current(0)
         self.type.grid(row=0, column=1, sticky="we", pady=2)

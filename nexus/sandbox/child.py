@@ -65,7 +65,12 @@ def run_probe(params: dict, ws: dict) -> dict:
     raise ChildError("INVALID_INPUT", f"不認得的 mode：{mode}")
 
 
-CHILD_ADAPTERS = {"sandbox.probe": run_probe}
+def run_video(params: dict, ws: dict) -> dict:
+    from nexus.sandbox import video  # 用到才載入（yt-dlp 很大）
+    return video.run_video_download(params, ws, emit=emit, error_cls=ChildError)
+
+
+CHILD_ADAPTERS = {"sandbox.probe": run_probe, "video.download": run_video}
 
 
 def _self_args() -> list[str]:

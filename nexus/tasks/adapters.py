@@ -15,6 +15,7 @@ class Param:
     min: int | None = None
     max: int | None = None
     enum: tuple | None = None
+    check: object = None                 # 額外檢查：fn(value) → 問題字串或 None
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,17 @@ class AdapterSpec:
         return self.version.split(".")[0]
 
 
+def _video_url_problem(v: str):
+    from nexus.net.guard import NetBlocked, static_check
+    try:
+        static_check(v, kind="page")
+        return None
+    except NetBlocked as e:
+        return f"url 不行：{e.reason}"
+
+
+VIDEO_QUALITIES = ("best", "1080", "720", "480")
+
 ADAPTERS: dict[str, AdapterSpec] = {
     "test.echo": AdapterSpec(
         "test.echo", "1.0", {"text": Param(str, max_len=1000)},
@@ -45,6 +57,14 @@ ADAPTERS: dict[str, AdapterSpec] = {
     "test.fail": AdapterSpec(
         "test.fail", "1.0", {"code": Param(str, enum=("ADAPTER_ERROR", "RESOURCE_LIMIT", "INVALID_INPUT"))},
         default_runtime_seconds=30, description="固定失敗（測重試分類）"),
+    # V3：節點在沙箱裡下載影片，檔案留在節點（D1）；只准 sites.json 的網站（D2）；D4 單部最長 2 小時
+    "video.download": AdapterSpec(
+        "video.download", "1.0",
+        {"url": Param(str, max_len=2048, check=_video_url_problem),
+         "quality": Param(str, required=False, enum=VIDEO_QUALITIES)},
+        retry_safe=True, idempotent=False, side_effects="network,files",
+        default_runtime_seconds=7200, max_runtime_seconds=7200,
+        description="在節點的沙箱裡下載影片，存在節點那台電腦"),
 }
 
 
@@ -79,4 +99,6 @@ def check_params(spec: AdapterSpec, params) -> list[str]:
             problems.append(f"{k} 太大（最多 {p.max}）")
         if p.enum is not None and v not in p.enum:
             problems.append(f"{k} 只能是 {'/'.join(p.enum)}")
+        if p.check is not None and (msg := p.check(v)):
+            problems.append(msg)
     return problems

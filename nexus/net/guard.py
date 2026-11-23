@@ -43,11 +43,36 @@ def ip_is_public(ip: str) -> bool:
     return a.is_global and not a.is_multicast
 
 
-def check_url(url: str, *, kind: str = "page", resolve=_default_resolve) -> list[str]:
-    """
-    檢查一個網址能不能連。kind="page" 只准影片頁網域；kind="any" 准頁面＋影片伺服器網域（下載過程用）。
-    通過 → 回傳解析出來的 IP（呼叫端應該連這些 IP，避免檢查完又被換成別的位址）；不通過 → NetBlocked。
-    """
+def allowed_domains(kind: str) -> tuple:
+    return sites.page_hosts() if kind == "page" else sites.page_hosts() + sites.media_hosts()
+
+
+def check_host(host: str, port, *, kind: str = "any", resolve=_default_resolve) -> list[str]:
+    """只看主機＋埠（socket 層用）：網域在清單、埠 443、解析出來全是公開 IP"""
+    host = (host or "").lower().rstrip(".")
+    if port not in (None, 443, "443", "https"):
+        raise NetBlocked(f"只允許 443 埠（{host}:{port}）", "NET_PORT")
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+        raise NetBlocked("不能直接連 IP 位址，要用網站網域", "NET_IP_LITERAL")
+    except ValueError:
+        pass
+    if not sites.host_matches(host, allowed_domains(kind)):
+        raise NetBlocked(f"{host} 不在支援下載的網站清單裡", "NET_HOST")
+    try:
+        ips = resolve(host, 443)
+    except OSError as e:
+        raise NetBlocked(f"找不到 {host}（{type(e).__name__}）", "NET_DNS") from None
+    if not ips:
+        raise NetBlocked(f"找不到 {host}", "NET_DNS")
+    bad = [ip for ip in ips if not ip_is_public(ip)]
+    if bad:
+        raise NetBlocked(f"{host} 解析到內網或保留位址（{bad[0]}），為了安全不連", "NET_PRIVATE_IP")
+    return ips
+
+
+def static_check(url: str, *, kind: str = "page") -> str:
+    """不查 DNS 的檢查（Master 建任務時用）：通過回傳小寫網域，不通過丟 NetBlocked"""
     try:
         u = urllib.parse.urlsplit(str(url))
         host, port = (u.hostname or "").lower().rstrip("."), u.port
@@ -66,19 +91,18 @@ def check_url(url: str, *, kind: str = "page", resolve=_default_resolve) -> list
         raise NetBlocked("不能直接用 IP 位址，要用網站網域", "NET_IP_LITERAL")
     except ValueError:
         pass
-    domains = sites.page_hosts() if kind == "page" else sites.page_hosts() + sites.media_hosts()
-    if not sites.host_matches(host, domains):
+    if not sites.host_matches(host, allowed_domains(kind)):
         raise NetBlocked(f"{host} 不在支援下載的網站清單裡", "NET_HOST")
-    try:
-        ips = resolve(host, 443)
-    except OSError as e:
-        raise NetBlocked(f"找不到 {host}（{type(e).__name__}）", "NET_DNS") from None
-    if not ips:
-        raise NetBlocked(f"找不到 {host}", "NET_DNS")
-    bad = [ip for ip in ips if not ip_is_public(ip)]
-    if bad:
-        raise NetBlocked(f"{host} 解析到內網或保留位址（{bad[0]}），為了安全不連", "NET_PRIVATE_IP")
-    return ips
+    return host
+
+
+def check_url(url: str, *, kind: str = "page", resolve=_default_resolve) -> list[str]:
+    """
+    檢查一個網址能不能連。kind="page" 只准影片頁網域；kind="any" 准頁面＋影片伺服器網域（下載過程用）。
+    通過 → 回傳解析出來的 IP；不通過 → NetBlocked。
+    """
+    host = static_check(url, kind=kind)
+    return check_host(host, 443, kind=kind, resolve=resolve)
 
 
 class RedirectGuard:
