@@ -127,7 +127,8 @@ def ffmpeg_location() -> str | None:
     return shutil.which("ffmpeg")
 
 
-def build_opts(ws: dict, quality: str, max_bytes: int, hook) -> dict:
+def build_opts(ws: dict, quality: str, max_bytes: int, hook, *, referer: str | None = None,
+               title: str | None = None) -> dict:
     ff = ffmpeg_location()
     fmt = QUALITY_FORMATS.get(quality, QUALITY_FORMATS["best"])
     if not ff:                                         # 沒有 ffmpeg 就不能合併影音 → 只選單一檔
@@ -146,17 +147,33 @@ def build_opts(ws: dict, quality: str, max_bytes: int, hook) -> dict:
         "socket_timeout": 30, "retries": 3, "fragment_retries": 5,
         "max_filesize": max_bytes,
         "progress_hooks": [hook],
+        # V3.1：直接下載瀏覽器交來的影片位址（不開網頁）：一定用通用下載器、帶 Referer、檔名用瀏覽器給的標題
+        **({"force_generic_extractor": True, "http_headers": {"Referer": referer}} if referer else {}),
+        **({"outtmpl": {"default": _safe_title(title) + " [%(id)s].%(ext)s"}} if title else {}),
     }
+
+
+def _safe_title(t: str) -> str:
+    from nexus.sandbox.workspace import sanitize_filename
+    return sanitize_filename(str(t))[:100].replace("%", "%%") or "video"
 
 
 def run_video_download(params: dict, ws: dict, *, emit, error_cls, ydl_cls=None, resolve_override=None) -> dict:
     url = str(params.get("url", ""))
+    media = params.get("media_url")
     quality = str(params.get("quality", "best"))
     max_bytes = int(params.get("_max_output_bytes", 8 << 30))
     try:
         host = guard.static_check(url, kind="page")
     except guard.NetBlocked as e:
         raise error_cls("NET_BLOCKED", e.reason) from None
+    if media:
+        try:
+            guard.static_check(str(media), kind="any")
+        except guard.NetBlocked as e:
+            raise error_cls("NET_BLOCKED", f"影片位址不行：{e.reason}") from None
+        if sites.site_name(urllib.parse.urlsplit(str(media)).hostname or "") != sites.site_name(host):
+            raise error_cls("NET_BLOCKED", "影片位址和網頁不是同一個網站")
     install_net_guard(resolve_override=resolve_override)
 
     last = [0.0]
@@ -179,8 +196,10 @@ def run_video_download(params: dict, ws: dict, *, emit, error_cls, ydl_cls=None,
         import yt_dlp
         ydl_cls = yt_dlp.YoutubeDL
     try:
-        with ydl_cls(build_opts(ws, quality, max_bytes, hook)) as ydl:
-            info = ydl.extract_info(url, download=False)
+        opts = build_opts(ws, quality, max_bytes, hook, referer=url if media else None,
+                          title=params.get("title") if media else None)
+        with ydl_cls(opts) as ydl:
+            info = ydl.extract_info(str(media) if media else url, download=False)
             if not isinstance(info, dict):
                 raise error_cls("NOT_FOUND", "找不到影片資訊")
             if info.get("_type") in ("playlist", "multi_video"):
@@ -206,9 +225,11 @@ def run_video_download(params: dict, ws: dict, *, emit, error_cls, ydl_cls=None,
     except Exception as e:                              # yt-dlp 的 DownloadError 等：照訊息分類
         code, retry = classify(f"{type(e).__name__}: {e}")
         msg = str(e).replace(NET_MARK, "").strip()
-        if code == "SITE_REFUSED":
-            msg = ("網站拒絕讓程式直接開網頁（不是瀏覽器）。Pornhub 等網站會這樣，"
-                   "節點下載目前做不到；請改用瀏覽器腳本的下載或「送到電腦版」。原始訊息：" + msg)
+        if code == "SITE_REFUSED" and media:
+            msg = "影片位址過期或被網站拒絕（瀏覽器給的位址有時效，也可能只能在同一個網路用），請重新從瀏覽器送。原始訊息：" + msg
+        elif code == "SITE_REFUSED":
+            msg = ("網站拒絕讓程式直接開網頁（不是瀏覽器）。Pornhub 等網站會這樣：請在瀏覽器的下載面板按"
+                   "「🖧 交給節點」（瀏覽器會把影片位址一起交過來），或改用「送到電腦版」。原始訊息：" + msg)
         raise error_cls(code, _short(msg), retry) from None
     emit("progress", progress=1.0)
     return {"title": str(info.get("title") or "")[:200], "id": str(info.get("id") or "")[:64],

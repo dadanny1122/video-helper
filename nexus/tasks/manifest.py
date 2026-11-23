@@ -19,6 +19,7 @@ OPTIONAL = {("limits", "max_output_bytes")}
 # 這些任務類型一定要帶的選用欄位
 REQUIRED_FOR = {"video.download": {("limits", "max_output_bytes")}}
 DEFAULT_TTL_SECONDS = 3600
+MEDIA_URL_TTL_SECONDS = 1800        # V3.1：瀏覽器交來的影片位址 30 分鐘內要派出去
 PLATFORMS = ("windows", "any")
 
 # 頂層欄位：名稱 → (型別, 必要)
@@ -48,6 +49,8 @@ def build(task_type: str, params: dict, *, idempotency_key: str | None = None, m
           ttl_seconds: int = DEFAULT_TTL_SECONDS) -> dict:
     """組一份 manifest（還沒驗證；交給 validate）"""
     spec = adapters.get(task_type)
+    if task_type == "video.download" and isinstance(params, dict) and params.get("media_url"):
+        ttl_seconds = min(ttl_seconds, MEDIA_URL_TTL_SECONDS)     # 影片位址有時效，排隊太久也沒用
     now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
     return {
         "manifest_version": MANIFEST_VERSION,

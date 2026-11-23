@@ -448,4 +448,5 @@ class DetailWindow:
 def _who(actor: str, names: dict) -> str:
     if actor.startswith("worker:"):
         return "節點 " + names.get(actor[7:], actor[7:15])
-    return {"owner": "你", "scheduler": "排程器", "dispatcher": "派送", "master": "Master 驗證"}.get(actor, actor)
+    names = {"owner": "你", "browser": "瀏覽器（交給節點）", "scheduler": "排程器", "dispatcher": "派送", "master": "Master 驗證"}
+    return names.get(actor, actor)

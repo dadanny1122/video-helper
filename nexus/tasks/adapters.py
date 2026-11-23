@@ -30,6 +30,7 @@ class AdapterSpec:
     default_runtime_seconds: int = 60
     max_runtime_seconds: int = 900
     description: str = ""
+    validate: object = None              # 跨欄位檢查：fn(params) → 問題清單
 
     @property
     def major(self) -> str:
@@ -43,6 +44,28 @@ def _video_url_problem(v: str):
         return None
     except NetBlocked as e:
         return f"url 不行：{e.reason}"
+
+
+def _media_url_problem(v: str):
+    from nexus.net.guard import NetBlocked, static_check
+    try:
+        static_check(v, kind="any")
+        return None
+    except NetBlocked as e:
+        return f"media_url 不行：{e.reason}"
+
+
+def _video_cross_check(params: dict) -> list[str]:
+    """V3.1：瀏覽器交來的影片位址一定要跟網頁是同一個網站（Pornhub 網頁只能配 phncdn.com…）"""
+    media = params.get("media_url")
+    if not isinstance(media, str) or not isinstance(params.get("url"), str):
+        return []
+    import urllib.parse
+
+    from nexus.net import sites
+    a = sites.site_name(urllib.parse.urlsplit(params["url"]).hostname or "")
+    b = sites.site_name(urllib.parse.urlsplit(media).hostname or "")
+    return [] if a and a == b else ["影片位址和網頁不是同一個網站"]
 
 
 VIDEO_QUALITIES = ("best", "1080", "720", "480")
@@ -61,7 +84,11 @@ ADAPTERS: dict[str, AdapterSpec] = {
     "video.download": AdapterSpec(
         "video.download", "1.0",
         {"url": Param(str, max_len=2048, check=_video_url_problem),
-         "quality": Param(str, required=False, enum=VIDEO_QUALITIES)},
+         "quality": Param(str, required=False, enum=VIDEO_QUALITIES),
+         # V3.1：瀏覽器已經拿到的影片真正位址（網站擋程式開網頁時用，例如 Pornhub 410）
+         "media_url": Param(str, required=False, max_len=4096, check=_media_url_problem),
+         "title": Param(str, required=False, max_len=200)},
+        validate=_video_cross_check,
         retry_safe=True, idempotent=False, side_effects="network,files",
         default_runtime_seconds=7200, max_runtime_seconds=7200,
         description="在節點的沙箱裡下載影片，存在節點那台電腦"),
@@ -107,4 +134,6 @@ def check_params(spec: AdapterSpec, params) -> list[str]:
             problems.append(f"{k} 只能是 {'/'.join(p.enum)}")
         if p.check is not None and (msg := p.check(v)):
             problems.append(msg)
+    if not problems and spec.validate is not None:
+        problems += spec.validate(params)
     return problems

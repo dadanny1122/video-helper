@@ -3,7 +3,7 @@
 // @name:en      Video Helper
 // @name:zh-TW   Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.21.2
+// @version      3.22.0
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @description:zh-TW 安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @description:en Blocks pop-ups, forced redirects and dangerous downloads; stops ad networks from loading (saves bandwidth); hides and skips video ads; shows playback status and load-time estimates; one-click download with quality picker on supported sites. Interface is in Traditional Chinese.
@@ -2233,6 +2233,21 @@
     return { port, ticket: r.data.ticket };
   }
 
+  // V3.1「交給節點」：把網頁網址＋影片真正的位址交給電腦版（Master），由節點在沙箱裡下載
+  // （網站擋程式開網頁時也能用，例如 Pornhub 回 410；電腦版會把所有參數重新檢查一次）
+  async function sendToNode(s, title) {
+    const url = location.href.split('#')[0];
+    const port = await findBridge();
+    if (!port) throw new Error('找不到電腦版。請先打開 Video Helper 電腦版（要當 Master 的那台），並配對瀏覽器。');
+    const lack = desktopLacks('node', location.hostname.toLowerCase());
+    if (lack) throw new Error(lack);
+    const media = new URL(s.url, location.href).href;
+    if (!media.startsWith('https://')) throw new Error('這個畫質的影片位址不是 https，節點不收');
+    const r = await bridgeCall(port, '/node', { url, media, title: String(title || '').slice(0, 200) });
+    if (r.status !== 200) throw new Error(r.data.error || `電腦版回應錯誤（${r.status}）`);
+    return r.data.task_id;
+  }
+
   // 每 2 秒問一次進度，顯示在 el 裡，直到結束
   function watchDesktop(el, port, ticket) {
     const icon = { '讀取中': '🔎 讀取中', '等待中': '⏳ 排隊中', '下載中': '⬇ 下載中', '完成': '✅ 完成', '失敗': '❌ 失敗', '取消': '■ 已取消' };
@@ -2312,6 +2327,24 @@
           }
         });
         row.prepend(toPc);
+        // 「🖧」：交給節點（另一台電腦）下載——只有拿得到影片真正位址的畫質才有
+        if (s.url && s.kind !== 'page') {
+          const toNode = document.createElement('span');
+          toNode.textContent = '🖧 交給節點';
+          toNode.title = '叫節點（另一台電腦或同機的節點）在沙箱裡下載，檔案存在節點那台';
+          toNode.style.cssText = 'float:right;margin-left:6px;padding:1px 8px;border-radius:8px;background:#7c5cff;font-size:12px;';
+          toNode.addEventListener('click', async e => {
+            e.stopPropagation();
+            desk.textContent = '🖧 交給節點中…';
+            try {
+              const id = await sendToNode(s, src.title);
+              desk.textContent = `🖧 已交給節點（任務 ${String(id).slice(0, 8)}）\n到電腦版「⚙ 進階設定 → 📋 節點任務」看進度；影片位址有時效，請在 30 分鐘內派出去`;
+            } catch (err) {
+              desk.textContent = '🖧 ' + err.message;
+            }
+          });
+          row.prepend(toNode);
+        }
         row.addEventListener('click', () => {
           if (s.kind === 'page') { toPc.click(); return; }   // 這行只能交給電腦版
           const big = bytes > 2e9 ? '\n\n⚠ 檔案很大，下載完成前請不要關閉這個分頁' : '';

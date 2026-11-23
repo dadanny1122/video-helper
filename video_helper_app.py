@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.31.1"
+VERSION = "1.32.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -916,7 +916,7 @@ def hash_token(t):
 
 
 class Bridge:
-    def __init__(self, settings, on_enqueue, get_status, on_classify=None):
+    def __init__(self, settings, on_enqueue, get_status, on_classify=None, on_node=None):
         """
         on_enqueue(ticket, url, height)：收到「加入下載」時呼叫（在連線服務的執行緒裡，要自己轉回主畫面）
         get_status(ticket)：回傳 {"status":…, "progress":…, "title":…} 或 None
@@ -925,6 +925,7 @@ class Bridge:
         self.on_enqueue = on_enqueue
         self.get_status = get_status
         self.on_classify = on_classify             # AI 判斷網域（可以沒有）
+        self.on_node = on_node                     # V3.1：瀏覽器「交給節點」（可以沒有）
         self.server = None
         self.port = None
         self.pair_code = None
@@ -1083,7 +1084,8 @@ class Bridge:
                     return self.send(403, {"error": "forbidden"})
                 path, _, qs = self.path.partition("?")
                 if path == "/ping":                 # 能力協商：告訴腳本「我是哪一版、會做哪些事、收哪些網站」
-                    feats = ["enqueue", "media", "status"] + (["classify"] if bridge.on_classify else [])
+                    feats = (["enqueue", "media", "status"] + (["classify"] if bridge.on_classify else [])
+                             + (["node"] if bridge.on_node else []))
                     return self.send(200, {"app": "VideoHelper", "version": VERSION, "api": BRIDGE_API,
                                            "features": feats, "sites": list(BRIDGE_HOSTS)})
                 if path == "/status":
@@ -1124,6 +1126,27 @@ class Bridge:
                     bridge.on_enqueue(ticket, url, h, media or None)
                     log.info("瀏覽器送來：%s（%s）", log_url(url), quality_label(h) if h else "預設畫質")
                     return self.send(200, {"ok": True, "ticket": ticket})
+                if self.path == "/node":            # V3.1：交給節點下載（瀏覽器把影片真正的位址一起給）
+                    if not bridge.token_ok(self.headers.get("X-VH-Token")):
+                        return self.send(401, {"error": "需要重新配對"})
+                    if not bridge.on_node:
+                        return self.send(404, {"error": "not found"})
+                    url, media = data.get("url", ""), data.get("media", "")
+                    if not bridge_url_allowed(url):
+                        return self.send(400, {"error": "只接受支援下載的 9 個網站的影片網址"})
+                    if not (isinstance(media, str) and media.startswith("https://") and len(media) < 4000
+                            and bridge_url_allowed(media, BRIDGE_MEDIA_HOSTS)):
+                        return self.send(400, {"error": "影片位址不是這個網站的影片伺服器（要 https）"})
+                    if not bridge.rate_ok():
+                        return self.send(429, {"error": "太頻繁了，等一分鐘再試"})
+                    try:
+                        task_id = bridge.on_node(url, media, str(data.get("title") or "")[:200])
+                    except ValueError as e:              # 內容不合格（例如影片位址跟網頁不是同一個網站）
+                        return self.send(400, {"error": str(e)})
+                    except RuntimeError as e:            # Master 沒開
+                        return self.send(409, {"error": str(e)})
+                    log.info("瀏覽器交給節點：%s", log_url(url))
+                    return self.send(200, {"ok": True, "task_id": task_id})
                 if self.path == "/classify":
                     if not bridge.token_ok(self.headers.get("X-VH-Token")):
                         return self.send(401, {"error": "需要重新配對"})
@@ -3129,7 +3152,8 @@ class App:
         self.bridge = Bridge(self.settings,
                              on_enqueue=self.remote_register,
                              get_status=self.remote_status,
-                             on_classify=self.classify_domains)
+                             on_classify=self.classify_domains,
+                             on_node=self.node_enqueue)
         self.ai_fn = ai_classify
         self.blocklist = BlockList()
 
@@ -3968,6 +3992,20 @@ class App:
             r["label"] = "已知廣告" if r["source"] == "list" and r["verdict"] == "ad" else AI_VERDICTS.get(r["verdict"], "不確定")
             r["block"] = r["verdict"] in AI_BLOCK
         return out
+
+    def node_enqueue(self, url, media, title):
+        """V3.1 瀏覽器「交給節點」（連線服務的執行緒呼叫）：建一個 video.download 任務，帶瀏覽器拿到的影片位址。
+        Master 會把參數全部重新驗證一次（同網站、清單網域、https）；不合格 → RuntimeError（回給瀏覽器看）"""
+        svc = getattr(self, "nexus", None)
+        if not svc or not svc.running or not svc.tasks:
+            raise RuntimeError("電腦版的 Master 沒開：到「⚙ 進階設定 → 🖧 節點」勾「啟用 Master」，並至少核准一台節點")
+        params = {"url": url, "media_url": media}
+        if title.strip():
+            params["title"] = title.strip()
+        t = svc.tasks.create("video.download", params, actor="browser")
+        if t["status"] == "REJECTED":
+            raise ValueError("任務不合格：" + (t.get("error_message") or "內容不對"))
+        return t["task_id"]
 
     def remote_register(self, ticket, url, h, media=None):
         """連線服務的執行緒呼叫：先記下任務再回覆瀏覽器，瀏覽器馬上來問進度才查得到"""

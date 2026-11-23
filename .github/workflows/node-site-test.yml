@@ -1,0 +1,22 @@
+# V3.1 E4：真網站的「交給節點」測試——只能手動觸發；下載最低畫質後立刻刪掉，不上傳任何東西
+name: node-site-test
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pornhub:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --require-hashes -r requirements.txt
+      - run: pip install playwright==1.48.0 && python -m playwright install chromium
+      - name: 瀏覽器拿影片位址 → 沙箱下載最低畫質 → 刪掉
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python .github/node_site_test.py

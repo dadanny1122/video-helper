@@ -184,6 +184,11 @@ code = app.bridge.new_pair_code()
 st, dd = call("POST", "/pair", {"code": code})
 assert st == 200 and dd.get("token"), "配對失敗"
 tok = dd["token"]
+# V3.1「交給節點」：電腦版宣稱支援；Master 還沒開 → 回清楚的錯誤（U-04）
+assert "node" in call("GET", "/ping", origin=None)[1].get("features", []), "電腦版應該宣稱支援 node"
+st, dd = call("POST", "/node", {"url": "https://www.pornhub.com/view_video.php?viewkey=ci",
+                                 "media": "https://ev-h.phncdn.com/videos/ci.mp4"}, tok)
+assert st == 409 and "Master" in dd.get("error", ""), (st, dd)
 st, dd = call("POST", "/enqueue", {"url": "https://www.pornhub.com/view_video.php?viewkey=ci", "height": 480}, tok)
 assert st == 200, "送影片失敗"
 ticket = dd["ticket"]
@@ -368,6 +373,21 @@ _why = _dw.why.winfo_children()[1]
 assert _why.item(_why.get_children()[0])["values"][1] == "✔ 選中", "排程理由沒顯示選中"
 _dw.win.destroy()
 print("::notice title=節點任務::派送回聲任務→節點執行→Master 驗證結果→成功；排程理由 OK")
+# 7b3b. V3.1 瀏覽器「交給節點」：Bridge → Master 建任務（帶 media_url、30 分鐘過期）；不同網站的影片位址被拒（U-02）
+_page = "https://www.pornhub.com/view_video.php?viewkey=ci31"
+st, dd = call("POST", "/node", {"url": _page, "media": "https://cdn.xvideos-cdn.com/v.mp4"}, tok)
+assert st == 400, ("不同網站的影片位址應該在 Bridge 就被拒", st, dd)
+st, dd = call("POST", "/node", {"url": _page, "media": "https://ev-h.phncdn.com/videos/ci31.mp4", "title": "CI 交給節點"}, tok)
+assert st == 200 and dd.get("task_id"), (st, dd)
+_tn = app.nexus.tasks.get(dd["task_id"])
+_mn = json.loads(_tn["manifest_json"])
+assert _tn["type"] == "video.download" and _mn["params"]["media_url"].startswith("https://ev-h.phncdn.com/"), _mn
+assert _tn["created_by"] == "browser"
+try:
+    app.nexus.tasks.cancel(_tn["task_id"], "owner", "ci：只測建立，不真的下載")
+except Exception:
+    pass
+print("::notice title=交給節點::瀏覽器→電腦版→建立節點下載任務（帶影片位址）OK；不同網站的位址被拒 OK")
 # 7b4. V3 下載影片（節點）：用「不存在的影片編號」走完整條路——Master 檢查網址 → 派給有沙箱的節點 → 沙箱子程序
 #      裡 yt-dlp 經過網路檢查連到網站 → 網站說找不到 → FAILED（不會真的下載任何影片）。
 #      要確認的是：不是沙箱建不起來、不是網路檢查擋錯、沒有殘留程序、工作資料夾有清掉

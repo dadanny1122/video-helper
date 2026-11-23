@@ -218,3 +218,66 @@ def test_site_refused_not_retried_and_explained(tmp_path):
         go(tmp_path, {}, fail="ERROR: [PornHub] x: Unable to download webpage: HTTP Error 410: Gone")
     assert e.value.code == "SITE_REFUSED" and not e.value.retryable and "送到電腦版" in e.value.message
     assert "SITE_REFUSED" in NON_RETRYABLE_ERRORS and "SITE_REFUSED" not in RETRYABLE_ERRORS
+
+
+# ---------- V3.1：瀏覽器交來的影片位址 ----------
+def test_master_checks_media_url_same_site_and_ttl():
+    import datetime as _dt
+
+    from nexus.tasks import adapters, manifest
+    spec = adapters.get("video.download")
+    page = "https://cn.pornhub.com/view_video.php?viewkey=658229bd52f10"
+    good = {"url": page, "media_url": "https://ev-h.phncdn.com/hls/videos/x/master.m3u8?validto=1&hash=a", "title": "片名"}
+    assert adapters.check_params(spec, good) == []
+    for bad in ("https://www.xvideos-cdn.com/v.mp4",       # 不同網站（U-02）
+                "https://127.0.0.1/v.mp4", "https://evil.example/v.mp4", "http://ev-h.phncdn.com/v.mp4"):  # U-03
+        assert adapters.check_params(spec, {**good, "media_url": bad}), bad
+    m = manifest.build("video.download", good)
+    assert manifest.validate(m) == []
+    left = manifest.parse_utc(m["expires_at"]) - manifest.parse_utc(m["created_at"])
+    assert left <= _dt.timedelta(seconds=1800)
+
+
+def test_child_downloads_media_url_without_opening_page(tmp_path):
+    seen = {}
+
+    class Y(FakeYDL):
+        def __init__(self, opts):
+            super().__init__(opts)
+            seen["opts"] = opts
+
+        def extract_info(self, url, download=False):
+            seen["url"] = url
+            return {"id": "master", "title": "master", "requested_formats": [{"protocol": "m3u8_native",
+                                                                              "url": "https://ev-h.phncdn.com/a.m3u8"}]}
+    ws = Workspace(str(tmp_path))
+    media = "https://ev-h.phncdn.com/hls/videos/x/master.m3u8?validto=1"
+    page = "https://www.pornhub.com/view_video.php?viewkey=abc"
+    r = video.run_video_download({"url": page, "media_url": media, "title": "My: 100% clip"},
+                                 {"output": ws.output, "tmp": ws.tmp}, emit=lambda *a, **k: None,
+                                 error_cls=ChildError, ydl_cls=Y, resolve_override=public)
+    o = seen["opts"]
+    assert seen["url"] == media and o["force_generic_extractor"] and o["http_headers"]["Referer"] == page
+    assert o["outtmpl"]["default"].startswith("My_ 100%% clip") and r["site"] == "Pornhub"
+
+
+def test_child_refuses_media_from_other_site(tmp_path):
+    ws = Workspace(str(tmp_path))
+    with pytest.raises(ChildError) as e:
+        video.run_video_download({"url": "https://www.pornhub.com/view_video.php?viewkey=abc",
+                                  "media_url": "https://cdn.xvideos-cdn.com/v.mp4"},
+                                 {"output": ws.output, "tmp": ws.tmp}, emit=lambda *a, **k: None,
+                                 error_cls=ChildError, ydl_cls=FakeYDL, resolve_override=public)
+    assert e.value.code == "NET_BLOCKED"
+
+
+def test_expired_media_url_message(tmp_path):
+    class Y(FakeYDL):
+        fail = "ERROR: [generic] master: HTTP Error 403: Forbidden"
+    ws = Workspace(str(tmp_path))
+    with pytest.raises(ChildError) as e:
+        video.run_video_download({"url": "https://www.pornhub.com/view_video.php?viewkey=abc",
+                                  "media_url": "https://ev-h.phncdn.com/v.mp4"},
+                                 {"output": ws.output, "tmp": ws.tmp}, emit=lambda *a, **k: None,
+                                 error_cls=ChildError, ydl_cls=Y, resolve_override=public)
+    assert e.value.code == "SITE_REFUSED" and "重新從瀏覽器送" in e.value.message
