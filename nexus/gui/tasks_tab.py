@@ -82,8 +82,9 @@ class TasksTab:
     def _build(self):
         C, px, p = self.C, self.px, self.page
         ttk.Label(p, foreground=C["muted"], wraplength=px(720), justify="left",
-                  text="派測試任務給已核准的節點，看它們怎麼被分配、執行、取消。這一版只有三種無害的測試任務（回聲、等待、故意失敗），"
-                       "不會下載、不碰檔案、不連網；真的讓節點下載要等之後的版本。").pack(anchor="w")
+                  text="派任務給已核准的節點：「下載影片」會在節點的沙箱裡下載、檔案存在節點那台"
+                       "（Pornhub 目前不行，網站會擋程式）；"
+                       "另外有三種測試任務（回聲、等待、故意失敗）用來確認派送、取消、重試。").pack(anchor="w")
         bar = ttk.Frame(p)
         bar.pack(fill="x", pady=(8, 4))
         self.new_btn = ttk.Button(bar, text="＋ 新增任務", style="Accent.TButton", command=self.new_task)
