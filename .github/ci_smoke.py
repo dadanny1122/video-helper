@@ -368,6 +368,24 @@ _why = _dw.why.winfo_children()[1]
 assert _why.item(_why.get_children()[0])["values"][1] == "✔ 選中", "排程理由沒顯示選中"
 _dw.win.destroy()
 print("::notice title=節點任務::派送回聲任務→節點執行→Master 驗證結果→成功；排程理由 OK")
+# 7b4. V3 下載影片（節點）：用「不存在的影片編號」走完整條路——Master 檢查網址 → 派給有沙箱的節點 → 沙箱子程序
+#      裡 yt-dlp 經過網路檢查連到網站 → 網站說找不到 → FAILED（不會真的下載任何影片）。
+#      要確認的是：不是沙箱建不起來、不是網路檢查擋錯、沒有殘留程序、工作資料夾有清掉
+if sys.platform == "win32":
+    _caps = app.nexus.registry.tr.capabilities(_agent.store.state["device_id"])
+    assert _caps["resources"].get("isolation") == "basic", f"節點沙箱不能用：{_caps['resources']}"
+    assert "video.download" in _caps["adapters"], "有沙箱的節點應該宣稱支援下載"
+    _tv = _tt.submit("video.download", {"url": "https://www.xvideos.com/video.0000000000000/vh_ci_not_exist"},
+                     max_attempts=1)
+    wait(lambda: app.nexus.tasks.get(_tv["task_id"])["status"] in ("SUCCEEDED", "FAILED"), 180)
+    _tv = app.nexus.tasks.get(_tv["task_id"])
+    print(f"::notice title=節點下載（不存在的影片）::{_tv['status']} {_tv['error_code']} {(_tv['error_message'] or '')[:150]}")
+    assert _tv["status"] == "FAILED", "不存在的影片不該成功"
+    assert _tv["error_code"] not in ("SANDBOX_UNAVAILABLE", "LEFTOVER_PROCESSES", "CLEANUP_FAILED", "PROTOCOL_ERROR",
+                                     "ADAPTER_UNSUPPORTED"), f"沙箱本身出問題：{_tv['error_code']} {_tv['error_message']}"
+    _sbx = os.path.join(os.path.dirname(_wcfg.path), "sandbox", "work")
+    assert not os.path.isdir(_sbx) or not os.listdir(_sbx), f"工作資料夾沒清掉：{os.listdir(_sbx)}"
+    print("::notice title=節點下載::Master 檢查網址→派給有沙箱的節點→沙箱裡連到網站→照實回報失敗原因、資料夾清乾淨 OK")
 _nt.tree.selection_set(_nt.tree.get_children()[0]); _nt._update_buttons(); _nt.act("revoke"); r.update()
 wait(lambda: _agent.state == "REVOKED", 10)
 _acts = [e["action"] for e in app.nexus.audit(50)]

@@ -94,7 +94,9 @@ def run_video_download(params, ctx):
     from nexus.sandbox.runner import SandboxRunner
     cfg = getattr(ctx, "cfg", None) or {}
     dest = (cfg.get("download_dir") if hasattr(cfg, "get") else "") or default_download_dir(worker_profile())
-    runner = SandboxRunner(os.path.join(mode_dir("worker"), "sandbox"), dest, JobLimits(), _ffmpeg_dirs())
+    # 沙箱工作資料夾跟這個節點的設定檔放一起（每個 profile 各自一份）
+    base = os.path.dirname(cfg.path) if getattr(cfg, "path", None) else mode_dir("worker")
+    runner = SandboxRunner(os.path.join(base, "sandbox"), dest, JobLimits(), _ffmpeg_dirs())
     limits = getattr(ctx, "limits", {}) or {}
     left = max(1.0, ctx.deadline - time.monotonic())
     r = runner.run({"type": "video.download", "params": dict(params)},

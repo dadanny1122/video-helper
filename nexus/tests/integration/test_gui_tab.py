@@ -171,6 +171,9 @@ def test_tasks_tab_create_run_detail_cancel(svc, tmp_path, monkeypatch):
         assert not tab.new_btn.instate(["disabled"])
         # 用對話框新增
         dlg = tt.NewTaskDialog(page, tab, lambda n: n)
+        assert dlg.types[dlg.type.get()] == "video.download"              # V3：下載影片排第一個
+        dlg.type.set(next(k for k, v in dlg.types.items() if v == "test.echo"))
+        dlg._switch()
         dlg.pv.delete(0, "end")
         dlg.pv.insert(0, "GUI 測試")
         key = dlg.key.get()
@@ -202,3 +205,46 @@ def test_tasks_tab_create_run_detail_cancel(svc, tmp_path, monkeypatch):
         agent.stop(disconnect=False)
         tab._stop_timer()
         root.destroy()
+
+
+def test_new_download_task_dialog_and_result_text(svc, monkeypatch):
+    """V3 PR7：新增「下載影片（節點）」：貼網址＋選畫質 → 建出 video.download；網址不合格就被拒；結果顯示檔名、大小、存在哪"""
+    import json
+    import tkinter as tk
+    from tkinter import messagebox, ttk
+
+    from nexus.gui import tasks_tab as tt
+
+    root = tk.Tk()
+    root.withdraw()
+    page = ttk.Frame(root)
+    page.pack()
+    C = {"muted": "#888", "ok": "#2a2", "bad": "#c33", "accent": "#57C8FF", "bg": "#fff"}
+    svc.start()
+    warned = []
+    monkeypatch.setattr(messagebox, "showwarning", lambda *a, **k: warned.append(a))
+    try:
+        tab = tt.TasksTab(page, svc, C)
+        dlg = tt.NewTaskDialog(page, tab, lambda n: n)
+        assert dlg.types[dlg.type.get()] == "video.download" and int(dlg.runtime.get()) == 7200
+        dlg.pv.insert(0, "https://www.xvideos.com/video.abc123/some_title")
+        dlg.quality.set("720p")
+        dlg.ok()
+        t = svc.tasks.list()[0]
+        m = json.loads(t["manifest_json"])
+        assert t["type"] == "video.download" and m["params"] == {"url": "https://www.xvideos.com/video.abc123/some_title",
+                                                                    "quality": "720"}
+        assert m["limits"]["max_output_bytes"] == 8 << 30
+        assert tt.summary_of(t).startswith("xvideos.com／some_title") and "720p" in tt.summary_of(t)
+        # 只擋廣告的網站 → 建立就被拒（REJECTED），不會派出去
+        dlg = tt.NewTaskDialog(page, tab, lambda n: n)
+        dlg.pv.insert(0, "https://jable.tv/videos/abc/")
+        dlg.ok()
+        assert warned and svc.tasks.list()[0]["status"] == "REJECTED"
+        path = "C:\\Users\\me\\Downloads\\VideoHelper 節點\\Clip [abc].mp4"
+        files = [{"name": "Clip [abc].mp4", "size": 3 << 20, "sha256": "0" * 64, "path": path}]
+        txt = tt.DetailWindow._download_result(json.dumps({"site": "XVideos", "title": "Clip", "files": files}), "pc-a")
+        assert "Clip [abc].mp4" in txt and "3.0 MB" in txt and "pc-a" in txt and "VideoHelper 節點" in txt
+    finally:
+        root.destroy()
+

@@ -1,7 +1,7 @@
 """
 「⚙ 進階設定 → 📋 節點任務」分頁（06-V2 §7）：任務只能在這裡建立（決策 D2：沒有網路端點）。
 只呼叫 TaskService（不碰資料庫）。
-    任務列表（進行中／全部）、新增測試任務、任務詳情（時間軸、結果、排程理由）、取消（要理由）、狀態不明時人工標記失敗
+    任務列表（進行中／全部）、新增任務（V3：下載影片；以及測試任務）、任務詳情（時間軸、結果、排程理由）、取消（要理由）、狀態不明時人工標記失敗
 """
 import json
 import tkinter as tk
@@ -44,7 +44,28 @@ def summary_of(task: dict) -> str:
         return f"{p['seconds']} 秒"
     if "code" in p:
         return str(p["code"])
+    if "url" in p:                                    # 下載影片：只顯示網站和最後一段，不顯示完整網址
+        try:
+            import urllib.parse
+            u = urllib.parse.urlsplit(str(p["url"]))
+            tail = u.path.rstrip("/").rsplit("/", 1)[-1] or u.query
+            q = p.get("quality", "best")
+            return f"{(u.hostname or '').removeprefix('www.')}／{tail[:14]}（{'最高' if q == 'best' else q + 'p'}）"
+        except Exception:
+            return "影片"
     return ""
+
+
+def fmt_size(n) -> str:
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return "?"
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} GB"
 
 
 class TasksTab:
@@ -65,7 +86,7 @@ class TasksTab:
                        "不會下載、不碰檔案、不連網；真的讓節點下載要等之後的版本。").pack(anchor="w")
         bar = ttk.Frame(p)
         bar.pack(fill="x", pady=(8, 4))
-        self.new_btn = ttk.Button(bar, text="＋ 新增測試任務", style="Accent.TButton", command=self.new_task)
+        self.new_btn = ttk.Button(bar, text="＋ 新增任務", style="Accent.TButton", command=self.new_task)
         self.new_btn.pack(side="left")
         self.active_only = tk.BooleanVar(value=False)
         ttk.Checkbutton(bar, text="只看進行中", variable=self.active_only, command=self.refresh).pack(side="left", padx=12)
@@ -214,14 +235,15 @@ class NewTaskDialog:
     def __init__(self, parent, tab: TasksTab, px):
         self.tab = tab
         w = self.win = tk.Toplevel(parent)
-        w.title("新增測試任務")
+        w.title("新增任務")
         w.transient(parent.winfo_toplevel())
         f = ttk.Frame(w, padding=14)
         f.pack(fill="both", expand=True)
         f.columnconfigure(1, weight=1)
         ttk.Label(f, text="類型").grid(row=0, column=0, sticky="w")
-        # V3 PR7 才把「下載影片」做進這個視窗（要貼網址、選畫質）；現在只列測試任務
-        self.types = {f"{TYPE_NAME[n]}（{n}）": n for n in adapters.ADAPTERS if n.startswith("test.")}
+        # 下載影片放第一個（最常用），後面是測試任務
+        order = sorted(adapters.ADAPTERS, key=lambda n: (not n.startswith("video."), n))
+        self.types = {f"{TYPE_NAME[n]}（{n}）": n for n in order}
         self.type = ttk.Combobox(f, state="readonly", values=list(self.types), width=28)
         self.type.current(0)
         self.type.grid(row=0, column=1, sticky="we", pady=2)
@@ -233,7 +255,7 @@ class NewTaskDialog:
         self.pframe = ttk.Frame(f)
         self.pframe.grid(row=2, column=1, sticky="we", pady=2)
         ttk.Label(f, text="執行時間上限（秒）").grid(row=3, column=0, sticky="w")
-        self.runtime = ttk.Spinbox(f, from_=1, to=900, width=8)
+        self.runtime = ttk.Spinbox(f, from_=1, to=7200, width=8)
         self.runtime.grid(row=3, column=1, sticky="w", pady=2)
         ttk.Label(f, text="最多嘗試幾次").grid(row=4, column=0, sticky="w")
         self.tries = ttk.Spinbox(f, from_=1, to=5, width=8)
@@ -258,6 +280,22 @@ class NewTaskDialog:
         self.desc.config(text=spec.description)
         for c in self.pframe.winfo_children():
             c.destroy()
+        self.quality = None
+        if n == "video.download":
+            self.plabel.config(text="影片網址")
+            self.pv = ttk.Entry(self.pframe, width=48)
+            row = ttk.Frame(self.pframe)
+            ttk.Label(row, text="畫質").pack(side="left")
+            self.quality = ttk.Combobox(row, state="readonly", width=10,
+                                        values=["最高", "1080p", "720p", "480p"])
+            self.quality.current(0)
+            self.quality.pack(side="left", padx=(6, 0))
+            ttk.Label(row, text="　只支援能下載的 9 個網站；檔案存在節點那台電腦",
+                      foreground=self.tab.C["muted"]).pack(side="left")
+            self.pv.pack(fill="x")
+            row.pack(fill="x", pady=(4, 0))
+            self.runtime.set(spec.default_runtime_seconds)
+            return
         if n == "test.echo":
             self.plabel.config(text="文字")
             self.pv = ttk.Entry(self.pframe)
@@ -276,6 +314,9 @@ class NewTaskDialog:
     def params(self):
         n = self.types[self.type.get()]
         v = self.pv.get()
+        if n == "video.download":
+            q = {"最高": "best", "1080p": "1080", "720p": "720", "480p": "480"}[self.quality.get()]
+            return n, {"url": v.strip(), "quality": q}
         if n == "test.echo":
             return n, {"text": v}
         if n == "test.sleep":
@@ -307,7 +348,9 @@ class DetailWindow:
         f = ttk.Frame(w, padding=12)
         f.pack(fill="both", expand=True)
         res = ""
-        if t["result_json"]:
+        if t["result_json"] and t["type"] == "video.download":
+            res = self._download_result(t["result_json"], names.get(t["assigned_device_id"], "節點"))
+        elif t["result_json"]:
             res = "結果：" + t["result_json"][:200]
         elif t["error_message"]:
             res = f"錯誤：{t['error_code']}　{t['error_message'][:200]}"
@@ -322,6 +365,18 @@ class DetailWindow:
         self.timeline = self._timeline_tab(nb, d, names, px)
         nb.add(self.why, text="  為什麼選這台  ")
         nb.add(self.timeline, text="  時間軸  ")
+
+    @staticmethod
+    def _download_result(raw: str, node: str) -> str:
+        """下載結果：檔名、大小、存在哪台的哪裡（檔案留在節點，V4 才會傳回 Master）"""
+        try:
+            r = json.loads(raw)
+        except Exception:
+            return "結果：" + raw[:200]
+        lines = [f"下載完成：{r.get('site', '')}　{str(r.get('title', ''))[:60]}"]
+        for f in r.get("files", [])[:5]:
+            lines.append(f"・{f.get('name')}（{fmt_size(f.get('size'))}）存在「{node}」：{f.get('path', '')}")
+        return "\n".join(lines)
 
     @staticmethod
     def _why_tab(nb, d, names, C, px):

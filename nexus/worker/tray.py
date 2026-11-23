@@ -100,8 +100,8 @@ def run_window() -> int:
     root.title(f"Video Helper 節點（Worker）v{NEXUS_VERSION}" + (f"　[{worker_profile()}]" if worker_profile() else ""))
     k = root.winfo_fpixels("1i") / 96          # 高 DPI（150% 等）：視窗跟字一起放大
     W = lambda n: int(n * k)                   # noqa: E731
-    root.geometry(f"{W(600)}x{W(470)}")
-    root.minsize(W(560), W(430))
+    root.geometry(f"{W(620)}x{W(600)}")
+    root.minsize(W(580), W(560))
     try:
         import sv_ttk
         sv_ttk.set_theme("dark", root)
@@ -111,7 +111,7 @@ def run_window() -> int:
     f = ttk.Frame(root, padding=14)
     f.pack(fill="both", expand=True)
     f.columnconfigure(1, weight=1)
-    ttk.Label(f, text="這台電腦要當別台 Video Helper 的節點：跟 Master 連線、心跳、被管理；勾最下面那格才會接 Master 派來的測試任務。",
+    ttk.Label(f, text="這台電腦要當別台 Video Helper 的節點：跟 Master 連線、心跳、被管理；勾下面那格才會接 Master 派來的任務。",
               wraplength=W(560), justify="left").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
     ttk.Label(f, text="Master 位址").grid(row=1, column=0, sticky="w")
     url = ttk.Entry(f, width=34)
@@ -141,10 +141,45 @@ def run_window() -> int:
     def on_accept():
         cfg["accept_tasks"] = bool(accept.get())
         cfg.save()
-    ttk.Checkbutton(f, text="接收 Master 派來的測試任務（第二版只有回聲、等待、故意失敗，不會下載、不碰檔案）", variable=accept,
+    ttk.Checkbutton(f, text="接收 Master 派來的任務（下載影片、測試任務）", variable=accept,
                     command=on_accept).grid(row=9, column=0, columnspan=3, sticky="w", pady=(10, 0))
     tasks_lbl = ttk.Label(f, text="", wraplength=W(560), justify="left")
     tasks_lbl.grid(row=10, column=0, columnspan=3, sticky="w", pady=(4, 0))
+    # V3：下載
+    from nexus.worker.executor import default_download_dir, sandbox_status
+    ttk.Label(f, text="下載資料夾").grid(row=11, column=0, sticky="w", pady=(10, 0))
+    dl = ttk.Entry(f, width=34)
+    dl.insert(0, cfg["download_dir"] or default_download_dir(worker_profile()))
+    dl.grid(row=11, column=1, sticky="we", pady=(10, 0))
+
+    def save_dl(*_):
+        v = dl.get().strip()
+        cfg["download_dir"] = "" if v == default_download_dir(worker_profile()) else v
+        cfg.save()
+
+    def pick_dl():
+        from tkinter import filedialog
+        d = filedialog.askdirectory(parent=root, initialdir=dl.get() or os.path.expanduser("~"))
+        if d:
+            dl.delete(0, "end")
+            dl.insert(0, os.path.normpath(d))
+            save_dl()
+    dl.bind("<FocusOut>", save_dl)
+    ttk.Button(f, text="選…", command=pick_dl).grid(row=11, column=2, sticky="w", padx=(6, 0), pady=(10, 0))
+    ttk.Label(f, text="同時下載").grid(row=12, column=0, sticky="w", pady=2)
+    conc = ttk.Combobox(f, state="readonly", width=6, values=["1 部", "2 部"])
+    conc.current(1 if int(cfg["max_concurrency"] or 1) >= 2 else 0)
+
+    def on_conc(*_):
+        cfg["max_concurrency"] = 2 if conc.get().startswith("2") else 1
+        cfg.save()
+    conc.bind("<<ComboboxSelected>>", on_conc)
+    conc.grid(row=12, column=1, sticky="w", pady=2)
+    sb = sandbox_status()
+    iso_text = ("沙箱：基本（程序限制＋只准連支援的網站，不是完全隔離）" if sb.get("isolation") == "basic"
+                else "沙箱：不能用（" + "；".join(sb.get("reasons") or ["原因不明"]) + "）→ 不會接下載任務")
+    ttk.Label(f, text=iso_text, foreground="#8ea3d6" if sb.get("isolation") == "basic" else "#e0a040",
+              wraplength=W(560), justify="left").grid(row=13, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
     agent = WorkerAgent(cfg, store)
 
@@ -158,7 +193,7 @@ def run_window() -> int:
         mfp = s["master_ca_fingerprint"] or s["master_server_fingerprint"] or "—"
         exp = f"\n憑證到期：{s['credential_expires_at'][:10]}" if s["credential_expires_at"] else ""
         fps.config(text=f"我的指紋：{s['my_fingerprint']}　Master 指紋：{mfp}{exp}")
-        names = {"test.echo": "回聲", "test.sleep": "等待", "test.fail": "故意失敗"}
+        names = {"test.echo": "回聲", "test.sleep": "等待", "test.fail": "故意失敗", "video.download": "下載影片"}
         run = agent.executor.summary()
         tasks_lbl.config(text="目前任務：" + ("、".join(f"{names.get(r['type'], r['type'])} {int(r['progress'] * 100)}%" for r in run)
                                              if run else "沒有"))
