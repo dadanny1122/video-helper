@@ -95,3 +95,13 @@ token 不對或註冊 1 小時沒核准 → `404 REGISTRATION_NOT_FOUND`。
 
 ## 仍然沒有的端點（刻意）
 建立／取消任務、看排程理由——只在 Master 那台的「⚙ 進階設定 → 📋 節點任務」（決策 D2）。
+
+# 協定 1.2（V3：節點下載影片，電腦版 v1.31.0 起）
+
+- 心跳 `resources` 多兩個欄位：`isolation`（`basic`／`none`）、`isolation_reason`（≤200 字）。舊版 Master（1.1）不認得 → 整份能力丟掉、不派任務，所以兩邊要一起更新。
+- 新任務類型 `video.download`（1.0）：`params` = `url`（https、`nexus/net/sites.json` 的頁面網域、≤2048 字）＋`quality`（`best`／`1080`／`720`／`480`，可省略）；`limits` 多 `max_output_bytes`（只有這個類型帶，上限 8GB）；`max_runtime_seconds` 上限 7200。
+- 只派給 `isolation == basic` 而且宣稱支援 `video.download` 的節點；排除原因 `no_sandbox`。
+- 成功結果：`{"files": [{"name","size","sha256","path"}], "title", "site", "id", "height"}`；Master 驗證檔名不含路徑字元、大小合理、雜湊 64 位 16 進位。檔案留在節點（V4 才傳回）。
+- 節點回報的新錯誤碼：可重試 `NETWORK`、`RATE_LIMITED`；不重試 `NET_BLOCKED`、`NOT_FOUND`、`DISK_FULL`、`SANDBOX_UNAVAILABLE`、`OUTPUT_REJECTED`、`TOO_BIG`、`CLEANUP_FAILED`、`LEFTOVER_PROCESSES`、`PROTOCOL_UNSUPPORTED`。
+- 仍然沒有建立／取消任務的網路端點。
+

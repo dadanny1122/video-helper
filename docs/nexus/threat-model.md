@@ -68,3 +68,22 @@
 | T28 | 長輪詢佔滿 Master 連線 | 每 IP inbox 60 次/分、最多等 25 秒、連線上限 64；停用 Master 時先放掉所有長輪詢 | AT-023 |
 
 V2 的測試 Adapter 不開子程序、不碰檔案、不連網，所以**還不需要沙箱**；任何會碰檔案或網路的 Adapter 都要等 V3 的沙箱。
+
+## 6. V3（節點在沙箱裡下載影片，電腦版 v1.31.0）新增的威脅
+
+隔離等級照實寫：**基本（程序限制＋程式自己檢查網路）**，不是 OS 級隔離（規格 2.2、ADR-6）。
+
+| # | 威脅 | 對策（程式位置） | 驗證 |
+|---|---|---|---|
+| T29 | Master（或被冒用的 Master）叫節點連內網、雲端 metadata、任意網站 | 三層：建任務時 `guard.static_check`（https／443／`sites.json` 頁面網域／不准 IP、帳密）；子程序裡 `video.install_net_guard`：每次 getaddrinfo 只解析一次並檢查網域＋443＋全部是公開 IP（`is_global`、IPv4-mapped 還原），connect 只准連檢查過的 IP；影片伺服器網址下載前再檢查 | `test_net.py`、`test_sandbox_video.py`（含真的 yt-dlp：清單網域解析到 127.0.0.1 → NET_BLOCKED）、AT-007 |
+| T30 | 繞過 Python socket 的網路套件（curl_cffi 等）或 ffmpeg 自己連網 | 子程序 `BYPASS_LIBS` 一律當作沒裝；yt-dlp 全部用 native 下載器，ffmpeg 只做本機合併；協定白名單（拒 rtmp、f4m…） | `test_bypass_network_libs_blocked`、`test_unsupported_protocols_refused` |
+| T31 | 任務吃光記憶體／CPU、狂開程序、跑不停 | Job Object：記憶體 2GB、CPU 50% 硬上限、8 個程序、`KILL_ON_JOB_CLOSE`；時間由節點計時 → `TerminateJobObject` | `test_sandbox_job.py`（Windows CI）、AT-008 |
+| T32 | 取消或當掉後留下下載程序（孫程序） | 暫停建立→放進 Job→才恢復（沒有空檔逃出）；結束後確認 Job 內 0 個程序，有殘留就算失敗；打包成 EXE 後也實測 | `test_cancel_kills_grandchild_too`、nexus.yml `frozen` job、AT-015、AT-026 |
+| T33 | 任務寫到資料夾外、用連結偷搬使用者檔案、檔名帶磁碟機代號 | 隨機工作資料夾；`deliver` 只收真的在 output 裡、不是連結、副檔名 mp4/mkv/webm/m4a 的檔；`sanitize_filename`＋`is_inside`；一個不合格整批不搬；不覆蓋 | `test_sandbox_workspace.py`（含 `C:`、`x:`、UNC、符號連結）、AT-006 |
+| T34 | 任務讀到節點的秘密（憑證、金鑰、瀏覽器 Cookie） | 環境變數白名單；APPDATA／USERPROFILE／HOME 都指到任務 tmp；yt-dlp 不用 Cookie、不用系統代理、不寫快取；子程序只讀 input/task.json | `test_env_whitelist_inside_child` |
+| T35 | 清理失敗卻顯示成功 | 刪不掉工作資料夾 → CLEANUP_FAILED | `test_cleanup_reports_failure_when_file_locked`、AT-024 |
+| T36 | 沙箱建不起來就偷偷不用沙箱照跑 | 節點啟動 `jobs.probe()`；不是 basic 就不宣稱支援 video.download，Master 排除原因 `no_sandbox` | `test_worker_without_sandbox_does_not_offer_video_download`、AT-025 |
+| T37 | 子程序回報亂塞資料拖垮節點 | stdout 每行 64KB、最多 10 萬則事件，超過就整組結束；結果由 Master `verify` 檢查檔案清單格式 | 程式碼審查、`dispatch.verify` |
+
+**V3 接受的殘餘風險**：同一個 Windows 帳號下的惡意程式不受沙箱限制；工作資料夾權限用 Windows 預設（沒另設 ACL）；網路限制在 Python 層，不是防火牆；yt-dlp 本身有漏洞時，影響範圍被上面幾層限制，但不是零。
+
