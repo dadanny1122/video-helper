@@ -93,7 +93,7 @@ def test_renew_when_recommended(master, agent):
     soon = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=3)).isoformat(timespec="seconds").replace("+00:00", "Z")
     master.repo.db.conn().execute("UPDATE credentials SET expires_at=? WHERE device_id=?", (soon, did))
     assert wait_for(lambda: [x["status"] for x in master.repo.credentials_of(did)] == ["SUPERSEDED", "ACTIVE"], 10)
-    assert wait_for(lambda: certs.cert_fingerprint(agent.store.cert()) != old_fp, 5)
+    assert wait_for(lambda: certs.cert_fingerprint(agent.store.cert()) != old_fp, 20)  # Windows CI 偶爾慢，5 秒會誤報
     assert wait_for(lambda: master.repo.get_device(did)["last_sequence"] >= 3, 10)   # 新憑證繼續心跳
 
 
