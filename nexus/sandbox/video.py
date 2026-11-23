@@ -103,6 +103,9 @@ def classify(msg: str) -> tuple[str, bool]:
         return "NET_BLOCKED", False
     if "429" in m or "too many requests" in m:
         return "RATE_LIMITED", True
+    if any(k in m for k in ("http error 410", "http error 403", "http error 401", "forbidden", "410: gone",
+                            "login required", "sign in to confirm")):
+        return "SITE_REFUSED", False                  # 網站擋程式（例如 Pornhub 對非瀏覽器回 410）：重試也沒用
     if any(k in m for k in ("no space left", "not enough space", "errno 28", "disk full")):
         return "DISK_FULL", False
     if any(k in m for k in ("404", "not found", "has been removed", "video unavailable", "is unavailable",
@@ -203,6 +206,9 @@ def run_video_download(params: dict, ws: dict, *, emit, error_cls, ydl_cls=None,
     except Exception as e:                              # yt-dlp 的 DownloadError 等：照訊息分類
         code, retry = classify(f"{type(e).__name__}: {e}")
         msg = str(e).replace(NET_MARK, "").strip()
+        if code == "SITE_REFUSED":
+            msg = ("網站拒絕讓程式直接開網頁（不是瀏覽器）。Pornhub 等網站會這樣，"
+                   "節點下載目前做不到；請改用瀏覽器腳本的下載或「送到電腦版」。原始訊息：" + msg)
         raise error_cls(code, _short(msg), retry) from None
     emit("progress", progress=1.0)
     return {"title": str(info.get("title") or "")[:200], "id": str(info.get("id") or "")[:64],

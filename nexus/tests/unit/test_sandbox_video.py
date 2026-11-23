@@ -80,6 +80,8 @@ def test_guard_error_is_oserror_so_ytdlp_reports_it():
     ("HTTP Error 503: Service Unavailable", "NETWORK", True),
     ("Unsupported URL: https://x", "INVALID_INPUT", False),
     ("something weird", "ADAPTER_ERROR", False),
+    ("[PornHub] 658229bd52f10: Unable to download webpage: HTTP Error 410: Gone", "SITE_REFUSED", False),
+    ("HTTP Error 403: Forbidden", "SITE_REFUSED", False),
 ])
 def test_classify(msg, code, retry):
     assert video.classify(msg) == (code, retry)
@@ -208,3 +210,11 @@ def test_worker_without_sandbox_does_not_offer_video_download(monkeypatch):
     monkeypatch.setattr(ex, "_SANDBOX", {"isolation": "none", "reasons": ["不是 Windows"]})
     e = ex.Executor(A())
     assert "video.download" not in e.versions and "test.echo" in e.versions
+
+
+def test_site_refused_not_retried_and_explained(tmp_path):
+    from nexus.tasks.states import NON_RETRYABLE_ERRORS, RETRYABLE_ERRORS
+    with pytest.raises(ChildError) as e:
+        go(tmp_path, {}, fail="ERROR: [PornHub] x: Unable to download webpage: HTTP Error 410: Gone")
+    assert e.value.code == "SITE_REFUSED" and not e.value.retryable and "送到電腦版" in e.value.message
+    assert "SITE_REFUSED" in NON_RETRYABLE_ERRORS and "SITE_REFUSED" not in RETRYABLE_ERRORS
