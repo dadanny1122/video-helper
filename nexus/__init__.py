@@ -2,7 +2,7 @@
 Video Helper Nexus：Master／Worker 節點連線層（V1：註冊、核准、心跳、撤銷）
 規格與決策見 docs/nexus/。這個套件不碰既有下載器的任何狀態檔。
 """
-NEXUS_VERSION = "0.3.2"          # Nexus 元件版本（跟 App 的 VERSION 分開）
+NEXUS_VERSION = "0.3.3"          # Nexus 元件版本（跟 App 的 VERSION 分開）
 PROTOCOL_VERSION = "1.2"         # 控制協定版本；major 不同就拒絕（1.1＝V2：心跳帶節點能力、任務派送；1.2＝V3：能力多沙箱等級）
 TASKS_MIN_PROTOCOL = "1.1"       # 要這個版本以上才會被派任務（1.0 的 Worker 照樣能心跳）
 MIN_PEER_PROTOCOL = "1.0"        # Master 接受的最低 Worker 協定版本
