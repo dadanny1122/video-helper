@@ -725,13 +725,11 @@ log = setup_log()
 
 BRIDGE_PORTS = list(range(47321, 47326))
 BRIDGE_API = 1        # 腳本和電腦版溝通的「語言版本」：改了請求格式才 +1
-BRIDGE_HOSTS = ("pornhub.com", "xvideos.com", "xnxx.com", "youporn.com", "redtube.com",
-                "xhamster.com", "xhamster.desi", "xhamster2.com", "xhamster3.com", "xhamster.one",
-                "tube8.com", "youjizz.com", "spankbang.com")
+# 支援下載的網站：唯一來源是 nexus/net/sites.json（電腦版、節點下載、安卓 vh_mobile.py 共用）
+from nexus.net import sites as _sites  # noqa: E402, I001
+BRIDGE_HOSTS = _sites.page_hosts()
 # 瀏覽器送來的「影片真正的位址」只接受這些網站自己的影片伺服器
-BRIDGE_MEDIA_HOSTS = ("phncdn.com", "pornhub.com", "xvideos-cdn.com", "xvideos.com", "xnxx-cdn.com", "xnxx.com",
-                      "ypncdn.com", "youporn.com", "rdtcdn.com", "redtube.com", "xhcdn.com", "xhamster.com",
-                      "t8cdn.com", "tube8.com", "youjizz.com", "sb-cd.com", "spankbang.com")
+BRIDGE_MEDIA_HOSTS = _sites.media_hosts()
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
 PAIR_SECONDS = 300
@@ -5243,7 +5241,9 @@ def selftest(out_path):
         _k = _nc.new_key()
         _cert = _nc.sign_device_cert(*_nc.make_ca(years=1), _nc.make_csr(_k, "selftest"), "selftest", days=1)
         r["nexus"] = {"version": nexus.NEXUS_VERSION, "cryptography": cryptography.__version__,
-                      "sign_ok": bool(_nc.cert_fingerprint(_cert))}
+                      "sign_ok": bool(_nc.cert_fingerprint(_cert)),
+                      "sites": len(_sites.load()["sites"])}       # sites.json 有打包進去（--add-data）
+        ok &= r["nexus"]["sites"] > 0
     except Exception as e:
         r["nexus_error"] = repr(e)
         ok = False

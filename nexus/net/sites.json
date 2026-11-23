@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "note": "支援下載的網站（電腦版、Nexus 節點下載、安卓 vh_mobile.py 共用）。只擋廣告的網站不要加進來。page＝影片頁網域，media＝影片伺服器網域；子網域自動算。",
+  "sites": [
+    {"name": "Pornhub", "page": ["pornhub.com"], "media": ["phncdn.com", "pornhub.com"]},
+    {"name": "XVideos", "page": ["xvideos.com"], "media": ["xvideos-cdn.com", "xvideos.com"]},
+    {"name": "XNXX", "page": ["xnxx.com"], "media": ["xnxx-cdn.com", "xnxx.com"]},
+    {"name": "YouPorn", "page": ["youporn.com"], "media": ["ypncdn.com", "youporn.com"]},
+    {"name": "RedTube", "page": ["redtube.com"], "media": ["rdtcdn.com", "redtube.com"]},
+    {"name": "xHamster", "page": ["xhamster.com", "xhamster.desi", "xhamster2.com", "xhamster3.com", "xhamster.one"],
+     "media": ["xhcdn.com", "xhamster.com"]},
+    {"name": "Tube8", "page": ["tube8.com"], "media": ["t8cdn.com", "tube8.com"]},
+    {"name": "YouJizz", "page": ["youjizz.com"], "media": ["youjizz.com"]},
+    {"name": "SpankBang", "page": ["spankbang.com"], "media": ["sb-cd.com", "spankbang.com"]}
+  ]
+}

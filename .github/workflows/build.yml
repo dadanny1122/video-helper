@@ -168,6 +168,7 @@ jobs:
           pyinstaller --onefile --windowed --name VideoHelper
           --collect-all yt_dlp --collect-submodules pystray --collect-data sv_ttk
           --add-binary "ffmpeg_bin/ffmpeg.exe;ffmpeg" --add-binary "ffmpeg_bin/ffprobe.exe;ffmpeg"
+          --add-data "nexus/net/sites.json;nexus/net"
           --exclude-module PIL._avif --exclude-module PIL.AvifImagePlugin
           --exclude-module PIL._webp --exclude-module PIL.WebPImagePlugin
           --exclude-module PIL.ImageQt --exclude-module PIL.ImageTk
