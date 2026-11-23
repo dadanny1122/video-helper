@@ -82,6 +82,9 @@ def main():
         except Exception as e:
             st = type(e).__name__
         notice(f"診斷：{label}", f"HTTP {st}")
+        if label.startswith("Python＋") and st == 410:
+            # 2026-11-23 實測：GitHub 機器（美國）連一般 Python 帶瀏覽器標頭也拿 410 → 是這台機器被擋，不是節點的問題
+            inconclusive("影片伺服器對 GitHub 的機器回 410（地區或 IP 限制），這裡測不出節點下載能不能用；要在台灣實機測")
     d = tempfile.mkdtemp()
     try:
         r = SandboxRunner(os.path.join(d, "nx"), os.path.join(d, "dl")).run(
