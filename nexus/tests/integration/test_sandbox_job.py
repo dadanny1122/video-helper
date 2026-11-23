@@ -42,9 +42,12 @@ def test_limits_really_applied():
 
 
 def test_child_is_inside_job_from_first_instruction():
-    code = ("import ctypes,sys;b=ctypes.c_int(0);"
-            "ctypes.windll.kernel32.IsProcessInJob(ctypes.windll.kernel32.GetCurrentProcess(),None,ctypes.byref(b));"
-            "sys.exit(7 if b.value else 3)")
+    # 64 位元要先指定型別：GetCurrentProcess() 回的是 -1（偽 handle），沒指定會被截成 32 位元而呼叫失敗
+    code = ("import ctypes,sys;from ctypes import wintypes as w;k=ctypes.WinDLL('kernel32');"
+            "k.GetCurrentProcess.restype=w.HANDLE;"
+            "k.IsProcessInJob.argtypes=[w.HANDLE,w.HANDLE,ctypes.POINTER(w.BOOL)];"
+            "b=w.BOOL(0);ok=k.IsProcessInJob(k.GetCurrentProcess(),None,ctypes.byref(b));"
+            "sys.exit(7 if ok and b.value else 3)")
     with Job() as job:
         p = job.spawn([PY, "-c", code])
         assert p.wait(30) == 7
