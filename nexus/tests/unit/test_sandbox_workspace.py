@@ -63,11 +63,13 @@ def test_sanitize_long_name_keeps_extension():
 
 def test_deliver_moves_allowed_files_with_hash(tmp_path):
     ws = Workspace(str(tmp_path / "root"))
-    with open(os.path.join(ws.output, "My: Video.mp4"), "wb") as f:
+    # Windows 檔名不能有冒號（NTFS 會當成「替代資料流」），所以只在 Linux 測冒號被換掉
+    raw, want = ("My Video.mp4", "My Video.mp4") if sys.platform == "win32" else ("My: Video.mp4", "My_ Video.mp4")
+    with open(os.path.join(ws.output, raw), "wb") as f:
         f.write(b"x" * 1000)
     dest = tmp_path / "dl"
     out = ws.deliver(str(dest))
-    assert len(out) == 1 and out[0]["name"] == "My_ Video.mp4" and out[0]["size"] == 1000
+    assert len(out) == 1 and out[0]["name"] == want and out[0]["size"] == 1000
     assert len(out[0]["sha256"]) == 64 and os.path.isfile(out[0]["path"]) and is_inside(out[0]["path"], str(dest))
 
 
@@ -79,6 +81,16 @@ def test_deliver_never_overwrites(tmp_path):
     open(os.path.join(ws.output, "v.mp4"), "wb").write(b"new")
     out = ws.deliver(str(dest))
     assert out[0]["name"] == "v (2).mp4" and (dest / "v.mp4").read_bytes() == b"old"
+
+
+def test_ntfs_alternate_data_stream_name_rejected(tmp_path):
+    """Windows：「v.mp4:hidden」會寫進 v.mp4 的隱藏資料流；收成果時不能被它騙過"""
+    if sys.platform != "win32":
+        pytest.skip("只有 NTFS 有替代資料流")
+    ws = Workspace(str(tmp_path / "root"))
+    open(os.path.join(ws.output, "x:hidden.mp4"), "wb").write(b"evil")
+    with pytest.raises(WorkspaceError):
+        ws.deliver(str(tmp_path / "dl"))
 
 
 def test_deliver_rejects_bad_extension_whole_batch(tmp_path):
