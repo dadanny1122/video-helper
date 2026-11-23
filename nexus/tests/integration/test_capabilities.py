@@ -41,7 +41,10 @@ def test_agent_heartbeat_reports_capabilities(master, tmp_path):
         want = {"test.echo", "test.sleep", "test.fail"} | ({"video.download"} if sandbox_status()["isolation"] == "basic" else set())
         assert set(cap["adapters"]) == want
         assert cap["resources"]["cpu_count"] >= 1 and cap["resources"]["memory_total_mb"] > 0
-        assert master.repo.get_device(did)["protocol_version"] == "1.1"
+        assert master.repo.get_device(did)["protocol_version"] == "1.2"
+        # V3：沙箱等級也回報（Windows＝basic；其他平台＝none＋原因）
+        iso = cap["resources"]["isolation"]
+        assert iso == sandbox_status()["isolation"] and (iso == "basic" or cap["resources"]["isolation_reason"])
         # 關掉「接收任務」→ 下一次心跳就反映
         cfg["accept_tasks"] = False
         assert wait_for(lambda: master.registry.tr.capabilities(did)["accepting"] is False, 5)

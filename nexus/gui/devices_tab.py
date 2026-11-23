@@ -93,9 +93,10 @@ class DevicesTab:
         mid.columnconfigure(0, weight=1)
         mid.rowconfigure(1, weight=1)
         ttk.Label(mid, text="節點名單（選一列再按下面的按鈕）", font=("", 10, "bold")).grid(row=0, column=0, sticky="w")
-        cols = ("name", "status", "conn", "seen", "created", "ip", "fp")
+        cols = ("name", "status", "conn", "seen", "iso", "created", "ip", "fp")
         self.tree = ttk.Treeview(mid, columns=cols, show="headings", height=7, selectmode="browse")
         for c, t, w in (("name", "名稱", 130), ("status", "狀態", 80), ("conn", "連線", 80), ("seen", "最後心跳", 90),
+                        ("iso", "沙箱", 110),
                         ("created", "配對時間", 110), ("ip", "來源 IP", 100), ("fp", "指紋（前 16）", 150)):
             self.tree.heading(c, text=t)
             self.tree.column(c, width=px(w), stretch=(c == "fp"))
@@ -177,6 +178,16 @@ class DevicesTab:
         code = self.svc.registry.pair.new()
         self.pair_lbl.config(text=f"{code[:3]} {code[3:]}")
         self.refresh()
+
+    def _isolation(self, d) -> str:
+        """「沙箱」欄：基本（程序限制）／不能用＋原因／舊版沒回報"""
+        cap = self.svc.capabilities(d["device_id"]) if hasattr(self.svc, "capabilities") else None
+        res = (cap or {}).get("resources") or {}
+        if "isolation" not in res:
+            return "—（舊版節點）" if cap else "—"
+        if res["isolation"] == "basic":
+            return "基本（可下載）"
+        return "不能用：" + (res.get("isolation_reason") or "原因不明")[:40]
 
     # ---------- 名單與操作 ----------
     def _selected(self):
@@ -260,6 +271,7 @@ class DevicesTab:
                 d["name"], STATE_NAME.get(d["status"], d["status"]),
                 CONN_NAME.get(d["connection_state"], d["connection_state"]) if d["status"] == "ACTIVE" else "—",
                 _ago(d["last_seen_at"]) if d["status"] == "ACTIVE" else "—",
+                self._isolation(d) if d["status"] == "ACTIVE" else "—",
                 _local(d["created_at"]), d["source_ip_first"] or "—", d["public_key_fingerprint"][:16]))
             self._rows[iid] = d
             if sel and sel["device_id"] == d["device_id"]:

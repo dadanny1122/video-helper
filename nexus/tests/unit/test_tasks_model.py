@@ -202,3 +202,13 @@ def test_repo_capabilities_roundtrip(tmp_path):
     tr.upsert_capabilities("d1", {"cpu_count": 4}, {"test.echo": "1.0"}, 1, False)
     cap = tr.capabilities("d1")
     assert cap["resources"]["cpu_count"] == 4 and cap["max_concurrency"] == 1 and cap["accepting"] is False
+
+
+def test_capabilities_isolation_field_validated():
+    from nexus.core.errors import NexusError
+    from nexus.tasks import capabilities
+    ok = capabilities.normalize({"resources": {"cpu_count": 2, "isolation": "basic"}, "adapters": {}})
+    assert ok["resources"]["isolation"] == "basic"
+    for bad in ({"isolation": "strong"}, {"isolation": ""}, {"isolation_reason": "x" * 300}):
+        with pytest.raises(NexusError):
+            capabilities.normalize({"resources": {"cpu_count": 2, **bad}, "adapters": {}})

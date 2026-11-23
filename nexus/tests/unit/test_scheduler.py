@@ -147,3 +147,33 @@ def test_assigns_and_respects_capacity(env):
     d = svc.tr.decisions_of(t1["task_id"])[0]
     assert d["weights_version"] == "w1" and len(d["candidates"]) == 2
     assert json.loads(json.dumps(d["candidates"]))[0]["total"] > 0
+
+
+# ---------- V3：下載任務一定要沙箱 ----------
+def test_video_download_needs_sandbox_node():
+    import datetime as _dt
+
+    from nexus.tasks import manifest as _mf
+    from nexus.tasks.scheduler import REASONS, evaluate
+    now = _dt.datetime(2026, 11, 23, tzinfo=_dt.timezone.utc)
+    seen = now.isoformat().replace("+00:00", "Z")
+    def dev(i):
+        return {"device_id": i, "name": i, "status": "ACTIVE", "connection_state": "CONNECTED",
+                "last_seen_at": seen, "protocol_version": "1.2"}
+    base = {"cpu_count": 4, "cpu_load": 0.1, "memory_total_mb": 8000, "memory_available_mb": 4000, "disk_free_mb": 100000,
+            "platform": "windows", "arch": "AMD64"}
+    caps = {"good": {"resources": {**base, "isolation": "basic"}, "adapters": {"video.download": "1.0"},
+                     "max_concurrency": 1, "accepting": True},
+            "nosb": {"resources": {**base, "isolation": "none", "isolation_reason": "不是 Windows"},
+                     "adapters": {"video.download": "1.0"}, "max_concurrency": 1, "accepting": True},
+            "old": {"resources": base, "adapters": {"test.echo": "1.0"}, "max_concurrency": 1, "accepting": True}}
+    m = _mf.build("video.download", {"url": "https://www.xvideos.com/video.abc/x"})
+    rows = {r["device_id"]: r for r in evaluate({"type": "video.download"}, m, [dev(i) for i in caps], caps, {}, {}, set(), now=now)}
+    assert rows["good"]["eligible"]
+    assert "no_sandbox" in rows["nosb"]["reasons"] and not rows["nosb"]["eligible"]
+    assert {"no_sandbox", "adapter_missing"} <= set(rows["old"]["reasons"])
+    assert "沙箱" in REASONS["no_sandbox"]
+    # 測試任務不需要沙箱
+    t = _mf.build("test.echo", {"text": "hi"})
+    rows = {r["device_id"]: r for r in evaluate({"type": "test.echo"}, t, [dev("old")], {"old": caps["old"]}, {}, {}, set(), now=now)}
+    assert rows["old"]["eligible"]

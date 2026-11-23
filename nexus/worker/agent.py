@@ -250,7 +250,11 @@ class WorkerAgent:
     def capabilities(self) -> dict:
         running = list(self.running_ids())
         mc = max(1, min(4, int(self.cfg.get("max_concurrency", 1) or 1)))
-        return {"resources": self.probe.snapshot(), "adapters": dict(self.executor.versions),
+        from nexus.worker.executor import sandbox_status
+        sb = sandbox_status()
+        res = {**self.probe.snapshot(), "isolation": sb.get("isolation", "none"),
+               "isolation_reason": "；".join(sb.get("reasons") or [])[:200]}
+        return {"resources": res, "adapters": dict(self.executor.versions),
                 "max_concurrency": mc, "accepting": bool(self.cfg.get("accept_tasks", True)), "running": running}
 
     def _heartbeat_once(self):

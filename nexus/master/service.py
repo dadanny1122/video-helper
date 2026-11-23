@@ -166,6 +166,13 @@ class MasterService:
         repo = self._any_repo()
         return repo.list_devices() if repo else []
 
+    def capabilities(self, device_id: str) -> dict | None:
+        """節點最近一次回報的能力（Master 沒開就回 None）"""
+        try:
+            return self.registry.tr.capabilities(device_id) if self.registry else None
+        except Exception:
+            return None
+
     def audit(self, limit=100) -> list:
         repo = self._any_repo()
         return repo.audit_tail(limit) if repo else []

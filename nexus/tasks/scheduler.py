@@ -40,6 +40,7 @@ REASONS = {
     "disk": "可用磁碟不夠",
     "full": "節點同時任務數已滿",
     "declined": "這台之前拒收過這個任務",
+    "no_sandbox": "節點的沙箱不能用（下載影片一定要在沙箱裡跑）",
 }
 
 
@@ -80,6 +81,8 @@ def evaluate(task: dict, manifest: dict, devices: list[dict], caps: dict, busy: 
                 reasons.append("adapter_missing")
             elif spec is None or not adapters.compatible(spec, have):
                 reasons.append("adapter_version")
+            if adapters.needs_sandbox(task["type"]) and res.get("isolation") != "basic":
+                reasons.append("no_sandbox")
             if req.get("platform", "any") != "any" and res.get("platform") != req["platform"]:
                 reasons.append("platform")
             if req.get("min_memory_mb", 0) and res.get("memory_available_mb", -1) < req["min_memory_mb"]:

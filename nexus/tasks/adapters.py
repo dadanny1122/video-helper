@@ -68,6 +68,12 @@ ADAPTERS: dict[str, AdapterSpec] = {
 }
 
 
+def needs_sandbox(name: str) -> bool:
+    """有副作用（連網、寫檔）的任務一定要在沙箱裡跑（V3 D6）"""
+    spec = ADAPTERS.get(name)
+    return bool(spec and spec.side_effects != "none")
+
+
 def get(name: str) -> AdapterSpec | None:
     return ADAPTERS.get(name)
 
