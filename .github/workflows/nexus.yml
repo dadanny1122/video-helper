@@ -7,6 +7,7 @@ on:
   push:
     paths:
       - 'nexus/**'
+      - '.github/nexus_frozen_check.py'
       - 'requirements-dev.in'
       - 'requirements-dev.txt'
       - 'ruff.toml'
@@ -51,3 +52,23 @@ jobs:
           # pytest 回 5＝「這兩個資料夾還沒有測試」（PR5 以前）：不算失敗；其他非 0 都要擋
           if ($LASTEXITCODE -eq 5) { Write-Host "還沒有整合測試（PR5 起才有）"; exit 0 }
           exit $LASTEXITCODE
+
+  # V3：打包成 EXE 之後沙箱還正不正常（PyInstaller onefile 會多一層外殼程序）
+  frozen:
+    runs-on: windows-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --require-hashes -r requirements.txt
+      - name: 打包沙箱檢查程式（onefile，跟 VideoHelper.exe 一樣）
+        run: pyinstaller --onefile --console --name nexus_frozen_check --paths . .github/nexus_frozen_check.py
+      - name: 執行打包後的沙箱檢查
+        shell: pwsh
+        run: |
+          ./dist/nexus_frozen_check.exe | Tee-Object -FilePath frozen.json
+          if ($LASTEXITCODE -ne 0) { Write-Output "::error title=打包後沙箱::有項目不對，看上面的 JSON"; exit 1 }
+          Write-Output "::notice title=打包後沙箱::寫檔搬運、取消整組結束（含孫程序）、環境變數白名單 OK"
+

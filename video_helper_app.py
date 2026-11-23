@@ -19,9 +19,16 @@ Video Helper 電腦版
     下半部是視窗介面（class App），只負責顯示和按鈕
 """
 
+import sys
+
+# Nexus 沙箱子程序（V3）：VideoHelper.exe --nexus-run <工作資料夾>。
+# 放在最上面：不載入下面的視窗、下載器、設定，子程序只跑 nexus/sandbox/child.py
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] in ("--nexus-run", "--probe-sleeper"):
+    from nexus.sandbox.child import entry as _nexus_child_entry
+    sys.exit(_nexus_child_entry())
+
 import os
 import re
-import sys
 import json
 import glob
 import hmac
