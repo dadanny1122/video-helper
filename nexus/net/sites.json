@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "note": "支援下載的網站（電腦版、Nexus 節點下載、安卓 vh_mobile.py 共用）。只擋廣告的網站不要加進來。page＝影片頁網域，media＝影片伺服器網域；子網域自動算。",
+  "note": "支援下載的網站（電腦版、Nexus 節點下載、安卓 vh_mobile.py 共用）。只擋廣告的網站不要加進來。page＝影片頁網域，media＝影片伺服器網域；子網域自動算；needs_browser＝網站擋程式開網頁（例如 Pornhub 回 410），節點下載要從瀏覽器「🖧 交給節點」。",
   "sites": [
-    {"name": "Pornhub", "page": ["pornhub.com"], "media": ["phncdn.com", "pornhub.com"]},
+    {"name": "Pornhub", "page": ["pornhub.com"], "media": ["phncdn.com", "pornhub.com"], "needs_browser": true},
     {"name": "XVideos", "page": ["xvideos.com"], "media": ["xvideos-cdn.com", "xvideos.com"]},
     {"name": "XNXX", "page": ["xnxx.com"], "media": ["xnxx-cdn.com", "xnxx.com"]},
     {"name": "YouPorn", "page": ["youporn.com"], "media": ["ypncdn.com", "youporn.com"]},

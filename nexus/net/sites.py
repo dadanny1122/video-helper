@@ -58,3 +58,12 @@ def site_name(host: str) -> str | None:
         if host_matches(host, s["media"]):
             return s["name"]
     return None
+
+
+def needs_browser(host: str) -> bool:
+    """這個網站會擋程式直接開網頁 → 節點要靠瀏覽器交來的影片位址（V3.1）"""
+    for s in load()["sites"]:
+        if host_matches(host, s["page"]):
+            return bool(s.get("needs_browser"))
+    return False
+

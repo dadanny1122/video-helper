@@ -327,6 +327,16 @@ class NewTaskDialog:
     def ok(self):
         try:
             n, p = self.params()
+            if n == "video.download" and not p.get("media_url"):
+                import urllib.parse
+
+                from nexus.net import sites
+                host = urllib.parse.urlsplit(p.get("url", "")).hostname or ""
+                if sites.needs_browser(host) and not messagebox.askyesno(
+                        "這個網站要從瀏覽器交", f"{sites.site_name(host)} 會擋程式直接開網頁，在這裡貼網址節點會下載失敗。\n\n"
+                        "請改用瀏覽器：開影片頁 →「⬇ 下載」→ 畫質旁的「🖧 交給節點」。\n\n還是要照樣送出嗎？",
+                        parent=self.win):
+                    return
             t = self.tab.submit(n, p, idempotency_key=self.key.get().strip() or None, max_runtime_seconds=int(self.runtime.get()),
                                 max_attempts=int(self.tries.get()))
         except ValueError:

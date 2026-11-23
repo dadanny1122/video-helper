@@ -114,3 +114,8 @@ def test_redirects_checked_and_limited():
 def test_sites_json_packaged_path_exists():
     assert os.path.isfile(sites.SITES_PATH)
     assert guard.MAX_REDIRECTS == 5
+
+
+def test_needs_browser_flag():
+    assert sites.needs_browser("cn.pornhub.com") and sites.needs_browser("www.pornhub.com")
+    assert not sites.needs_browser("www.xvideos.com") and not sites.needs_browser("example.com")
