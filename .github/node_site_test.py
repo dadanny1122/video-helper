@@ -53,6 +53,11 @@ def find_pornhub():
               .filter(d => d.h).sort((a, b) => a.h - b.h);
             return {title: fv.video_title || document.title, hls};
         }""")
+        if info and info["hls"]:
+            # 診斷：同一個位址，瀏覽器自己抓得到嗎？（分辨「網站只給瀏覽器」還是「地區／IP 限制」）
+            st = pg.evaluate("u => fetch(u, {credentials: 'include'}).then(r => r.status).catch(e => 'ERR ' + e)",
+                             info["hls"][0]["url"])
+            notice("診斷：瀏覽器自己抓影片位址", f"HTTP {st}")
         b.close()
     if not info or not info["hls"]:
         inconclusive("影片頁讀不到 flashvars（網站可能改版，或要年齡驗證）")
@@ -66,6 +71,17 @@ def main():
         print("::error::要在 Windows 跑（沙箱只支援 Windows）")
         return 1
     page, media, title = find_pornhub()
+    import urllib.error
+    import urllib.request
+    for label, hdrs in (("Python＋瀏覽器標頭", {"User-Agent": UA, "Referer": page}), ("Python 沒有標頭", {})):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(media, headers=hdrs), timeout=30) as r:
+                st = r.status
+        except urllib.error.HTTPError as e:
+            st = e.code
+        except Exception as e:
+            st = type(e).__name__
+        notice(f"診斷：{label}", f"HTTP {st}")
     d = tempfile.mkdtemp()
     try:
         r = SandboxRunner(os.path.join(d, "nx"), os.path.join(d, "dl")).run(

@@ -21,6 +21,8 @@ import urllib.parse
 
 from nexus.net import guard, sites
 
+BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")      # 跟電腦版 BROWSER_UA 一樣
 ALLOWED_PROTOCOLS = {"https", "http", "m3u8", "m3u8_native", "http_dash_segments", "http_dash_segments_generator"}
 NET_MARK = "[VH-NET]"
 QUALITY_FORMATS = {
@@ -148,7 +150,9 @@ def build_opts(ws: dict, quality: str, max_bytes: int, hook, *, referer: str | N
         "max_filesize": max_bytes,
         "progress_hooks": [hook],
         # V3.1：直接下載瀏覽器交來的影片位址（不開網頁）：一定用通用下載器、帶 Referer、檔名用瀏覽器給的標題
-        **({"force_generic_extractor": True, "http_headers": {"Referer": referer}} if referer else {}),
+        # User-Agent 跟電腦版 media_headers() 一樣假裝成一般 Chrome（有些影片伺服器只認瀏覽器的標頭）
+        **({"force_generic_extractor": True, "http_headers": {"Referer": referer, "User-Agent": BROWSER_UA}}
+           if referer else {}),
         **({"outtmpl": {"default": _safe_title(title) + " [%(id)s].%(ext)s"}} if title else {}),
     }
 

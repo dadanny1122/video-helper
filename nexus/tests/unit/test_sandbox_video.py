@@ -281,3 +281,9 @@ def test_expired_media_url_message(tmp_path):
                                  {"output": ws.output, "tmp": ws.tmp}, emit=lambda *a, **k: None,
                                  error_cls=ChildError, ydl_cls=Y, resolve_override=public)
     assert e.value.code == "SITE_REFUSED" and "重新從瀏覽器送" in e.value.message
+
+
+def test_media_mode_sends_browser_user_agent(tmp_path):
+    ws = Workspace(str(tmp_path))
+    o = video.build_opts({"output": ws.output, "tmp": ws.tmp}, "best", 1, lambda d: None, referer="https://www.pornhub.com/x")
+    assert o["http_headers"]["User-Agent"].startswith("Mozilla/5.0") and "Chrome" in o["http_headers"]["User-Agent"]
