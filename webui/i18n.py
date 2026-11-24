@@ -122,7 +122,7 @@ def tr(s):
     while b > a and _edge(s[b - 1]):
         b -= 1
     if (a > 0 or b < len(s)) and a < b:
-        for x, y in ((a, b), (a, len(s)), (0, b)):         # 前後的標點拿掉（只拿前面／只拿後面：括號要成對）
+        for x, y in ((a, len(s)), (0, b), (a, b)):         # 前後的標點拿掉（只拿前面／只拿後面：括號要成對）
             r = _core(s[x:y]) if (x, y) != (0, len(s)) else None
             if r is not None:
                 return _fix(s[:x]) + r + _fix(s[y:]).rstrip()

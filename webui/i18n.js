@@ -50,7 +50,7 @@ const I18N = (() => {
     while (a < b && edge(cs[a])) a++;
     while (b > a && edge(cs[b - 1])) b--;
     if ((a > 0 || b < cs.length) && a < b) {
-      for (const [x, y] of [[a, b], [a, cs.length], [0, b]]) {     // 前後的標點拿掉（只拿前面／只拿後面：括號要成對）
+      for (const [x, y] of [[a, cs.length], [0, b], [a, b]]) {     // 前後的標點拿掉（只拿前面／只拿後面：括號要成對）
         r = x === 0 && y === cs.length ? null : core(cs.slice(x, y).join(''));
         if (r !== null) return fixPunct(cs.slice(0, x).join('')) + r + fixPunct(cs.slice(y).join('')).trimEnd();
       }

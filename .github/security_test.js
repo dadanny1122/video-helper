@@ -61,7 +61,7 @@ const page = host => `<!doctype html><html><head><title>test video</title>
   let failed = 0;
   for (const domain of sites) {
     const host = 'www.' + domain;
-    const ctx = await browser.newContext();
+    const ctx = await browser.newContext({ locale: process.env.VH_LOCALE || 'zh-TW' });
     const p = await ctx.newPage();
     const outside = [];
     await ctx.route('**/*', route => {

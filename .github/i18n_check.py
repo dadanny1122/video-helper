@@ -219,7 +219,7 @@ def web_strings():
     return out
 
 
-ALLOW = ("繁體中文", ".雙語.srt", "語言")        # 英文版也照樣顯示的中文（語言選單、真的檔名）
+ALLOW = ("繁體中文", ".雙語.srt", "語言", "🌐 中文")        # 英文版也照樣顯示的中文（語言選單、真的檔名）
 
 
 def left_cjk(s):
@@ -260,7 +260,49 @@ def main():
     for zh, py, js in diff[:30]:
         print(f"  ❌ JS 和 Python 不一樣：{zh!r}\n      py={py!r}\n      js={js!r}")
     print(f"JS／Python 對照 {len(seen) + len(EXTRA)} 句，不一樣 {len(diff)} 句")
-    sys.exit(1 if missing or bad or diff else 0)
+    bad_script = check_script()
+    sys.exit(1 if missing or bad or diff or bad_script else 0)
+
+
+SCRIPT = os.path.join(ROOT, "video-helper.user.js")
+DICT_RE = re.compile(r"/\*I18N_EN\*/(.*?)/\*END_I18N_EN\*/", re.S)
+
+
+def check_script():
+    """瀏覽器腳本（規格 E2）：字典寫在腳本裡（單一檔案）。抓腳本裡的中文 → 用腳本的字典翻 → 不能剩中文；JS 和 Python 結果要一樣"""
+    import tempfile
+    src = open(SCRIPT, encoding="utf-8").read()
+    d = json.loads(DICT_RE.search(src).group(1))
+    tmp = os.path.join(tempfile.mkdtemp(), "script-en.json")
+    json.dump(d, open(tmp, "w", encoding="utf-8"), ensure_ascii=False)
+    i18n.load(tmp)
+    body = DICT_RE.sub("", src[src.index("==/UserScript=="):])
+    body = re.sub(r"console\.(log|warn|error|info)\([^\n]*", "", body)
+    ignore = set(d.get("ignore", []))
+    seen, missing = [], []
+    for s in js_strings(body):
+        if s in seen or s in ignore:
+            continue
+        seen.append(s)
+        if left_cjk(i18n.tr(sample(s))):
+            missing.append(s)
+    whole = [s for s in seen if "{" in s and not left_cjk(i18n.tr(sample(s)))]
+    missing = [s for s in missing if "{" in s or not any(s in w for w in whole)]
+    print(f"腳本：檢查 {len(seen)} 句，漏翻 {len(missing)} 句")
+    for s in missing:
+        print(f"  [腳本] {s!r}")
+    # 腳本裡的翻譯引擎（I18N-ENGINE-START～END）和 Python 一樣嗎
+    eng = src[src.index("// I18N-ENGINE-START"):src.index("// I18N-ENGINE-END")]
+    items = [sample(x) for x in seen] + EXTRA_SCRIPT
+    diff = js_parity(items, eng + "\nconst I18N = { tr: vhTr };\n")
+    for zh, py, js in diff[:20]:
+        print(f"  ❌ 腳本 JS 和 Python 不一樣：{zh!r}\n      py={py!r}\n      js={js!r}")
+    print(f"腳本 JS／Python 對照 {len(items)} 句，不一樣 {len(diff)} 句")
+    i18n.load()
+    return missing or diff
+
+
+EXTRA_SCRIPT = ["🛡 已攔截 12 次｜省下 30 個廣告請求", "2 分 5 秒", "❌ 載入失敗：網路錯誤", "開始播放：約 3 秒（依你過去 4 次校正）", "網速：12.3 Mbps（實測）"]
 
 
 EXTRA = ["⏸ 已暫停（3 部等待中）", "下載中 45%（還有 2 部）", "下載中 1・排隊 2・暫停 1・速度上限 7 Mbps・讀取網址中…", "心跳 3 秒前",
@@ -268,7 +310,7 @@ EXTRA = ["⏸ 已暫停（3 部等待中）", "下載中 45%（還有 2 部）",
          "下載完成：某某：影片", "✅ 執行中（127.0.0.1:47321）｜已配對 1 個瀏覽器", "完全沒翻譯的句子", "  前後有空白的完成  ", "🧹 清掉已結束"]
 
 
-def js_parity(items):
+def js_parity(items, engine=None):
     import shutil
     import subprocess
     node = shutil.which("node")
@@ -276,7 +318,7 @@ def js_parity(items):
         print("（沒有 node，跳過 JS 對照）")
         return []
     from webui import en_json
-    js = open(os.path.join(ROOT, "webui", "i18n.js"), encoding="utf-8").read().replace("/*EN*/{ exact: {}, patterns: [] }", en_json(), 1)
+    js = engine or open(os.path.join(ROOT, "webui", "i18n.js"), encoding="utf-8").read().replace("/*EN*/{ exact: {}, patterns: [] }", en_json(), 1)
     js += "\nconst items = JSON.parse(require('fs').readFileSync(0, 'utf8'));\nprocess.stdout.write(JSON.stringify(items.map((s) => I18N.tr(s))));"
     r = subprocess.run([node, "-e", js], input=json.dumps(items), capture_output=True, text=True, encoding="utf-8")
     if r.returncode:

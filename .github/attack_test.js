@@ -11,6 +11,7 @@ const { spawn } = require('child_process');
 const { chromium } = require('playwright');
 
 const src = fs.readFileSync(process.argv[2] || 'video-helper.user.js', 'utf8');
+const LOCALE = process.env.VH_LOCALE || 'zh-TW';
 const enqLog = path.join(os.tmpdir(), 'vh_enqueue.log');
 const notice = (t, m) => console.log(`::notice title=${t}::${m}`);
 const error = (t, m) => console.log(`::error title=${t}::${m}`);
@@ -88,7 +89,7 @@ const PAGE = `<!doctype html><html><head><title>attack test</title>
   const { port, code } = await ready;
   notice('攻擊模擬', `電腦版連線服務在 127.0.0.1:${port}`);
   const browser = await chromium.launch();
-  const ctx = await browser.newContext();
+  const ctx = await browser.newContext({ locale: LOCALE });   // v3.23.0：中文、英文各跑一次
   const p = await ctx.newPage();
   const enc = t => { let o = ''; for (let i = 0; i < t.length; i++) o += (t.charCodeAt(i) ^ NONCE.charCodeAt(i % NONCE.length)).toString(16).padStart(4, '0'); return o; };
   const dec = h => { let o = ''; for (let i = 0; i < h.length; i += 4) o += String.fromCharCode(parseInt(h.substr(i, 4), 16) ^ NONCE.charCodeAt((i / 4) % NONCE.length)); return o; };
@@ -107,7 +108,7 @@ const PAGE = `<!doctype html><html><head><title>attack test</title>
   // 2. 使用者操作：打開下載清單 → 按「🖥 送到電腦版」（腳本會跳出配對碼視窗 → 配對 → 送出）
   let sent = false;
   for (let i = 0; i < 6 && !sent; i++) {
-    const pc = p.getByText('🖥 送到電腦版', { exact: true }).first();
+    const pc = p.getByText(LOCALE.startsWith('zh') ? '🖥 送到電腦版' : '🖥 Send to Desktop', { exact: true }).first();
     if (await pc.count() && await pc.isVisible()) { await pc.click(); sent = true; break; }
     for (const el of await p.$$('.vh-ui *')) { try { if (await el.isVisible()) await el.click({ timeout: 200, force: true }); } catch (e) {} }
     await p.waitForTimeout(500);
