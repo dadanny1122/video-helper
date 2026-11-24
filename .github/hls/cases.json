@@ -45,6 +45,39 @@
   ]
  },
  {
+  "name": "屬性順序不同：RESOLUTION 在前、CODECS 引號裡有逗號",
+  "kind": "master",
+  "base": "https://cdn.example.com/v/123/master.m3u8",
+  "text": "#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS=\"avc1.640028,mp4a.40.2\",FRAME-RATE=30,BANDWIDTH=5000000\nfhd.m3u8\n",
+  "expect": [
+   {
+    "height": 1080,
+    "bw": 5000000,
+    "url": "https://cdn.example.com/v/123/fhd.m3u8"
+   }
+  ]
+ },
+ {
+  "name": "屬性有空白、小寫網址參數",
+  "kind": "master",
+  "base": "https://cdn.example.com/v/123/master.m3u8",
+  "text": "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1, BANDWIDTH=700000, RESOLUTION=640x360\nlow.m3u8?a=1\n",
+  "expect": [
+   {
+    "height": 360,
+    "bw": 700000,
+    "url": "https://cdn.example.com/v/123/low.m3u8?a=1"
+   }
+  ]
+ },
+ {
+  "name": "完全沒有畫質項目（只有片段清單的標籤）",
+  "kind": "master",
+  "base": "https://cdn.example.com/v/123/master.m3u8",
+  "text": "#EXTM3U\n#EXT-X-VERSION:3\n",
+  "expect": []
+ },
+ {
   "name": "沒有 RESOLUTION，用 NAME",
   "kind": "master",
   "base": "https://cdn.example.com/v/123/master.m3u8",

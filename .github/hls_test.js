@@ -29,9 +29,9 @@ function grab(name) {
 }
 
 const files = {};
-const ctx = { URL, files, getData: async (u) => { await new Promise(r => setImmediate(r)); if (!(u in files)) throw new Error('404 ' + u); return files[u]; } };
+const ctx = { URL, files, fetched: [], getData: async (u) => { await new Promise(r => setImmediate(r)); ctx.fetched.push(u); if (!(u in files)) throw new Error('404 ' + u); return files[u]; } };
 vm.createContext(ctx);
-for (const f of ['absUrl', 'parseMaster', 'parseMedia', 'resolveMedia']) vm.runInContext(grab(f), ctx);
+for (const f of ['absUrl', 'parseMaster', 'parseMedia', 'resolveMedia', 'downloadHls']) vm.runInContext(grab(f), ctx);
 
 const cases = JSON.parse(fs.readFileSync(path.join(__dirname, 'hls', 'cases.json'), 'utf8'));
 let bad = 0;
@@ -78,6 +78,21 @@ for (const c of cases) {
       assert.strictEqual(r.audio, 'https://cdn.example.com/au.m3u8');
     }],
   ];
+  // 下載流程（downloadHls）：遇到不支援的情況要在抓任何片段之前就停，錯誤訊息要講清楚
+  const M = 'https://cdn.example.com/media.m3u8';
+  const stop = (name, playlist, re, src = {}) => [name, async () => {
+    files[M] = playlist;
+    ctx.fetched.length = 0;
+    await assert.rejects(ctx.downloadHls({ url: M, ...src }, 'x', () => {}, () => {}), e => re.test(e.message));
+    assert.deepStrictEqual(ctx.fetched.filter(u => !/\.m3u8/.test(u)), [], '不應該抓任何片段');
+  }];
+  checks.push(
+    stop('有加密 → 停下、說「加密」、沒抓片段', '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="k.key"\n#EXTINF:4,\n0.ts\n', /加密/),
+    stop('SAMPLE-AES 也算加密', '#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI="k"\n#EXTINF:4,\n0.ts\n', /加密/),
+    stop('BYTERANGE → 停下、叫你送到電腦版', '#EXTM3U\n#EXTINF:4,\n#EXT-X-BYTERANGE:10@0\nall.ts\n', /送到電腦版/),
+    stop('聲音另外放 → 停下、叫你送到電腦版', '#EXTM3U\n#EXTINF:4,\n0.ts\n', /聲音/, { audio: 'https://cdn.example.com/au.m3u8' }),
+    stop('沒有片段 → 停下', '#EXTM3U\n#EXT-X-ENDLIST\n', /找不到影片片段/),
+  );
   for (const [name, fn] of checks) {
     try { await Promise.race([fn(), new Promise((_, no) => setTimeout(() => no(new Error('超過 2 秒沒結束（可能無限繞圈）')), 2000))]); console.log('✔', name); } catch (e) { bad++; console.log(`::error title=HLS 解析::${name}：${e.message}`); }
   }

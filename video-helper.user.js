@@ -3,7 +3,7 @@
 // @name:en      Video Helper
 // @name:zh-TW   Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.22.1
+// @version      3.22.2
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @description:zh-TW 安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @description:en Blocks pop-ups, forced redirects and dangerous downloads; stops ad networks from loading (saves bandwidth); hides and skips video ads; shows playback status and load-time estimates; one-click download with quality picker on supported sites. Interface is in Traditional Chinese.
@@ -1790,7 +1790,7 @@
   //   ・一行網址壞掉只跳過那一行；最多看 200 個畫質
   function parseMaster(text, base) {
     const lines = text.split(/\r?\n/).map(l => l.trim());
-    const attr = (l, k) => { const m = l.match(new RegExp('(?:^|[:,])' + k + '=("[^"]*"|[^,]*)')); return m ? m[1].replace(/^"|"$/g, '') : null; };
+    const attr = (l, k) => { const m = l.match(new RegExp('(?:^|[:,])\\s*' + k + '\\s*=\\s*("[^"]*"|[^,]*)')); return m ? m[1].trim().replace(/^"|"$/g, '') : null; };
     const audio = {};
     for (const l of lines) {
       if (!l.startsWith('#EXT-X-MEDIA:') || attr(l, 'TYPE') !== 'AUDIO' || !attr(l, 'URI')) continue;
@@ -2103,7 +2103,7 @@
   // 切片下載：同時抓 6 段，失敗重試 3 次
   async function downloadHls(s, baseName, onProgress, onStage) {
     const media = s.media || await resolveMedia(s.url, s.bw || 0);
-    if (media.encrypted) throw new Error('這部影片有加密，目前不支援');
+    if (media.encrypted) throw new Error('這部影片有加密，瀏覽器這邊不能下載，請用「送到電腦版」');
     // 這兩種瀏覽器這邊做不好（會沒聲音／重複抓同一個大檔），交給電腦版的 yt-dlp
     if (media.audio || s.audio) throw new Error('這部影片的聲音另外放，瀏覽器下載會沒有聲音，請用「送到電腦版」');
     if (media.byterange) throw new Error('這部影片的片段格式瀏覽器不支援，請用「送到電腦版」');
