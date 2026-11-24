@@ -1,0 +1,228 @@
+[
+ {
+  "name": "一般畫質總表（相對網址）",
+  "kind": "master",
+  "base": "https://cdn.example.com/v/123/master.m3u8",
+  "text": "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360\n360p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720\n720p/index.m3u8\n",
+  "expect": [
+   {
+    "height": 360,
+    "bw": 800000,
+    "url": "https://cdn.example.com/v/123/360p/index.m3u8"
+   },
+   {
+    "height": 720,
+    "bw": 2500000,
+    "url": "https://cdn.example.com/v/123/720p/index.m3u8"
+   }
+  ],
+  "first": "https://cdn.example.com/v/123/360p/index.m3u8"
+ },
+ {
+  "name": "Windows 換行＋絕對路徑＋問號參數",
+  "kind": "master",
+  "base": "https://cdn.example.com/v/123/master.m3u8",
+  "text": "#EXTM3U\r\n#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=854x480\r\n/v/123/480.m3u8?token=abc&e=1\r\n",
+  "expect": [
+   {
+    "height": 480,
+    "bw": 1000000,
+    "url": "https://cdn.example.com/v/123/480.m3u8?token=abc&e=1"
+   }
+  ]
+ },
+ {
+  "name": "AVERAGE-BANDWIDTH 寫在前面",
+  "kind": "master",
+  "base": "https://cdn.example.com/v/123/master.m3u8",
+  "text": "#EXTM3U\n#EXT-X-STREAM-INF:AVERAGE-BANDWIDTH=900000,BANDWIDTH=1200000,RESOLUTION=1280x720,CODECS=\"avc1.64001f,mp4a.40.2\"\nhd.m3u8\n",
+  "expect": [
+   {
+    "height": 720,
+    "bw": 1200000,
+    "url": "https://cdn.example.com/v/123/hd.m3u8"
+   }
+  ]
+ },
+ {
+  "name": "沒有 RESOLUTION，用 NAME",
+  "kind": "master",
+  "base": "https://cdn.example.com/v/123/master.m3u8",
+  "text": "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000,NAME=\"1080p\"\nf.m3u8\n",
+  "expect": [
+   {
+    "height": 1080,
+    "bw": 3000000,
+    "url": "https://cdn.example.com/v/123/f.m3u8"
+   }
+  ]
+ },
+ {
+  "name": "只有聲音的項目不要列成 0p",
+  "kind": "master",
+  "base": "https://cdn.example.com/v/123/master.m3u8",
+  "text": "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=64000,CODECS=\"mp4a.40.2\"\naudio.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720\nv720.m3u8\n",
+  "expect": [
+   {
+    "height": 720,
+    "bw": 2000000,
+    "url": "https://cdn.example.com/v/123/v720.m3u8"
+   }
+  ]
+ },
+ {
+  "name": "同一個畫質出現兩次（留頻寬高的）",
+  "kind": "master",
+  "base": "https://cdn.example.com/v/123/master.m3u8",
+  "text": "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1500000,RESOLUTION=1280x720\na.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2800000,RESOLUTION=1280x720\nb.m3u8\n",
+  "expect": [
+   {
+    "height": 720,
+    "bw": 2800000,
+    "url": "https://cdn.example.com/v/123/b.m3u8"
+   }
+  ]
+ },
+ {
+  "name": "I-frame 清單、EXT-X-MEDIA 不算畫質",
+  "kind": "master",
+  "base": "https://cdn.example.com/v/123/master.m3u8",
+  "text": "#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"s\",NAME=\"en\",URI=\"subs.m3u8\"\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=90000,RESOLUTION=1280x720,URI=\"iframe.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720,SUBTITLES=\"s\"\nv.m3u8\n",
+  "expect": [
+   {
+    "height": 720,
+    "bw": 2000000,
+    "url": "https://cdn.example.com/v/123/v.m3u8"
+   }
+  ]
+ },
+ {
+  "name": "聲音另外放（瀏覽器下載會沒聲音 → 要標記）",
+  "kind": "master",
+  "base": "https://cdn.example.com/v/123/master.m3u8",
+  "text": "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"en\",DEFAULT=YES,URI=\"a/en.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720,AUDIO=\"aud\"\nv720.m3u8\n",
+  "expect": [
+   {
+    "height": 720,
+    "bw": 2000000,
+    "url": "https://cdn.example.com/v/123/v720.m3u8",
+    "audio": "https://cdn.example.com/v/123/a/en.m3u8"
+   }
+  ]
+ },
+ {
+  "name": "壞掉的網址不要整份失敗",
+  "kind": "master",
+  "base": "https://cdn.example.com/v/123/master.m3u8",
+  "text": "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=1x240\nhttp://[bad\n#EXT-X-STREAM-INF:BANDWIDTH=2,RESOLUTION=1x480\nok.m3u8\n",
+  "expect": [
+   {
+    "height": 480,
+    "bw": 2,
+    "url": "https://cdn.example.com/v/123/ok.m3u8"
+   }
+  ]
+ },
+ {
+  "name": "STREAM-INF 後面沒有網址",
+  "kind": "master",
+  "base": "https://cdn.example.com/v/123/master.m3u8",
+  "text": "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=1x240\n",
+  "expect": []
+ },
+ {
+  "name": "一般片段清單",
+  "kind": "media",
+  "base": "https://cdn.example.com/v/123/720p/index.m3u8",
+  "text": "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\nseg0.ts\n#EXTINF:5.5,\nseg1.ts\n#EXT-X-ENDLIST\n",
+  "expect": {
+   "segs": [
+    "https://cdn.example.com/v/123/720p/seg0.ts",
+    "https://cdn.example.com/v/123/720p/seg1.ts"
+   ],
+   "dur": 11.5,
+   "init": null,
+   "encrypted": false,
+   "byterange": false
+  },
+  "first": "https://cdn.example.com/v/123/720p/seg0.ts"
+ },
+ {
+  "name": "fMP4：初始化區段 EXT-X-MAP",
+  "kind": "media",
+  "base": "https://cdn.example.com/v/x/index.m3u8",
+  "text": "#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:4,\n0.m4s\n",
+  "expect": {
+   "segs": [
+    "https://cdn.example.com/v/x/0.m4s"
+   ],
+   "dur": 4,
+   "init": "https://cdn.example.com/v/x/init.mp4",
+   "encrypted": false,
+   "byterange": false
+  },
+  "first": "https://cdn.example.com/v/x/0.m4s"
+ },
+ {
+  "name": "有加密",
+  "kind": "media",
+  "base": "https://cdn.example.com/v/x/index.m3u8",
+  "text": "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"k.key\"\n#EXTINF:4,\n0.ts\n",
+  "expect": {
+   "segs": [
+    "https://cdn.example.com/v/x/0.ts"
+   ],
+   "dur": 4,
+   "init": null,
+   "encrypted": true,
+   "byterange": false
+  }
+ },
+ {
+  "name": "METHOD=NONE 不算加密",
+  "kind": "media",
+  "base": "https://cdn.example.com/v/x/index.m3u8",
+  "text": "#EXTM3U\n#EXT-X-KEY:METHOD=NONE\n#EXTINF:4,\n0.ts\n",
+  "expect": {
+   "segs": [
+    "https://cdn.example.com/v/x/0.ts"
+   ],
+   "dur": 4,
+   "init": null,
+   "encrypted": false,
+   "byterange": false
+  }
+ },
+ {
+  "name": "BYTERANGE（同一個檔切成很多段，瀏覽器不能整檔抓很多次）",
+  "kind": "media",
+  "base": "https://cdn.example.com/v/x/index.m3u8",
+  "text": "#EXTM3U\n#EXTINF:4,\n#EXT-X-BYTERANGE:1000@0\nall.ts\n#EXTINF:4,\n#EXT-X-BYTERANGE:1000@1000\nall.ts\n",
+  "expect": {
+   "segs": [
+    "https://cdn.example.com/v/x/all.ts",
+    "https://cdn.example.com/v/x/all.ts"
+   ],
+   "dur": 8,
+   "init": null,
+   "encrypted": false,
+   "byterange": true
+  }
+ },
+ {
+  "name": "行首有空白的標籤",
+  "kind": "media",
+  "base": "https://cdn.example.com/v/x/index.m3u8",
+  "text": "#EXTM3U\n  #EXTINF:3,\n  a.ts\n",
+  "expect": {
+   "segs": [
+    "https://cdn.example.com/v/x/a.ts"
+   ],
+   "dur": 3,
+   "init": null,
+   "encrypted": false,
+   "byterange": false
+  },
+  "first": "https://cdn.example.com/v/x/a.ts"
+ }
+]

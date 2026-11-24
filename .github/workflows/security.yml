@@ -8,6 +8,9 @@ on:
       - '.github/security_test.js'
       - '.github/attack_test.js'
       - '.github/attack_bridge.py'
+      - '.github/hls_test.js'
+      - '.github/hls_test.py'
+      - '.github/hls/**'
       - 'video_helper_app.py'
       - '.github/workflows/security.yml'
   workflow_dispatch:
@@ -17,6 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # HLS（m3u8）解析：腳本和電腦版都用同一份固定假資料測（不連網）
+      - name: HLS parser tests (userscript + desktop)
+        run: |
+          node .github/hls_test.js video-helper.user.js
+          python3 -I .github/hls_test.py
       - name: Check mux.js fingerprint (jsDelivr == @require hash)
         run: |
           want=$(grep -o 'mux.min.js#sha256=[0-9a-f]*' video-helper.user.js | cut -d= -f2)

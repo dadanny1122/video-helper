@@ -100,6 +100,7 @@ body `{"ref":"main","inputs":{"wait":"true"}}`，Header 帶使用者的 fine-gra
 
 ## 測試方法
 
+- HLS 解析：`node .github/hls_test.js video-helper.user.js`＋`python3 -I .github/hls_test.py`，共用假資料 `.github/hls/cases.json`（security.yml 會跑）；2026-11-24 使用者給的 ChinaGodMan/UserScripts 分析報告（建議 Smart Source Adapter）→ 判斷架構已有（每站 find*Sources＋yt-dlp＋sites.json＋guard），只補 HLS 測試：腳本 v3.22.1 `parseMaster`（真 BANDWIDTH、去掉只有聲音／重複畫質、`audio`＝聲音另外放、壞網址只跳過）、`parseMedia` `byterange`、`resolveMedia` 最多 3 層＋空總表錯誤，`downloadHls` 遇到聲音另外放／BYTERANGE 叫使用者送到電腦版；電腦版 v1.33.1 `first_segment_url`（`HLS_MAX_BYTES` 2MB、跳過只有聲音的項目、最多 2 層）。報告推薦參考的 MissAV M3U8 Finder 不採用（MissAV 只擋廣告）
 - 腳本：`node --check`；用 Playwright（Chromium 在 `/opt/pw-browsers/`）載入假網頁 + 假的 GM_* 函式測
 - 電腦版：`xvfb-run python3.12 .github/ci_smoke.py`（要 `ffmpeg_bin/` 裡有 ffmpeg；系統匣那段只能在 Windows 過）
 - 開發環境連不到成人網站、Google 新聞 → 要看真實網頁就寫成 GitHub Actions 的測試模式，用 `::notice` 印結果

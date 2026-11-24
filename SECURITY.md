@@ -111,6 +111,7 @@ EXE 裡的密碼學元件：`cryptography`（v1.28.4 起，給之後的「節點
 - **網路流量測試**（`.github/net_test.py`）：記錄電腦版 Python 程式的對外連線，走過開視窗、檢查更新、廣告清單、AI 字幕下載、AI（假金鑰），連到第 1 節清單以外就不發布
 - **配對密碼攻擊模擬**（`.github/attack_test.js`，改腳本或電腦版就跑）：接上**真的**電腦版連線服務，腳本走真的配對流程（輸入配對碼 → 送影片）；同時「網站」在同一個網頁裡埋陷阱偷密碼（在物件原型埋 setter、換掉 `JSON.parse`／`JSON.stringify`／`prompt`／`String.replace`／`Set.has`），之後翻遍 localStorage、sessionStorage、Cookie、網頁內容、`window` 上所有東西，再用三種方法冒充腳本叫電腦版下載（fetch＋自訂標頭、no-cors、表單 POST）。通過條件：找不到密碼，而且電腦版只收到腳本自己送的那 1 筆。舊版 v3.18.1、v3.18.2 跑這個測試都會被偷到密碼（v3.18.3 修好）
 - **腳本隱私測試**（`.github/security_test.js`，改腳本就跑）：在 25 個支援網站的假網頁上，監視腳本有沒有讀 Cookie（含 cookieStore）、密碼欄位、網站自己的 localStorage、IndexedDB、瀏覽器存的帳密、連到別的網站；也檢查配對密碼沒有留在網站讀得到的地方
+- **HLS 解析測試**（`.github/hls_test.js`、`.github/hls_test.py`，改腳本或電腦版就跑）：腳本和電腦版用同一份假清單（`.github/hls/cases.json`）測畫質總表和片段清單的特殊情況：相對網址、Windows 換行、只有聲音的項目、聲音另外放、加密、BYTERANGE、壞掉的網址、空的總表、總表指向自己（不能無限繞）、超大清單（電腦版只讀 2 MB）。只測「讀清單」，不連網、不測真的下載
 
 **測試的限制（誠實說）：**
 - 網路流量測試看的是「連到哪」，不是「送了什麼」；whisper.cpp、ffmpeg 這兩個外部程式的連線不在監視範圍（它們本身不連網）；真的下載影片那段沒有測（GitHub 的機器常被影片網站擋）

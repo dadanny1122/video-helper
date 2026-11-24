@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.33.0"
+VERSION = "1.33.1"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -1254,21 +1254,30 @@ def speed_test(url, headers, nbytes=3_000_000, timeout=10):
         return 0
 
 
+HLS_MAX_BYTES = 2 << 20      # 清單最多讀 2 MB（正常的清單遠小於這個；不會把怪檔案整個吃進記憶體）
+
+
 def first_segment_url(m3u8_url, headers, depth=0):
-    """從切片清單找出第一個小片段的網址（拿來測速）"""
+    """從切片清單找出第一個小片段的網址（拿來測速）；測試：.github/hls_test.py
+    畫質總表 → 跳過只有聲音的項目、往下一層（最多 2 層，再多就放棄、不會把清單網址當片段）"""
     try:
         req = urllib.request.Request(m3u8_url, headers=headers)
         with urllib.request.urlopen(req, timeout=10) as r:
-            text = r.read().decode("utf-8", "ignore")
+            text = r.read(HLS_MAX_BYTES).decode("utf-8", "ignore")
     except Exception:
         return None
-    uris = [l.strip() for l in text.splitlines() if l.strip() and not l.startswith("#")]
-    if not uris:
-        return None
-    nxt = urllib.parse.urljoin(m3u8_url, uris[0])
-    if "#EXT-X-STREAM-INF" in text and depth < 2:
-        return first_segment_url(nxt, headers, depth + 1)
-    return nxt
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if any(l.startswith("#EXT-X-STREAM-INF") for l in lines):
+        if depth >= 2:
+            return None
+        variants = []
+        for i, l in enumerate(lines[:-1]):
+            if l.startswith("#EXT-X-STREAM-INF") and not lines[i + 1].startswith("#"):
+                variants.append(("RESOLUTION=" in l, lines[i + 1]))
+        pick = next((u for has_video, u in variants if has_video), variants[0][1] if variants else None)
+        return first_segment_url(urllib.parse.urljoin(m3u8_url, pick), headers, depth + 1) if pick else None
+    uris = [l for l in lines if not l.startswith("#")]
+    return urllib.parse.urljoin(m3u8_url, uris[0]) if uris else None
 
 
 def check_update(q, manual=False):

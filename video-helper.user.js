@@ -3,7 +3,7 @@
 // @name:en      Video Helper
 // @name:zh-TW   Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.22.0
+// @version      3.22.1
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @description:zh-TW 安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @description:en Blocks pop-ups, forced redirects and dangerous downloads; stops ad networks from loading (saves bandwidth); hides and skips video ads; shows playback status and load-time estimates; one-click download with quality picker on supported sites. Interface is in Traditional Chinese.
@@ -809,7 +809,7 @@
     if (hls) {
       try {
         for (const v of parseMaster(await getData(hls, 'text'), hls)) {
-          list.push({ label: v.height + 'p', height: v.height, kind: 'hls', url: v.url, bw: v.bw });
+          list.push({ label: v.height + 'p', height: v.height, kind: 'hls', url: v.url, bw: v.bw, audio: v.audio });
         }
       } catch (e) {}
     }
@@ -975,7 +975,7 @@
       if (/\.m3u8(\?|$)/.test(u)) {
         if (list.length) continue;                   // 已經有一份畫質清單就夠了（備用網址不用再抓）
         try {
-          for (const v of parseMaster(await getData(u, 'text'), u)) add({ label: v.height + 'p', height: v.height, kind: 'hls', url: v.url, bw: v.bw });
+          for (const v of parseMaster(await getData(u, 'text'), u)) add({ label: v.height + 'p', height: v.height, kind: 'hls', url: v.url, bw: v.bw, audio: v.audio });
         } catch (e) {}
       } else {
         const h = parseInt(c && c.q, 10);
@@ -1783,45 +1783,74 @@
   function safeName(s) { return s.replace(/[\\/:*?"<>|]/g, '_').trim().slice(0, 100) || 'video'; }
   function absUrl(u, base) { return new URL(u, base).href; }
 
-  // 讀「畫質總表」
+  // 讀「畫質總表」（測試：.github/hls_test.js＋.github/hls/cases.json）
+  //   ・BANDWIDTH 只認真的 BANDWIDTH（不是 AVERAGE-BANDWIDTH）
+  //   ・只有聲音的項目（沒解析度）有影像畫質時就不列；同一個畫質留頻寬最高的
+  //   ・聲音另外放（EXT-X-MEDIA TYPE=AUDIO 帶 URI）→ audio 記下聲音清單網址（瀏覽器下載會沒聲音，要交給電腦版）
+  //   ・一行網址壞掉只跳過那一行；最多看 200 個畫質
   function parseMaster(text, base) {
-    const lines = text.split(/\r?\n/);
+    const lines = text.split(/\r?\n/).map(l => l.trim());
+    const attr = (l, k) => { const m = l.match(new RegExp('(?:^|[:,])' + k + '=("[^"]*"|[^,]*)')); return m ? m[1].replace(/^"|"$/g, '') : null; };
+    const audio = {};
+    for (const l of lines) {
+      if (!l.startsWith('#EXT-X-MEDIA:') || attr(l, 'TYPE') !== 'AUDIO' || !attr(l, 'URI')) continue;
+      const g = attr(l, 'GROUP-ID');
+      try { if (g && !(g in audio)) audio[g] = absUrl(attr(l, 'URI'), base); } catch (e) {}
+    }
     const out = [];
-    for (let i = 0; i < lines.length; i++) {
+    for (let i = 0; i < lines.length && out.length < 200; i++) {
       if (!lines[i].startsWith('#EXT-X-STREAM-INF')) continue;
       const res = lines[i].match(/RESOLUTION=\d+x(\d+)/);
-      const bw = lines[i].match(/BANDWIDTH=(\d+)/);
-      const name = lines[i].match(/NAME="?(\d+)p?/);
+      const bw = +(attr(lines[i], 'BANDWIDTH') || 0) || 0;
+      const name = (attr(lines[i], 'NAME') || '').match(/^(\d+)p?$/);
       let j = i + 1;
-      while (j < lines.length && (!lines[j].trim() || lines[j].startsWith('#'))) j++;
-      if (j < lines.length) {
-        out.push({ url: absUrl(lines[j].trim(), base), height: res ? +res[1] : (name ? +name[1] : 0), bw: bw ? +bw[1] : 0 });
+      while (j < lines.length && (!lines[j] || lines[j].startsWith('#'))) {
+        if (lines[j].startsWith('#EXT-X-STREAM-INF')) break;       // 這一項沒有網址
+        j++;
       }
+      if (j >= lines.length || lines[j].startsWith('#')) continue;
+      let url;
+      try { url = absUrl(lines[j], base); } catch (e) { continue; }
+      const v = { url, height: res ? +res[1] : (name ? +name[1] : 0), bw };
+      const g = attr(lines[i], 'AUDIO');
+      if (g && audio[g]) v.audio = audio[g];
+      out.push(v);
     }
-    return out;
+    const video = out.some(v => v.height) ? out.filter(v => v.height) : out;
+    const best = new Map();
+    for (const v of video) if (!best.has(v.height) || v.bw > best.get(v.height).bw) best.set(v.height, v);
+    return [...best.values()];
   }
 
   // 讀「片段清單」
   function parseMedia(text, base) {
     const segs = [];
-    let dur = 0, init = null, encrypted = false;
+    let dur = 0, init = null, encrypted = false, byterange = false;
     for (const raw of text.split(/\r?\n/)) {
       const l = raw.trim();
       if (l.startsWith('#EXTINF:')) dur += parseFloat(l.slice(8)) || 0;
-      else if (l.startsWith('#EXT-X-MAP')) { const m = l.match(/URI="([^"]+)"/); if (m) init = absUrl(m[1], base); }
+      else if (l.startsWith('#EXT-X-BYTERANGE')) byterange = true;      // 同一個檔切很多段：瀏覽器這邊不支援
+      else if (l.startsWith('#EXT-X-MAP')) {
+        const m = l.match(/URI="([^"]+)"/);
+        if (m) init = absUrl(m[1], base);
+        if (/BYTERANGE=/.test(l)) byterange = true;
+      }
       else if (l.startsWith('#EXT-X-KEY') && !/METHOD=NONE/.test(l)) encrypted = true;
       else if (l && !l.startsWith('#')) segs.push(absUrl(l, base));
     }
-    return { segs, dur, init, encrypted };
+    return { segs, dur, init, encrypted, byterange };
   }
 
-  async function resolveMedia(url, bw = 0) {
+  // 畫質總表 → 最高畫質的片段清單（最多往下 3 層，避免總表指來指去無限繞）
+  async function resolveMedia(url, bw = 0, depth = 0, audio = null) {
+    if (depth > 3) throw new Error('畫質總表一層包一層太多，請改用「送到電腦版」');
     const text = await getData(url, 'text');
     if (text.includes('#EXT-X-STREAM-INF')) {
       const v = parseMaster(text, url).sort((a, b) => b.height - a.height)[0];
-      return resolveMedia(v.url, v.bw || bw);
+      if (!v) throw new Error('畫質總表是空的，找不到可以下載的畫質');
+      return resolveMedia(v.url, v.bw || bw, depth + 1, v.audio || audio);
     }
-    return Object.assign(parseMedia(text, url), { bw });
+    return Object.assign(parseMedia(text, url), { bw, audio });
   }
 
   async function estimateSize(s) {
@@ -2075,6 +2104,9 @@
   async function downloadHls(s, baseName, onProgress, onStage) {
     const media = s.media || await resolveMedia(s.url, s.bw || 0);
     if (media.encrypted) throw new Error('這部影片有加密，目前不支援');
+    // 這兩種瀏覽器這邊做不好（會沒聲音／重複抓同一個大檔），交給電腦版的 yt-dlp
+    if (media.audio || s.audio) throw new Error('這部影片的聲音另外放，瀏覽器下載會沒有聲音，請用「送到電腦版」');
+    if (media.byterange) throw new Error('這部影片的片段格式瀏覽器不支援，請用「送到電腦版」');
     if (!media.segs.length) throw new Error('找不到影片片段');
 
     const total = media.segs.length;
