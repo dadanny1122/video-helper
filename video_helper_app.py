@@ -3345,6 +3345,7 @@ class App:
         UI_BUSY["on_start"] = self._drag_start             # v1.33.3 拖動測試
         if self.settings["tray_always"]:                    # v1.35.0 系統匣小圖示一打開就在
             root.after(800, self.start_tray)
+        root.bind("<Destroy>", lambda e: self._stop_tray() if e.widget is root else None, add="+")
         root.bind("<Leave>", self._preshoot, add="+")       # v1.34.1 往標題列移動時先拍好
         root.bind_all("<Expose>", self._count_expose, add="+")
         self.header.on_nav = self.nav
@@ -4602,6 +4603,15 @@ class App:
         if self.tray:
             try:
                 self.tray.notify(msg, "Video Helper")
+            except Exception:
+                pass
+
+    def _stop_tray(self):
+        """視窗被關掉時一定要收掉系統匣小圖示：它的執行緒還在，程式就結束不了（測試曾因此卡住 15 分鐘）"""
+        t, self.tray = self.tray, None
+        if t:
+            try:
+                t.stop()
             except Exception:
                 pass
 
