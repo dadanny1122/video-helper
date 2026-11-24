@@ -12,6 +12,8 @@ on:
       - '.github/hls_test.py'
       - '.github/hls/**'
       - 'video_helper_app.py'
+      - 'webui/**'
+      - '.github/webui_test.js'
       - '.github/workflows/security.yml'
   workflow_dispatch:
 
@@ -33,6 +35,16 @@ jobs:
           [ "$want" = "$got" ]
       - name: Install Playwright
         run: npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+      # 新介面（電腦版的網頁畫面）：假資料餵進去，檢查畫面、按鈕、網站標題有跳脫、完全不連外
+      - name: New UI page test (desktop webui)
+        run: node .github/webui_test.js webui-shots
+      - name: Upload new UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webui-page-shots
+          path: webui-shots/
+          if-no-files-found: ignore
       - name: Userscript privacy test
         run: node .github/security_test.js video-helper.user.js
       # 攻擊模擬：接上真的電腦版連線服務，腳本走真的配對流程；網站用各種方法偷配對密碼、冒充腳本

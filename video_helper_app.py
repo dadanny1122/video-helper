@@ -93,7 +93,8 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.35.0"
+VERSION = "1.36.0"
+WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -176,6 +177,7 @@ DEFAULT_SETTINGS = {
     "ai_usage": {},                   # 月份 → {"classify"/"translate": {"calls", "in", "out"}}（只記次數和字數，不記內容）
     "log_keep_days": 14,              # 錯誤日誌超過幾天自動刪掉（0＝不刪）
     "drag_snapshot": True,
+    "ui": "classic",                  # v1.36.0：介面 classic＝原本的視窗／web＝新介面（WebView2，預覽）
     "tray_always": True,              # v1.35.0：系統匣小圖示一直都在（不只縮小時）            # v1.34.0：拖動主視窗時先蓋一張畫面照片（Windows 上比較順）
     "mbps": 0,                   # 上次量到的網速
     "setup_seen": False,         # 看過「安裝擋廣告」了（第一次打開才自動切過去）
@@ -3255,13 +3257,19 @@ def component_report():
 
 
 class App:
-    def __init__(self, root):
+    def __init__(self, root, web=None):
         self.root = root
+        self.web = web                 # v1.36.0 新介面（webui.Host）；None＝只有原本的視窗
+        self.web_fallback = False      # 新介面打不開 → 改用原本的視窗
+        self.notices = []              # 新介面的通知中心（最新的在前）
+        self.update_info = None        # 有新版本：(版本, 網址)
+        self._web_ask = None           # 新介面要問使用者的事（例如還在下載時關視窗）
         self.q = queue.Queue()
         self.settings = Settings()
         global AI_USAGE_HOOK
         AI_USAGE_HOOK = self.note_ai_usage
         self.history = History()
+        self._start_time = time.time()
         self.stats = Stats()
         self.auto_backup = auto_backup_on_upgrade(self.settings, self.history)
         self.tray = None               # 系統匣圖示（v1.35.0 起預設一打開就建立）
@@ -3356,11 +3364,15 @@ class App:
         self.nb.bind("<<NotebookTabChanged>>", lambda e: self.home.visible() and not self.home.leaving
                      and not getattr(self, "_warming", False)
                      and time.time() - (self.home.t0 or time.time()) > 0.5 and self.home.hide(), add="+")
-        if self.settings["show_home"] and self.settings["setup_seen"] and not first_run:
+        if self.web:
+            self.web_attach()
+        elif self.settings["show_home"] and self.settings["setup_seen"] and not first_run:
             root.after(80, self.show_home)
         self.refresh_header()
         self.poll()
         threading.Thread(target=check_update, args=(self.q,), daemon=True).start()
+        if WEB_UNAVAILABLE and not self.web and self.settings["ui"] == "web":
+            root.after(1500, lambda: messagebox.showinfo("新介面", f"新介面這次不能用：\n{WEB_UNAVAILABLE}\n\n先用原本的視窗。"))
         log.info("啟動 v%s", VERSION)
 
     # 讓背景工作把結果丟回主畫面
@@ -3480,6 +3492,11 @@ class App:
         except queue.Empty:
             pass
         self._tick = getattr(self, "_tick", 0) + 1
+        if self.web and self._tick % 5 == 0:              # 新介面：每 0.5 秒換一份狀態給網頁
+            try:
+                self.web_publish()
+            except Exception:
+                log.exception("新介面狀態")
         if self._tick % 10 == 0:                       # 約每 1 秒：把「等重試」時間到的放回佇列
             self.update_tray()
             if not ui_busy():                            # 拖動視窗時先不重畫
@@ -3552,6 +3569,9 @@ class App:
             messagebox.showinfo("提示", "如果 Chrome 沒有自動打開設定頁：\n在 Chrome 網址列按 Ctrl+V 貼上，再按 Enter。\n（網址已經幫你複製好了）")
 
     def on_update_none(self, tag):
+        if self.web and not self.web_fallback:
+            self.add_notice("✅", f"目前已經是最新版本（v{VERSION}）")
+            return
         messagebox.showinfo("檢查更新", f"目前已經是最新版本（v{VERSION}）。")
 
     def on_update_failed(self, msg):
@@ -3559,6 +3579,10 @@ class App:
 
     def on_update(self, data):
         tag, url, notes = data
+        self.update_info = (tag, url)
+        if self.web and not self.web_fallback:            # 新介面：放在「最新消息」最上面＋通知，不跳視窗
+            self.add_notice("✨", f"有新版本 v{tag}（目前 v{VERSION}），在「最新消息」按一下前往下載")
+            return
         notes = notes[:600] + ("…" if len(notes) > 600 else "")
         msg = f"有新版本 v{tag}（目前 v{VERSION}）。\n\n" + (f"更新內容：\n{notes}\n\n" if notes else "") + "要前往下載嗎？"
         if messagebox.askyesno("有新版本", msg):
@@ -4076,6 +4100,8 @@ class App:
                                  status=history_status or status, file=file or "", size=t.get("size") or 0,
                                  error=error or "")
                 self.refresh_history()
+        if self.web and t and status in (DONE, FAILED, NEEDS_ACTION):
+            self.add_notice("✅" if status == DONE else "❌", ("下載完成：" if status == DONE else "下載失敗：") + t["title"][:60])
         self.cancel_event = None
         self.worker = None
         self.refresh_queue()
@@ -4452,7 +4478,10 @@ class App:
         win = tk.Toplevel(self.root)
         win.title("配對瀏覽器腳本")
         win.geometry(f"{px(440)}x{px(300)}")
-        win.transient(self.root)
+        if self.web and not self.web_fallback and self.root.state() == "withdrawn":
+            win.attributes("-topmost", True)               # 新介面：原本的視窗藏著，不能掛在它下面（會一起藏起來）
+        else:
+            win.transient(self.root)
         ttk.Label(win, text="在影片網頁按右下角「⬇ 下載」→「🖥 送到電腦版」，\n跳出配對視窗時輸入：",
                   justify="center").pack(pady=(18, 8))
         ttk.Label(win, text=f"{code[:3]} {code[3:]}", font=("Consolas", 32, "bold")).pack()
@@ -4489,6 +4518,320 @@ class App:
         self.settings["bridge_enabled"] = False
         self.settings.save()
         self.refresh_bridge_label()
+
+    # ------------------------------------------------------------------
+    # v1.36.0 新介面（webui/）：網頁畫面只讀 web_publish() 的狀態、只能叫 web_<動作>()（名稱白名單在 webui.ACTIONS）
+    # ------------------------------------------------------------------
+    WEB_ST = {RUNNING: "run", WAITING: "wait", RETRY_WAIT: "retry", PAUSED: "pause", DONE: "done",
+              FAILED: "fail", NEEDS_ACTION: "need", CANCELLED: "cancel"}
+    WEB_OLD_TABS = {"dl": 0, "hist": 1, "set": 2, "setup": 3}
+
+    def web_attach(self):
+        """新介面：原本的視窗藏起來當「舊介面」（還沒做好的頁面先用它）；網頁太久沒說好了就改用原本的視窗"""
+        from webui import LOAD_TIMEOUT
+        self.web.app = self
+        self.root.withdraw()
+        self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw)   # 舊介面的 X 只是藏起來，主視窗是網頁
+        self.web_publish()
+        self.root.after(LOAD_TIMEOUT * 1000, self._web_watchdog)
+        log.info("新介面啟動")
+
+    def _web_watchdog(self):
+        if self.web.loaded or self.web_fallback:
+            return
+        log.warning("新介面 %d 秒沒有回應 → 改用原本的視窗", int(time.time() - self._start_time))
+        self.web_use_classic()
+        messagebox.showinfo("新介面打不開", "新介面這次沒有成功打開，先用原本的視窗。\n"
+                            "（③ 設定 可以取消「使用新介面」；錯誤日誌在 ⚙ 進階設定 → 問題排查）")
+
+    def web_use_classic(self):
+        """馬上換回原本的視窗（網頁視窗藏起來，程式結束時一起關）"""
+        self.web_fallback = True
+        self.web.hide()
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.on_show_window(None)
+
+    def add_notice(self, icon, text):
+        self.notices.insert(0, {"icon": icon, "text": str(text)[:160], "time": datetime.now().strftime("%H:%M")})
+        del self.notices[30:]
+
+    @staticmethod
+    def _hist_key(r):
+        return "h" + hashlib.sha1(f"{r.get('time')}|{r.get('url')}|{r.get('file')}".encode("utf-8", "replace")).hexdigest()[:12]
+
+    def _hist_find(self, key):
+        return next((r for r in self.history.items if self._hist_key(r) == key), None)
+
+    def _web_nexus(self):
+        """Nexus 卡片和數據卡用（3 秒算一次：要讀資料庫）"""
+        now = time.time()
+        c = getattr(self, "_web_nx", None)
+        if c and now - c[0] < 3:
+            return c[1]
+        n = None
+        svc = getattr(self, "nexus", None)
+        if svc:
+            try:
+                devs = [d for d in svc.devices() if d["status"] in ("ACTIVE", "PENDING", "SUSPENDED")]
+                act = [d for d in devs if d["status"] == "ACTIVE"]
+                online = [d for d in act if d.get("connection_state") == "CONNECTED"]
+                busy = 0
+                if svc.running() and svc.tasks:
+                    busy = sum(1 for t in svc.tasks.list(active_only=True)
+                               if t.get("status") in ("RUNNING", "UPLOADING", "ASSIGNED", "ACCEPTED"))
+                state = {"PENDING": "等核准", "SUSPENDED": "已暫停"}
+                n = {"enabled": bool(svc.cfg["enabled"]), "running": svc.running(), "online": len(online), "total": len(act),
+                     "tasks": busy,
+                     "devices": [{"name": d["name"], "online": d in online,
+                                  "state": state.get(d["status"]) or ("連線中" if d in online else "離線")} for d in devs[:6]]}
+            except Exception as e:
+                log.debug("新介面讀節點失敗：%r", e)
+        self._web_nx = (now, n)
+        return n
+
+    def _web_disk(self):
+        now = time.time()
+        c = getattr(self, "_web_dk", None)
+        if c and now - c[0] < 5:
+            return c[1]
+        import shutil
+        d = self.settings.download_dir
+        try:
+            free = shutil.disk_usage(d if os.path.isdir(d) else os.path.expanduser("~")).free
+        except Exception:
+            free = None
+        self._web_dk = (now, (free, os.path.splitdrive(d)[0] or d))
+        return self._web_dk[1]
+
+    def web_publish(self):
+        """把現在的狀態整理成一份 JSON 給網頁（整份換掉，網頁執行緒只讀）"""
+        if not self.web:
+            return
+        now = time.time()
+        live = self.live[1] if self.live and now - self.live[0] < 3 else None
+        tasks = []
+        for t in self.queue.tasks:
+            st = self.WEB_ST.get(t["status"], "wait")
+            if st == "done" and self.settings["keep_history"]:
+                continue                                   # 下載紀錄那邊會有
+            item = {"key": f"q{t['id']}", "title": t["title"], "site": site_of(t["url"]),
+                    "quality": quality_label(t["fmt"]["height"]), "size": fmt_size(t["size"]) if t.get("size") else "",
+                    "st": st, "progress": round(t.get("progress") or 0, 1), "cancel": st == "run", "remove": st != "run"}
+            if st == "run" and live:
+                item["speed"] = f"{live * 8 / 1e6:.1f} Mbps"
+            if st == "retry":
+                item["label"] = f"{max(0, int(t.get('retry_at', 0) - now))} 秒後重試"
+            if t.get("note") and st in ("fail", "need"):
+                item["note"] = str(t["note"])[:80]
+            tasks.append(item)
+        for r in self.history.items[:40]:
+            st = self.WEB_ST.get(r.get("status"), "done")
+            tasks.append({"key": self._hist_key(r), "title": r.get("title") or r.get("url", ""), "site": site_of(r.get("url", "")),
+                          "quality": quality_label(r.get("height")) if r.get("height") else "",
+                          "size": fmt_size(r["size"]) if r.get("size") else "", "time": str(r.get("time", ""))[5:],
+                          "st": st, "progress": 100 if st == "done" else 0, "open": st == "done" and bool(r.get("file")),
+                          "node": bool(r.get("node")), "note": "" if st == "done" else str(r.get("error") or "")[:80]})
+        run, wait = self.queue.count(RUNNING), self.queue.count(WAITING, RETRY_WAIT)
+        today = datetime.now().strftime("%Y-%m-%d")
+        done = [r for r in self.history.items if r.get("status") == DONE]
+        n_today = sum(1 for r in done if str(r.get("time", "")).startswith(today))
+        paused = bool(self.queue_paused or self.queue.count(PAUSED))
+        sub = "⏸ 已暫停" if paused else (f"目前 {live * 8 / 1e6:.1f} Mbps" if live else (f"排隊 {wait} 部" if wait else "沒有在下載"))
+        nx = self._web_nexus()
+        free, drive = self._web_disk()
+        kpis = [
+            {"icon": "⬇", "label": "進行中下載", "value": run + wait, "unit": "部", "sub": sub},
+            {"icon": "✓", "label": "已完成下載", "value": len(done), "unit": "部", "sub": f"今天 {n_today} 部"},
+            {"icon": "🖧", "label": "Nexus 節點在線", "value": f"{nx['online']} / {nx['total']}", "unit": "",
+             "sub": "Master 執行中" if nx["running"] else "Master 未啟動"} if nx and nx["enabled"] else
+            {"icon": "☀", "label": "今天下載", "value": n_today, "unit": "部", "sub": "沒開 Nexus 節點"},
+            {"icon": "💾", "label": "可用空間", "value": "—" if free is None else (f"{free / 1e9:.0f}" if free >= 1e11 else f"{free / 1e9:.1f}"),
+             "unit": "" if free is None else "GB", "sub": f"下載資料夾在 {drive}"},
+        ]
+        self.web.state = {
+            "version": VERSION, "theme": self.theme, "paused": paused, "bridge": bool(self.bridge.server),
+            "kpis": kpis, "tasks": tasks, "nexus": nx, "notices": list(self.notices),
+            "update": {"tag": self.update_info[0]} if self.update_info else None, "ask": self._web_ask,
+        }
+
+    def on_web_action(self, data):
+        name, arg, box, ev = data
+        try:
+            box["reply"] = getattr(self, "web_" + name)(arg) or {"ok": True}
+        except Exception as e:
+            log.exception("新介面動作 %s", name)
+            box["reply"] = {"ok": False, "msg": f"出錯了：{type(e).__name__}"}
+        finally:
+            ev.set()
+        if not self.quitting:
+            try:
+                self.web_publish()
+            except Exception:
+                pass
+
+    def web_add(self, text):
+        urls = []
+        for line in str(text).splitlines():
+            u = line.strip()
+            if u.startswith(("http://", "https://")) and u not in urls:
+                urls.append(u)
+        if not urls:
+            return {"ok": False, "msg": "沒有看到網址（一行一個，http 開頭）"}
+        if len(urls) > 50:
+            return {"ok": False, "msg": "一次最多 50 個網址"}
+        if self.batch_running:
+            return {"ok": False, "msg": "上一批網址還在讀取，等一下再加"}
+        self.start_batch(urls)
+        return {"ok": True, "msg": f"已加入 {len(urls)} 部，讀取網址中…（用預設畫質 {self.settings['default_quality']}）"}
+
+    def web_paste(self, _):
+        try:
+            clip = self.root.clipboard_get()
+        except Exception:
+            clip = ""
+        r = self.web_add(clip)
+        if not r["ok"] and "沒有看到網址" in r["msg"]:
+            r["msg"] = "剪貼簿裡沒有網址：先複製影片網址再按一次"
+        return r
+
+    def web_toggle_pause(self, _):
+        self.toggle_pause()
+        return {"ok": True, "msg": "▶ 繼續下載" if not self.queue_paused else "⏸ 已暫停（已下載的部分會保留）"}
+
+    def web_retry_failed(self, _):
+        n = self.queue.count(FAILED, NEEDS_ACTION)
+        self.retry()
+        return {"ok": True, "msg": f"重新排隊 {n} 部" if n else "沒有失敗的任務"}
+
+    def _web_qtask(self, key):
+        if not (isinstance(key, str) and key.startswith("q") and key[1:].isdigit()):
+            return None
+        return self.queue.get(int(key[1:]))
+
+    def web_cancel(self, key):
+        t = self._web_qtask(key)
+        if not t or t["status"] != RUNNING or not self.cancel_event:
+            return {"ok": False, "msg": "這個已經不在下載了"}
+        self.stop_mode = "cancel"
+        self.cancel_event.set()
+        return {"ok": True, "msg": "取消中…"}
+
+    def web_remove(self, key):
+        t = self._web_qtask(key)
+        if not t:
+            return {"ok": False, "msg": "找不到這個任務"}
+        if t["status"] == RUNNING:
+            return {"ok": False, "msg": "正在下載，要停止請按 ✕"}
+        if t["status"] == PAUSED and t.get("partials"):
+            cleanup_partials(t["partials"], include_complete=True)
+        self.queue.remove(t["id"])
+        self.refresh_queue()
+        self.set_buttons()
+        return {"ok": True}
+
+    def _web_file(self, key):
+        r = self._hist_find(key)
+        f = r and r.get("file")
+        if not f or not os.path.isfile(f):
+            return None
+        return f
+
+    def web_play(self, key):
+        f = self._web_file(key)
+        if not f:
+            return {"ok": False, "msg": "檔案不見了（可能被移動或刪除）"}
+        open_path(f)
+        return {"ok": True}
+
+    def web_reveal(self, key):
+        f = self._web_file(key)
+        if not f:
+            return {"ok": False, "msg": "檔案不見了（可能被移動或刪除）"}
+        open_path(f, select=True)
+        return {"ok": True}
+
+    def web_open_folder(self, _):
+        open_path(self.settings.download_dir)
+
+    def web_old(self, page):
+        """還沒做好的頁面：打開原本的視窗（舊介面）到那一頁"""
+        self.root.deiconify()
+        self.root.lift()
+        try:
+            self.root.focus_force()
+        except Exception:
+            pass
+        if page == "nodes":
+            self.show_advanced(self.adv_pages["nodes"])
+        elif page in self.WEB_OLD_TABS:
+            self.nav(self.WEB_OLD_TABS[page])
+        return {"ok": True, "msg": "這頁還在做，先用原本的視窗打開"}
+
+    def web_pair(self, _):
+        self.pair_browser()
+
+    def web_check_update(self, _):
+        threading.Thread(target=check_update, args=(self.q, True), daemon=True).start()
+        return {"ok": True, "msg": "檢查更新中…"}
+
+    def web_link(self, key):
+        url = {"manual": f"https://{REPO.split('/')[0]}.github.io/{REPO.split('/')[1]}/manual/",
+               "releases": f"https://github.com/{REPO}/releases",
+               "update": self.update_info and self.update_info[1]}.get(key)
+        if not url:
+            return {"ok": False, "msg": "沒有這個連結"}
+        webbrowser.open(url)
+
+    def web_set_ui(self, v):
+        if v != "classic":
+            return {"ok": False, "msg": "參數不對"}
+        self.settings["ui"] = "classic"
+        self.settings.save()
+        if hasattr(self, "webui_var"):
+            self.webui_var.set(False)
+        self.web_use_classic()
+
+    def web_ask(self, title, text, buttons, done):
+        aid = str(time.time_ns())
+        self._web_ask = {"id": aid, "title": title, "text": text, "buttons": list(buttons)}
+        self._web_ask_cb = (aid, done)
+        self.web.show()
+        self.web_publish()
+
+    def web_answer(self, arg):
+        aid, done = getattr(self, "_web_ask_cb", (None, None))
+        if not done or arg["id"] != aid:
+            return {"ok": False}
+        self._web_ask = None
+        self._web_ask_cb = (None, None)
+        done(arg["choice"])
+
+    def web_clear_notices(self, _):
+        self.notices = []
+
+    def on_web_close(self, _):
+        """按新介面右上角的 X（跟原本的 on_close 一樣的規則，只是用網頁對話框問）"""
+        if self.web_fallback:
+            return
+        action = self.settings["close_action"]
+        if pystray is None and action == "一律縮到系統匣":
+            action = "下載中才詢問"
+        if action == "一律縮到系統匣":
+            self.hide_to_tray()
+            return
+        if not self.downloads_active():
+            self.quit_app()
+            return
+        btns = (["縮到系統匣，繼續下載"] if pystray and action != "直接結束" else []) + ["取消下載並結束", "回到視窗"]
+
+        def done(i):
+            b = btns[i] if 0 <= i < len(btns) else ""
+            if b.startswith("縮到"):
+                self.hide_to_tray()
+            elif b.startswith("取消"):
+                self.quit_app()
+        self.web_ask("還在下載", self.quit_warning() if action == "直接結束" else
+                     "還有影片在下載，要怎麼做？\n縮到右下角的系統匣會繼續下載，完成會通知你。", btns, done)
 
     # ----- 關閉視窗、系統匣 -----
 
@@ -4586,7 +4929,10 @@ class App:
         if not self.start_tray():
             self.root.iconify()                  # 系統匣不能用 → 至少縮到工作列
             return
-        self.root.withdraw()
+        if self.web and not self.web_fallback:
+            self.web.hide()
+        else:
+            self.root.withdraw()
         if not self.tray_hinted:
             self.tray_hinted = True
             self.notify("Video Helper 在背景執行中" + ("，下載會繼續" if self.downloads_active() else "") +
@@ -4594,6 +4940,8 @@ class App:
         log.info("縮到系統匣")
 
     def is_hidden(self):
+        if self.web and not self.web_fallback:
+            return self.web.hidden
         try:
             return self.root.state() == "withdrawn"
         except Exception:
@@ -4667,6 +5015,9 @@ class App:
             pass
 
     def on_show_window(self, _):
+        if self.web and not self.web_fallback:
+            self.web.show()
+            return
         self.root.deiconify()
         self.root.lift()
         try:
@@ -5251,6 +5602,16 @@ class App:
                 self.tray = None
         ttk.Checkbutton(f, text="右下角系統匣一直顯示小圖示（右鍵：狀態、暫停、貼上網址下載、打開下載資料夾）",
                         variable=self.tray_var, command=on_tray_opt).grid(row=9, column=0, columnspan=3, sticky="w")
+        self.webui_var = tk.BooleanVar(value=self.settings["ui"] == "web")
+
+        def on_webui_opt():
+            self.settings["ui"] = "web" if self.webui_var.get() else "classic"
+            self.settings.save()
+            if self.webui_var.get() and not self.web:
+                messagebox.showinfo("新介面（預覽）", "重新打開電腦版後就會是新介面。\n"
+                                    "目前做好首頁，其他頁面先用原本的視窗；新介面左下角可以隨時切回來。")
+        ttk.Checkbutton(f, text="使用新介面（預覽版：左側選單、數據卡；重新打開電腦版後生效）", variable=self.webui_var,
+                        command=on_webui_opt).grid(row=10, column=0, columnspan=3, sticky="w")
         self.snap_var = tk.BooleanVar(value=bool(self.settings["drag_snapshot"]))
         ttk.Checkbutton(f, text="拖動視窗時比較順（拖動時先顯示一張畫面照片，放開就恢復）", variable=self.snap_var,
                         command=lambda: (self.settings.__setitem__("drag_snapshot", self.snap_var.get()), self.settings.save())).grid(
@@ -5280,6 +5641,7 @@ class App:
         nb = self.adv_nb = ttk.Notebook(win)
         nb.pack(fill="both", expand=True)
         pages = {}
+        self.adv_pages = pages
         for key, text in (("prog", "檔名與程式"), ("link", "瀏覽器連動"), ("security", "🔒 安全"), ("nodes", "🖧 節點"), ("tasks", "📋 節點任務"),
                           ("backup", "備份與更新"), ("debug", "問題排查"), ("ai", "廣告判斷"), ("stats", "統計")):
             pages[key] = ttk.Frame(nb, padding=(12, 10))
@@ -5673,6 +6035,15 @@ def selftest(out_path):
     except Exception as e:
         r["nexus_error"] = repr(e)
         ok = False
+    try:                                            # v1.36.0 新介面：網頁檔、CHANGELOG、pywebview（含 WinForms 那一層）有打包進來
+        import webui
+        import webview  # noqa: F401
+        import webview.platforms.winforms  # noqa: F401
+        r["webui"] = {"html": len(webui.page_html()), "news": len(webui.load_news()), "webview2": webui.webview2_version()}
+        ok &= r["webui"]["html"] > 5000 and r["webui"]["news"] > 0
+    except Exception as e:
+        r["webui_error"] = repr(e)
+        ok = False
     r["ok"] = bool(ok)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(r, f, ensure_ascii=False, indent=1)
@@ -5689,6 +6060,34 @@ if __name__ == "__main__":
         enable_dpi_awareness()
         sys.exit(worker_main([a for a in sys.argv[1:] if a != "--worker"]))
     enable_dpi_awareness()
+    if "--classic" not in sys.argv and ("--webui" in sys.argv or Settings()["ui"] == "web"):
+        # v1.36.0 新介面：主執行緒開網頁視窗（pywebview 規定），App／Tk 在另一個執行緒；不能用就照舊開原本的視窗
+        try:
+            import webui
+            ok, why = webui.available()
+        except Exception as e:
+            ok, why = False, f"{type(e).__name__}: {e}"
+        if ok:
+            started = []
+
+            def start_app(host):
+                started.append(1)
+                r = tk.Tk()
+                App(r, web=host)
+                r.mainloop()
+            try:
+                webui.run(start_app, f"Video Helper v{VERSION}")
+                sys.exit(0)
+            except SystemExit:
+                raise
+            except Exception:
+                log.exception("新介面啟動失敗")
+                if started:
+                    sys.exit(1)
+                WEB_UNAVAILABLE = "新介面啟動失敗（詳細在錯誤日誌）"
+        else:
+            log.warning("新介面不能用：%s → 用原本的視窗", why)
+            WEB_UNAVAILABLE = why
     root = tk.Tk()
     App(root)
     root.mainloop()

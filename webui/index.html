@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<!-- 只用 EXE 裡的東西：不連外、不載入任何網址（docs/ui/00-介面改版規格.md 第 3 節） -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Helper</title>
+<style>/*CSS*/</style>
+</head>
+<body class="dark">
+<aside class="side">
+  <div class="brand"><span class="logo">▶</span><b>Video Helper</b></div>
+  <nav id="nav">
+    <a data-page="home" class="on"><i>⌂</i>首頁</a>
+    <a data-page="dl"><i>⬇</i>下載管理<em>舊介面</em></a>
+    <a data-page="nodes"><i>🖧</i>Nexus 管理<em>舊介面</em></a>
+    <a data-page="set"><i>⚙</i>設定<em>舊介面</em></a>
+    <a data-page="about"><i>ⓘ</i>關於</a>
+  </nav>
+  <div class="grow"></div>
+  <div class="vercard">
+    <div class="muted small">新介面預覽</div>
+    <b id="ver">v—</b>
+    <button class="ghost small" data-act="set_ui_classic">切回舊介面</button>
+  </div>
+</aside>
+
+<main>
+  <header class="top">
+    <div>
+      <h1>首頁</h1>
+      <div class="muted small" id="sub">安全、乾淨、穩定地下載</div>
+    </div>
+    <div class="top-r">
+      <span class="pill" id="bridge">瀏覽器未連動</span>
+      <button class="icon" id="bell" title="通知">🔔<span class="badge" id="badge" hidden></span></button>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="hero-l">
+      <h2>貼上網址，<span class="grad">一鍵下載</span></h2>
+      <p class="muted">支援 Pornhub、XVideos、XNXX、YouPorn、RedTube、xHamster、Tube8、YouJizz、SpankBang。用 ③ 設定的預設畫質，一行一個網址可以一次加很多部。</p>
+      <form id="addform" class="add">
+        <textarea id="urls" rows="1" placeholder="貼上影片網址…" spellcheck="false"></textarea>
+        <button class="accent" type="submit">⬇ 下載</button>
+      </form>
+    </div>
+    <div class="hero-r" aria-hidden="true"><div class="orb"><span>▶</span></div><div class="ring r1"></div><div class="ring r2"></div></div>
+  </section>
+
+  <section class="kpis" id="kpis"></section>
+
+  <div class="cols">
+    <section class="card tasks">
+      <div class="card-h">
+        <h3>下載任務</h3>
+        <div class="chips" id="chips">
+          <button data-f="all" class="on">全部</button>
+          <button data-f="active">進行中</button>
+          <button data-f="done">已完成</button>
+          <button data-f="paused">已暫停</button>
+          <button data-f="fail">失敗</button>
+        </div>
+        <div class="grow"></div>
+        <button class="ghost small" id="pausebtn" data-act="toggle_pause">⏸ 全部暫停</button>
+        <button class="ghost small" data-act="retry_failed">🔁 重試失敗</button>
+      </div>
+      <div id="list" class="list"></div>
+    </section>
+
+    <div class="rcol">
+      <section class="card" id="nexus"></section>
+      <section class="card">
+        <div class="card-h"><h3>最新消息</h3></div>
+        <div id="news"></div>
+      </section>
+      <section class="card">
+        <div class="card-h"><h3>快速功能</h3></div>
+        <div class="quick">
+          <button data-act="paste"><i>📋</i>貼上網址下載</button>
+          <button data-act="open_folder"><i>📂</i>打開下載資料夾</button>
+          <button data-act="pair"><i>🔗</i>配對瀏覽器</button>
+          <button data-act="check_update"><i>⟳</i>檢查更新</button>
+          <button data-act="link:manual"><i>📖</i>說明書</button>
+          <button data-act="old:setup"><i>🛡</i>安裝擋廣告</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<div id="panel" class="panel" hidden>
+  <div class="card-h"><h3>通知</h3><div class="grow"></div><button class="ghost small" id="clearn">清除</button></div>
+  <div id="notices"></div>
+</div>
+<div id="modal" class="modal" hidden><div class="box" id="mbox"></div></div>
+<div id="toast" class="toast" hidden></div>
+<script>/*JS*/</script>
+</body>
+</html>

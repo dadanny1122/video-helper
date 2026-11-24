@@ -7,6 +7,8 @@ on:
     paths:
       - 'video_helper_app.py'
       - 'nexus/**'
+      - 'webui/**'
+      - '.github/webui_host_test.py'
       - 'requirements.txt'
       - '.github/workflows/build.yml'
       - '.github/ci_smoke.py'
@@ -128,6 +130,25 @@ jobs:
           PYTHONUTF8: "1"
         run: python .github/ci_smoke.py
 
+      # v1.36.0 新介面：先測白名單／動作／關視窗流程（假網頁），再真的開 WebView2 截圖
+      - name: New UI test (WebView2)
+        if: steps.chk.outputs.exists != '1'
+        timeout-minutes: 5
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+        run: |
+          python .github/webui_host_test.py
+          python .github/webui_host_test.py --real
+
+      - name: Upload new UI screenshot
+        if: always() && steps.chk.outputs.exists != '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: webui-shots
+          path: webui-shots/
+          if-no-files-found: ignore
+
       # 網路流量測試：記錄電腦版所有對外連線，連到 SECURITY.md 清單以外的地方就失敗（擋發布）
       - name: Network allowlist test
         if: steps.chk.outputs.exists != '1'
@@ -169,6 +190,10 @@ jobs:
           --collect-all yt_dlp --collect-submodules pystray --collect-data sv_ttk
           --add-binary "ffmpeg_bin/ffmpeg.exe;ffmpeg" --add-binary "ffmpeg_bin/ffprobe.exe;ffmpeg"
           --add-data "nexus/net/sites.json;nexus/net"
+          --add-data "webui;webui" --add-data "CHANGELOG.md;."
+          --hidden-import webui --hidden-import webview.platforms.winforms --hidden-import webview.platforms.edgechromium
+          --exclude-module webview.platforms.gtk --exclude-module webview.platforms.qt --exclude-module webview.platforms.cocoa
+          --exclude-module webview.platforms.android --exclude-module webview.platforms.cef --exclude-module webview.platforms.mshtml
           --exclude-module PIL._avif --exclude-module PIL.AvifImagePlugin
           --exclude-module PIL._webp --exclude-module PIL.WebPImagePlugin
           --exclude-module PIL.ImageQt --exclude-module PIL.ImageTk
@@ -183,7 +208,7 @@ jobs:
         run: |
           ./dist/VideoHelper.exe --selftest selftest.json || true
           cat selftest.json
-          python -c "import json,sys; r=json.load(open('selftest.json',encoding='utf-8')); print('::notice title=EXE self-test::ffmpeg=%s tray=%s ok=%s' % (r.get('ffmpeg_version'), r.get('tray'), r.get('ok'))); sys.exit(0 if r.get('ok') and r.get('frozen') else 1)"
+          python -c "import json,sys; r=json.load(open('selftest.json',encoding='utf-8')); print('::notice title=EXE self-test::ffmpeg=%s tray=%s webui=%s ok=%s' % (r.get('ffmpeg_version'), r.get('tray'), r.get('webui') or r.get('webui_error'), r.get('ok'))); sys.exit(0 if r.get('ok') and r.get('frozen') else 1)"
           ls -la dist/VideoHelper.exe
           echo "::notice title=EXE size::$(stat -c %s dist/VideoHelper.exe) bytes"
 
