@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.36.0"
+VERSION = "1.36.1"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -2067,6 +2067,19 @@ def open_path(path, select=False):
             subprocess.run(["xdg-open", path if os.path.isdir(path) else os.path.dirname(path)])
     except Exception:
         log.exception("打開檔案位置失敗：%s", path)
+
+
+def play_file(f):
+    """用電腦預設的播放器打開影片（open_path 給檔案只會打開它所在的資料夾）"""
+    try:
+        if sys.platform.startswith("win"):
+            os.startfile(f)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", f])
+        else:
+            subprocess.Popen(["xdg-open", f])
+    except Exception:
+        log.exception("播放失敗：%s", f)
 
 
 # ======================================================================
@@ -4740,8 +4753,8 @@ class App:
         f = self._web_file(key)
         if not f:
             return {"ok": False, "msg": "檔案不見了（可能被移動或刪除）"}
-        open_path(f)
-        return {"ok": True}
+        play_file(f)                       # v1.36.1：原本誤用 open_path → 只打開資料夾
+        return {"ok": True, "msg": "用預設播放器打開…"}
 
     def web_reveal(self, key):
         f = self._web_file(key)
@@ -5119,15 +5132,7 @@ class App:
         if not (f and os.path.exists(f)):
             messagebox.showinfo("找不到檔案", "這筆紀錄的檔案已經不存在（可能被移動或刪除了）。")
             return
-        try:
-            if sys.platform.startswith("win"):
-                os.startfile(f)
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", f])
-            else:
-                subprocess.Popen(["xdg-open", f])
-        except Exception:
-            log.exception("播放失敗：%s", f)
+        play_file(f)
 
     def history_double(self):
         """雙擊：完成的就播放，失敗／取消的就重新下載"""

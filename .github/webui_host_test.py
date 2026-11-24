@@ -115,9 +115,11 @@ def fake_mode():
     ok(row["open"] and row["st"] == "done" and row["key"].startswith("h"), "下載紀錄出現在任務列表、可以打開")
     opened = []
     a.open_path, real_open = (lambda p, select=False: opened.append((p, select))), a.open_path
+    a.play_file, real_play = (lambda p: opened.append((p, "play"))), a.play_file
     call("reveal", row["key"])
-    ok(opened == [(f, True)], "📂 打開檔案位置")
-    a.open_path = real_open
+    call("play", row["key"])
+    ok(opened == [(f, True), (f, "play")], "📂 打開檔案位置、▶ 用播放器打開影片（不是打開資料夾）")
+    a.open_path, a.play_file = real_open, real_play
     # 舊介面
     call("old", "set")
     drain(app, root)
