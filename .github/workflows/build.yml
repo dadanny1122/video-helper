@@ -191,7 +191,7 @@ jobs:
           --add-binary "ffmpeg_bin/ffmpeg.exe;ffmpeg" --add-binary "ffmpeg_bin/ffprobe.exe;ffmpeg"
           --add-data "nexus/net/sites.json;nexus/net"
           --add-data "webui;webui" --add-data "CHANGELOG.md;."
-          --hidden-import webui --hidden-import webview.platforms.winforms --hidden-import webview.platforms.edgechromium
+          --hidden-import webui --hidden-import webui.i18n --hidden-import webview.platforms.winforms --hidden-import webview.platforms.edgechromium
           --exclude-module webview.platforms.gtk --exclude-module webview.platforms.qt --exclude-module webview.platforms.cocoa
           --exclude-module webview.platforms.android --exclude-module webview.platforms.cef --exclude-module webview.platforms.mshtml
           --exclude-module PIL._avif --exclude-module PIL.AvifImagePlugin

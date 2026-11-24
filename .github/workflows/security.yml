@@ -14,6 +14,10 @@ on:
       - 'video_helper_app.py'
       - 'webui/**'
       - '.github/webui_test.js'
+      - '.github/webui_i18n_test.js'
+      - '.github/webui_fake.js'
+      - '.github/i18n_check.py'
+      - 'nexus/**'
       - '.github/workflows/security.yml'
   workflow_dispatch:
 
@@ -38,6 +42,10 @@ jobs:
       # 新介面（電腦版的網頁畫面）：假資料餵進去，檢查畫面、按鈕、網站標題有跳脫、完全不連外
       - name: New UI page test (desktop webui)
         run: node .github/webui_test.js webui-shots
+      - name: English UI (dictionary + every page in English)
+        run: |
+          python3 -I .github/i18n_check.py
+          node .github/webui_i18n_test.js webui-shots/en
       - name: Upload new UI screenshots
         if: always()
         uses: actions/upload-artifact@v4

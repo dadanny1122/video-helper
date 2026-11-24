@@ -228,6 +228,27 @@ def fake_mode():
     drain(app, root, 0.2)
     ok(app.settings["theme"] == "dark" and host.state["theme"] == "dark", "外觀換成深色（新介面跟著換）")
     ok(call("set", {"key": "close_action", "value": "亂寫"})["ok"] is False, "關閉視窗的選項要在清單裡")
+    # ---- v1.44.0 英文版 ----
+    ok(cfg.get("lang") == "auto" and [x[0] for x in cfg["langs"]] == ["auto", "zh", "en"], "設定頁有語言選單（預設跟系統）")
+    ok(call("set", {"key": "lang", "value": "fr"})["ok"] is False, "不認得的語言不能存")
+    ok(call("set", {"key": "lang", "value": "en"})["ok"] and app.settings["lang"] == "en" and a.I18N.LANG == "en", "語言換成英文")
+    drain(app, root, 0.2)
+    ok(host.state["lang"] == "en", "新介面收到 lang=en")
+    ok(a.T("結束") == "Quit" and a.T("已加入 {n} 部影片", n=3) == "Added 3 videos" and a.T("⏸ 已暫停（2 部等待中）") == "⏸ Paused (2 waiting)",
+       "電腦版自己的字（系統匣、通知）會翻")
+    ok(hasattr(a.messagebox.showinfo, "__wrapped__") and hasattr(a.filedialog.askdirectory, "__wrapped__"), "對話框標題和內容會自動翻")
+    w = a.tk.Toplevel(root)
+    lb = a.ttk.Label(w, text="配對碼")
+    lb.pack()
+    w.title("配對瀏覽器腳本")
+    a.tk_translate(w)
+    ok(lb.cget("text") == "Pairing code" and w.title() == "Pair the browser script", "小視窗（配對、AI 字幕）的字會翻")
+    lb.configure(text="開始")
+    drain(app, root, 0.9)
+    ok(lb.cget("text") == "Start", "小視窗之後改的字也會翻")
+    w.destroy()
+    ok(call("set", {"key": "lang", "value": "zh"})["ok"] and a.I18N.LANG == "zh" and a.T("結束") == "結束", "換回中文")
+    call("set", {"key": "lang", "value": "auto"})
     d2 = tempfile.mkdtemp()
     real_ask = a.filedialog.askdirectory
     a.filedialog.askdirectory = lambda **k: d2

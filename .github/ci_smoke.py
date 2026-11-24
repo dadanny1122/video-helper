@@ -524,7 +524,7 @@ wait(lambda: app.tray is not None, 5)
 assert app.tray is not None, "系統匣小圖示沒有一打開就出現"
 _items = [str(i.text) for i in app.tray.menu.items if str(i.text)]
 for _w in ("打開 Video Helper", "貼上網址下載", "打開下載資料夾", "結束"):
-    assert any(_w in x for x in _items), f"系統匣選單少了「{_w}」：{_items}"
+    assert any(a.T(_w) in x for x in _items), f"系統匣選單少了「{_w}」：{_items}"      # v1.44.0：英文 Windows 會是英文
 app.update_tray(); assert "Video Helper" in app.tray.title
 _was = app.queue_paused
 app.q.put(("tray_pause", None)); wait(lambda: app.queue_paused != _was, 5)

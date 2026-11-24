@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.43.0"
+VERSION = "1.44.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -162,6 +162,7 @@ DEFAULT_SETTINGS = {
     "default_quality": "最高",
     "rate_limit_mbps": 0,             # 下載速度上限（Mbps），0＝不限制
     "theme": "auto",                  # 外觀：auto 跟系統／dark 深色／light 淺色
+    "lang": "auto",                   # v1.44.0 語言：auto 跟 Windows／zh 繁體中文／en English
     "show_home": True,                # 打開時先顯示首頁（大卡片選單）
     "skip_downloaded": True,          # 批次、瀏覽器送來的：下載過（檔案還在）就跳過
     "smart_segments": "observe",      # 智慧分段：auto＝自動調整／observe＝只觀察（記錄建議、照舊 6 段）／off＝關閉
@@ -2151,6 +2152,72 @@ def play_file(f):
 import tkinter as tk                                   # noqa: E402
 from tkinter import ttk, messagebox, filedialog        # noqa: E402
 
+# ---------- v1.44.0 英文版（docs/i18n/00-英文版規格.md）：字典 webui/en.json，網頁和這裡共用 ----------
+try:
+    from webui import i18n as I18N                      # noqa: E402
+except Exception:                                       # 打包少了也不要壞：一律中文
+    I18N = None
+
+
+def T(s, **kw):
+    """電腦版自己顯示的字（系統匣、通知、對話框）：英文模式才翻"""
+    if I18N:
+        return I18N.t(s, **kw)
+    return s.format(**kw) if kw else s
+
+
+def _wrap_dialogs():
+    """messagebox／filedialog 的標題和內容在英文模式自動翻（原本的程式不用一個一個改）"""
+    def wrap(f):
+        def g(*a, **kw):
+            if I18N and I18N.LANG == "en":
+                a = tuple(I18N.tr(x) if isinstance(x, str) else x for x in a)
+                for k in ("title", "message", "detail"):
+                    if isinstance(kw.get(k), str):
+                        kw[k] = I18N.tr(kw[k])
+            return f(*a, **kw)
+        g.__wrapped__ = f
+        return g
+    for mod, names in ((messagebox, ("showinfo", "showwarning", "showerror", "askyesno", "askyesnocancel", "askokcancel", "askretrycancel")),
+                       (filedialog, ("askdirectory", "askopenfilename", "asksaveasfilename", "askopenfilenames"))):
+        for n in names:
+            f = getattr(mod, n, None)
+            if f and not hasattr(f, "__wrapped__"):
+                setattr(mod, n, wrap(f))
+
+
+_wrap_dialogs()
+
+
+def tk_translate(win):
+    """小視窗（配對、AI 字幕…）：英文模式把所有元件的 text 換成英文；之後程式改了字，每 0.7 秒再換一次"""
+    if not I18N or I18N.LANG != "en":
+        return
+    def walk(w):
+        try:
+            txt = w.cget("text")
+        except Exception:
+            txt = None
+        if isinstance(txt, str) and I18N.CJK.search(txt):
+            try:
+                w.configure(text=I18N.tr(txt))
+            except Exception:
+                pass
+        if isinstance(w, (tk.Toplevel, tk.Tk)):
+            try:
+                if I18N.CJK.search(w.title()):
+                    w.title(I18N.tr(w.title()))
+            except Exception:
+                pass
+        for c in w.winfo_children():
+            walk(c)
+    try:
+        if win.winfo_exists():
+            walk(win)
+            win.after(700, lambda: tk_translate(win))
+    except Exception:
+        pass
+
 
 # ======================================================================
 # 外觀（v1.25.0）：Windows 11 的 Sun Valley（Fluent）主題＋深色標題列＋品牌色
@@ -3319,6 +3386,8 @@ class App:
         self._web_urls = {}            # 新介面紀錄編號 → 網址
         self.q = queue.Queue()
         self.settings = Settings()
+        if I18N:
+            I18N.set_lang(self.settings["lang"])
         global AI_USAGE_HOOK
         AI_USAGE_HOOK = self.note_ai_usage
         self.history = History()
@@ -4581,6 +4650,7 @@ class App:
 
     def float_dialog(self, win, transient=False):
         """小視窗：新介面時原本的視窗藏著，掛在它下面會一起藏起來 → 改成先跳到最上面"""
+        win.after(1, lambda: tk_translate(win))
         if self.web and not self.web_fallback and self.root.state() == "withdrawn":
             win.attributes("-topmost", True)
             win.after(600, lambda: win.winfo_exists() and win.attributes("-topmost", False))
@@ -4747,6 +4817,7 @@ class App:
         ]
         self.web.state = {
             "version": VERSION, "theme": self.theme, "paused": paused, "bridge": bool(self.bridge.server),
+            "lang": I18N.LANG if I18N else "zh",
             "kpis": kpis, "tasks": tasks, "nexus": nx, "notices": list(self.notices),
             "update": {"tag": self.update_info[0]} if self.update_info else None, "ask": self._web_ask,
             "hist_ver": ver, "analysis": self._web_an, "batch": self.batch_running,
@@ -5005,8 +5076,9 @@ class App:
             "skip_downloaded": bool(st["skip_downloaded"]), "smart_segments": st["smart_segments"],
             "smart_modes": [[v, k] for k, v in SMART_MODES.items()],
             "filename_template": st["filename_template"] if st["filename_template"] in FILENAME_TEMPLATES else DEFAULT_TEMPLATE,
-            "templates": list(FILENAME_TEMPLATES), "tpl_preview": preview_filename(st["filename_template"]),
+            "templates": list(FILENAME_TEMPLATES), "tpl_preview": preview_filename(st["filename_template"], title=T("影片標題")),
             "theme": st["theme"], "themes": [[v, k] for k, v in THEMES.items()],
+            "lang": st["lang"], "langs": [["auto", "跟系統"], ["zh", "繁體中文"], ["en", "English"]],
             "close_action": st["close_action"], "close_choices": CLOSE_CHOICES if pystray else [c for c in CLOSE_CHOICES if "系統匣" not in c],
             "tray_always": bool(st["tray_always"]), "tray_ok": pystray is not None,
             "keep_history": bool(st["keep_history"]), "keep_stats": bool(st["keep_stats"]),
@@ -5043,6 +5115,11 @@ class App:
             st[k] = v
         elif k == "log_keep_days" and type(v) is int and v in (0, 3, 7, 14, 30):
             st[k] = v
+        elif k == "lang" and I18N and v in I18N.LANGS:
+            st[k] = v
+            I18N.set_lang(v)
+            if self.tray:
+                self.update_tray(force=True)
         elif k == "theme" and v in THEMES.values():
             self.theme_var.set(next(n for n, m in THEMES.items() if m == v))
             self.change_theme()                                      # 會存檔、換原本視窗的顏色
@@ -5669,15 +5746,15 @@ class App:
             # v1.35.0：一直都在（設定可關）；右鍵選單多了狀態、暫停／繼續、打開下載資料夾、貼上網址下載
             M = pystray.MenuItem
             menu = pystray.Menu(
-                M("打開 Video Helper", lambda: self.q.put(("show_window", None)), default=True),
-                M(lambda item: self.tray_status, None, enabled=False),
+                M(lambda item: T("打開 Video Helper"), lambda: self.q.put(("show_window", None)), default=True),
+                M(lambda item: T(self.tray_status), None, enabled=False),
                 pystray.Menu.SEPARATOR,
-                M(lambda item: "▶ 繼續全部下載" if self.tray_paused else "⏸ 暫停全部下載",
+                M(lambda item: T("▶ 繼續全部下載") if self.tray_paused else T("⏸ 暫停全部下載"),
                   lambda: self.q.put(("tray_pause", None))),
-                M("📋 貼上網址下載", lambda: self.q.put(("tray_paste", None))),
-                M("📂 打開下載資料夾", lambda: self.q.put(("tray_folder", None))),
+                M(lambda item: T("📋 貼上網址下載"), lambda: self.q.put(("tray_paste", None))),
+                M(lambda item: T("📂 打開下載資料夾"), lambda: self.q.put(("tray_folder", None))),
                 pystray.Menu.SEPARATOR,
-                M("結束", lambda: self.q.put(("tray_quit", None))))
+                M(lambda item: T("結束"), lambda: self.q.put(("tray_quit", None))))
             self.tray = pystray.Icon("VideoHelper", make_icon_image(), "Video Helper", menu)
             self.tray.run_detached()
             return True
@@ -5711,7 +5788,7 @@ class App:
     def notify(self, msg):
         if self.tray:
             try:
-                self.tray.notify(msg, "Video Helper")
+                self.tray.notify(T(msg), "Video Helper")
             except Exception:
                 pass
 
@@ -5724,8 +5801,10 @@ class App:
             except Exception:
                 pass
 
-    def update_tray(self):
-        """把下載狀態寫到系統匣的提示文字和選單（每秒由 poll 呼叫；沒變就不動）"""
+    def update_tray(self, force=False):
+        """把下載狀態寫到系統匣的提示文字和選單（每秒由 poll 呼叫；沒變就不動；換語言時 force）"""
+        if force:
+            self.tray_status = None
         if not self.tray:
             return
         run = self.queue.running()
@@ -5740,7 +5819,7 @@ class App:
         if (st, paused) != (self.tray_status, self.tray_paused):
             self.tray_status, self.tray_paused = st, paused
             try:
-                self.tray.title = "Video Helper：" + st
+                self.tray.title = "Video Helper" + (": " if I18N and I18N.LANG == "en" else "：") + T(st)
                 self.tray.update_menu()
             except Exception:
                 pass
@@ -5765,13 +5844,13 @@ class App:
                 urls.append(u)
         if not urls:
             try:
-                self.tray.notify("剪貼簿裡沒有網址：先複製影片網址再按一次", "Video Helper")
+                self.tray.notify(T("剪貼簿裡沒有網址：先複製影片網址再按一次"), "Video Helper")
             except Exception:
                 pass
             return
         self.start_batch(urls)
         try:
-            self.tray.notify(f"已加入 {len(urls)} 部影片", "Video Helper")
+            self.tray.notify(T("已加入 {n} 部影片", n=len(urls)), "Video Helper")
         except Exception:
             pass
 
@@ -6798,8 +6877,10 @@ def selftest(out_path):
         import webui.thumbs  # noqa: F401
         import webview  # noqa: F401
         import webview.platforms.winforms  # noqa: F401
-        r["webui"] = {"html": len(webui.page_html()), "news": len(webui.load_news()), "webview2": webui.webview2_version()}
-        ok &= r["webui"]["html"] > 5000 and r["webui"]["news"] > 0
+        from webui import i18n as _i18n
+        r["webui"] = {"html": len(webui.page_html()), "news": len(webui.load_news()), "webview2": webui.webview2_version(),
+                      "en": len(_i18n.load()["exact"]), "en_test": _i18n.tr("結束")}
+        ok &= r["webui"]["html"] > 5000 and r["webui"]["news"] > 0 and r["webui"]["en"] > 500 and r["webui"]["en_test"] == "Quit"
     except Exception as e:
         r["webui_error"] = repr(e)
         ok = False

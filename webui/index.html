@@ -159,6 +159,7 @@
       <section class="card">
         <div class="card-h"><h3>🎨 外觀與視窗</h3></div>
         <div class="srow"><div><b>外觀</b><div class="muted small">新介面和原本的視窗一起換</div></div><div class="seg" id="s-theme"></div></div>
+        <div class="srow"><div><b>語言 Language</b><div class="muted small">跟系統＝Windows 是中文就用中文，其他用英文</div></div><select data-set="lang" id="s-lang"></select></div>
         <div class="srow"><div><b>關閉視窗時</b><div class="muted small">縮到系統匣＝縮到右下角繼續下載，完成會通知</div></div><select data-set="close_action" id="s-close"></select></div>
         <div class="srow"><div><b>系統匣小圖示一直顯示</b><div class="muted small">右鍵：狀態、暫停、貼上網址下載、打開下載資料夾</div></div><label class="sw"><input type="checkbox" data-set="tray_always" id="s-tray"><span></span></label></div>
       </section>
@@ -237,7 +238,7 @@
     <div class="sgrid">
       <section class="card">
         <div class="card-h"><h3>🔗 已配對的瀏覽器</h3><div class="grow"></div><button class="ghost small" id="sec-refresh">↻ 重新整理</button></div>
-        <p class="muted small">只存密碼的雜湊值（看不到原本的密碼）。不認得的就按「取消」，那個瀏覽器就不能再送影片過來。</p>
+        <p class="muted small">只存密碼的雜湊值（看不到原本的密碼）。不認得的就按「取消配對」，那個瀏覽器就不能再送影片過來。</p>
         <div id="sec-paired"></div>
         <div class="muted small" id="sec-bridge"></div>
       </section>

@@ -5,6 +5,7 @@
 - 網頁只拿得到 Api 的 4 個函式；動作名稱有白名單，真的做事一律丟回 App.q 由 Tk 執行緒處理
 - 網頁用 html= 直接塞進去（不開本機 HTTP 伺服器、不載入任何網址）
 """
+import json
 import os
 import sys
 import threading
@@ -31,7 +32,7 @@ ACTIONS = {
     "sec_view": None, "sec_unpair": 16, "clear_logs": None, "clear_stats": None, "verify_self": None,
 }
 SETTING_KEYS = ("default_quality", "rate_limit", "skip_downloaded", "tray_always", "keep_history", "keep_stats",
-                "smart_segments", "filename_template", "close_action", "theme", "log_keep_days")
+                "smart_segments", "filename_template", "close_action", "theme", "log_keep_days", "lang")
 MAX_KEYS = 500
 QUALITIES = ("最高", "2160", "1440", "1080", "720", "480", "360")
 LOAD_TIMEOUT = 25            # 秒：網頁這麼久還沒說「好了」→ 改開舊介面
@@ -74,6 +75,13 @@ def available():
     return True, f"WebView2 {v}"
 
 
+def en_json():
+    """webui/en.json 塞進網頁用：重新排成一行，< 一律跳脫（不可能出現 </script>）"""
+    with open(os.path.join(base_dir(), "webui", "en.json"), encoding="utf-8") as f:
+        d = json.load(f)
+    return json.dumps(d, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
+
+
 def page_html():
     """把 index.html、app.css、app.js 合成一頁（打包進 EXE 的檔案，不連外）"""
     d = os.path.join(base_dir(), "webui")
@@ -81,7 +89,7 @@ def page_html():
     def read(name):
         with open(os.path.join(d, name), encoding="utf-8") as f:
             return f.read()
-    css, js = read("app.css"), read("app.js")
+    css, js = read("app.css"), read("i18n.js").replace("/*EN*/{ exact: {}, patterns: [] }", en_json(), 1) + "\n" + read("app.js")
     for bad in ("</style", "</script"):
         if bad in css.lower() or bad in js.lower():
             raise ValueError("app.css／app.js 裡不能有 " + bad)

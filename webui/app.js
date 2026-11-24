@@ -15,6 +15,7 @@ const TITLES = { home: ['首頁', '安全、乾淨、穩定地下載'], dl: ['�
   sec: ['安全與統計', '誰配對過、AI 用了多少、連過哪些網站、元件指紋、下載統計'],
   set: ['設定', '改了馬上存；原本視窗的 ③ 設定、⚙ 進階設定都在這裡'], setup: ['安裝擋廣告', '在 Chrome 裝暴力猴和 Video Helper 腳本'] };
 const PAGES = Object.keys(TITLES);
+const EN_NEWS = 'Release notes are written in Chinese. Open "About" → GitHub releases to read them (your browser can translate the page).';
 const STEPS = [['安裝暴力猴（Violentmonkey）', '打開後按「加到 Chrome」→「新增擴充功能」'],
   ['打開暴力猴的必要設定', '把「允許使用者指令碼」打開；\n有用無痕視窗的話，「在無痕模式下允許」也打開'],
   ['安裝 Video Helper 腳本', '打開後按「安裝」，之後有新版本會自動更新']];
@@ -98,7 +99,7 @@ function rowHtml(t, opts = {}) {
   const cb = opts.hist ? `<input type="checkbox" data-sel="${k}" ${SEL.has(t.key) ? 'checked' : ''} title="選取">` : '';
   return `<div class="row${opts.hist ? ' hrow' : ''}${SEL.has(t.key) && opts.hist ? ' sel' : ''}" data-key="${k}" data-open="${t.open ? 1 : 0}">${cb}
     ${thumbHtml(t)}
-    <div style="min-width:0"><div class="t1" title="${esc(t.title)}">${t.node ? '🖧 ' : ''}${esc(t.title)}</div>
+    <div style="min-width:0"><div class="t1">${t.node ? '🖧 ' : ''}<span translate="no" title="${esc(t.title)}">${esc(t.title)}</span></div>
       <div class="t2">${meta}${t.speed ? `<span>${esc(t.speed)}</span>` : ''}${t.note ? `<span>${esc(t.note)}</span>` : ''}</div>${bar}</div>
     <div class="acts"><span class="st ${esc(t.st)}">${esc(label)}</span>${btn.join('')}</div></div>`;
 }
@@ -119,7 +120,7 @@ function renderTasks(tasks) {
 function renderNexus(n) {
   const el = $('#nexus');
   if (!n) { el.innerHTML = `<div class="card-h"><h3>Nexus 節點</h3></div><div class="muted small">節點功能無法載入</div>`; return; }
-  const rows = (n.devices || []).slice(0, 4).map((d) => `<div class="nx-row"><span><span class="dot ${d.online ? 'ok' : ''}"></span>${esc(d.name)}</span><span class="muted">${esc(d.state)}</span></div>`).join('');
+  const rows = (n.devices || []).slice(0, 4).map((d) => `<div class="nx-row"><span><span class="dot ${d.online ? 'ok' : ''}"></span><span translate="no">${esc(d.name)}</span></span><span class="muted">${esc(d.state)}</span></div>`).join('');
   el.innerHTML = `<div class="card-h"><h3>Nexus 節點</h3><div class="grow"></div><span class="pill ${n.running ? 'ok' : ''}">${n.running ? 'Master 執行中' : '未啟動'}</span></div>
     <div class="nx-row"><span>在線節點</span><b>${esc(n.online)} / ${esc(n.total)}</b></div>
     <div class="nx-row"><span>執行中的節點任務</span><b>${esc(n.tasks)}</b></div>${rows}
@@ -128,8 +129,10 @@ function renderNexus(n) {
 
 function renderNews(news, upd) {
   const u = upd ? `<div class="news upd" data-act="link:update"><b>✨ 有新版本 v${esc(upd.tag)}</b><div class="muted">按這裡前往下載</div></div>` : '';
-  $('#news').innerHTML = u + (news || []).map((n) => `<div class="news"><b>v${esc(n.ver)} ${esc(n.title)}</b>
-    <div class="muted">${(n.items || []).map(esc).join('<br>')}</div></div>`).join('');
+  // 更新紀錄只有中文（規格 L6）：英文模式只說有哪些版本
+  $('#news').innerHTML = u + (I18N.lang === 'en' ? (news || []).slice(0, 1).map((n) => `<div class="news"><b>v${esc(n.ver)}</b><div class="muted">${esc(EN_NEWS)}</div></div>`).join('')
+    : (news || []).map((n) => `<div class="news" translate="no"><b>v${esc(n.ver)} ${esc(n.title)}</b>
+    <div class="muted">${(n.items || []).map(esc).join('<br>')}</div></div>`).join(''));
 }
 
 function renderNotices(ns) {
@@ -153,7 +156,7 @@ function renderAnalysis(a) {
   }
   const f = (a.formats || []).map((x) => `<button class="fmt${x.i === anPick ? ' on' : ''}" data-fmt="${x.i}"><b>${esc(x.label)}</b>
     <div>${esc(x.size)}・${esc(x.time)}・${esc(x.kind)}</div></button>`).join('');
-  el.innerHTML = `<div class="an"><h4>${esc(a.title)}</h4><div class="muted small">${esc(a.site)}・長度 ${esc(a.duration)}</div>
+  el.innerHTML = `<div class="an"><h4 translate="no">${esc(a.title)}</h4><div class="muted small">${esc(a.site)}・長度 ${esc(a.duration)}</div>
     ${a.downloaded ? `<div class="warn">⚠ 這支影片 ${esc(a.downloaded)}</div>` : ''}
     <div class="fmts">${f}</div>
     <div class="btns"><button class="accent" id="ango">⬇ 下載這個畫質</button><button class="ghost" data-act="clear_analysis">取消</button></div></div>`;
@@ -219,6 +222,7 @@ function renderSettings(c) {
   $('#s-tplprev').textContent = '範例：' + c.tpl_preview;
   $('#s-theme').innerHTML = c.themes.map(([v, l]) => `<button data-theme="${esc(v)}" class="${v === c.theme ? 'on' : ''}">${esc(l)}</button>`).join('');
   $('#s-close').innerHTML = opts(c.close_choices, c.close_action);
+  $('#s-lang').innerHTML = opts(c.langs || [], c.lang);
   $('#s-tray').disabled = !c.tray_ok;
   for (const el of $$('#page-set input[type=checkbox][data-set]')) el.checked = !!c[el.dataset.set];
   $('#s-bridge').textContent = c.bridge || (c.bridge_on ? '執行中' : '關閉中') + `｜已配對 ${c.paired} 個瀏覽器`;
@@ -273,7 +277,7 @@ function renderNexusPage() {
   const online = n.devices.filter((d) => d.online).length, act = n.devices.filter((d) => d.status === 'ACTIVE').length;
   $('#nx-dsum').textContent = `已核准 ${act} 台・在線 ${online} 台` + (n.devices.some((d) => d.status === 'PENDING') ? '・有節點在等核准' : '');
   $('#nx-devs').innerHTML = n.devices.length ? n.devices.map((d) => `<div class="nrow"><div style="min-width:0">
-      <div class="t1"><span class="dot ${d.online ? 'ok' : ''}"></span>${esc(d.name)}</div>
+      <div class="t1"><span class="dot ${d.online ? 'ok' : ''}"></span><span translate="no">${esc(d.name)}</span></div>
       <div class="t2"><span class="badge2 ${esc(d.status)}">${esc(d.status_name)}</span><span>${esc(d.conn)}</span><span>心跳 ${esc(d.seen)}</span><span>沙箱：${esc(d.iso)}</span></div>
       <div class="t2 mono"><span>配對 ${esc(d.created)}</span><span>${esc(d.ip)}</span><span>指紋 ${esc(d.fp)}</span></div></div>
       <div class="acts">${d.ops.map((o) => `<button data-nxdev="${esc(o)}" data-id="${esc(d.id)}">${esc(DEV_OPS[o][0])}</button>`).join('')}</div></div>`).join('')
@@ -332,7 +336,7 @@ async function loadSec() {
   secSig = sig;
   $('#sec-paired').innerHTML = c.paired.length ? c.paired.map((p) => `<div class="srow"><div><b>${esc(p.ua)}</b>
       <div class="muted small">配對 ${esc(p.paired)}｜最後使用 ${esc(p.last)}｜用過 ${esc(p.uses)} 次｜編號 ${esc(p.id.slice(0, 8))}</div></div>
-      <button class="ghost small" data-unpair="${esc(p.id)}">取消</button></div>`).join('') : '<div class="empty">沒有配對過的瀏覽器</div>';
+      <button class="ghost small" data-unpair="${esc(p.id)}">取消配對</button></div>`).join('') : '<div class="empty">沒有配對過的瀏覽器</div>';
   $('#sec-bridge').textContent = '連線服務：' + c.bridge;
   $('#sec-ai').innerHTML = c.ai.length ? c.ai.map((m) => `<div class="srow"><div><b>${esc(m.month)}</b><div class="muted small">${m.items.map(esc).join('；')}</div></div></div>`).join('')
     : `<div class="empty">還沒用過${c.ai_key ? '' : '，也沒填 AI 金鑰：完全不會連到 AI'}</div>`;
@@ -406,6 +410,7 @@ function renderDl(s) {
 
 function render(s) {
   S = s;
+  if (I18N.set(s.lang)) { lastSig = ''; setSig = ''; nxSig = ''; secSig = ''; go(page); }   // 換語言：整頁重畫
   if (s.start_page && !render.started) { render.started = true; go(s.start_page); }   // 第一次打開：先帶去裝擋廣告
   document.body.className = s.theme === 'light' ? 'light' : 'dark';
   $('#ver').textContent = 'v' + s.version;

@@ -1,0 +1,1547 @@
+{
+ "exact": {
+  "\n\n（目前有其他影片在下載，會排在後面）": "\n\n(Other videos are downloading; this one will wait its turn)",
+  "\n兩種模式各有 10 個以上任務、在差不多的網路下比較，才看得出自動調整有沒有比較好。": "\nOnly with 10+ tasks in each mode on a similar network can you tell whether Auto is better.",
+  "AI 伺服器太忙，等一下再試": "The AI server is busy — try again later",
+  "AI 字幕": "AI subtitles",
+  "AI 模型": "AI model",
+  "AI 沒有回答這個": "The AI didn't answer this",
+  "AI 聽寫中（在你的電腦上跑，影片越長越久）…": "AI transcribing (runs on your computer; longer videos take longer)…",
+  "AI 額度用完或問太快": "Out of AI credit or too many requests",
+  "AI（選用，要付費）": "AI (optional, paid)",
+  "API 金鑰不對": "Wrong API key",
+  "GitHub 暫時限制查詢次數，請過一陣子再試": "GitHub is rate-limiting lookups — try again in a while",
+  "GitHub 發布頁": "GitHub releases",
+  "MP4 直連": "Direct MP4",
+  "Master 執行中": "Master running",
+  "Master 已啟用": "Master enabled",
+  "Master 已關閉（所有節點連線切斷）": "Master stopped (all node connections closed)",
+  "Master 指紋": "Master fingerprint",
+  "Master 未啟動": "Master not running",
+  "Master 的空間不夠，晚點再傳": "The Master is out of space — send later",
+  "Master 驗證": "Master check",
+  "Nexus 管理": "Nexus",
+  "Nexus 節點": "Nexus nodes",
+  "Nexus 節點在線": "Nexus nodes online",
+  "SRT（最通用）": "SRT (works everywhere)",
+  "VTT（網頁、手機）": "VTT (web, phones)",
+  "Video Helper 備份": "Video Helper backup",
+  "Video Helper 電腦版": "Video Helper Desktop",
+  "Worker 版本太舊，請更新": "Worker version too old — please update",
+  "params 必須是物件": "params must be an object",
+  "whisper.cpp 解壓縮後找不到 whisper-cli.exe，請回報作者": "whisper-cli.exe not found after unpacking whisper.cpp — please report this to the author",
+  "—（舊版節點）": "— (old node)",
+  "• 聽寫完全在你的電腦上跑，影片和聲音不會上傳。\n• 第一次用會下載聽寫程式和模型（只要一次）。沒有顯示卡的電腦，1 小時影片「快」約 10～20 分鐘，「準」慢 3～5 倍。\n• 影片本來就是中文：語言選「中文」，不用翻譯。\n• 翻中文時只把字幕文字送給 AI（用你的金鑰，會花一點點額度）。\n• 字幕存在影片旁邊、跟影片同名；VLC、PotPlayer 打開影片會自動載入。雙語字幕叫「影片.雙語.srt」，在播放器的字幕選單切換。": "• Transcribing runs entirely on your computer; video and audio are never uploaded.\n• The first time, the transcriber and model are downloaded (only once). Without a graphics card, a 1-hour video takes about 10–20 minutes on \"Fast\"; \"Accurate\" is 3–5× slower.\n• If the video is already in Chinese, pick \"Chinese\" — no translation needed.\n• Translating to Chinese sends only the subtitle text to the AI (with your key; uses a little credit).\n• Subtitles are saved next to the video with the same name; VLC and PotPlayer load them automatically. The bilingual one is \"video.雙語.srt\" — switch to it in the player's subtitle menu.",
+  "↻ 重新下載": "↻ Download again",
+  "↻ 重新整理": "↻ Refresh",
+  "⏸ 全部暫停": "⏸ Pause all",
+  "⏸ 已暫停": "⏸ Paused",
+  "⏸ 已暫停（已下載的部分會保留）": "⏸ Paused (downloaded parts are kept)",
+  "⏸ 已暫停：排隊中的不會開始，按「▶ 繼續」恢復": "⏸ Paused: queued videos won't start; press \"▶ Resume\" to continue",
+  "⏸ 暫停": "⏸ Suspend",
+  "⏸ 暫停全部下載": "⏸ Pause all downloads",
+  "▶ 全部繼續": "▶ Resume all",
+  "▶ 恢復": "▶ Resume",
+  "▶ 播放": "▶ Play",
+  "▶ 繼續下載": "▶ Resume downloads",
+  "▶ 繼續全部下載": "▶ Resume all downloads",
+  "○ 未啟用": "○ Off",
+  "● 瀏覽器已連動": "● Browser linked",
+  "⚠ 找不到 Chrome，會改用預設瀏覽器打開。這個工具是為 Chrome 設計的。": "⚠ Chrome not found — your default browser will be used instead. This tool is designed for Chrome.",
+  "⚠ 撤銷不能復原：連線立刻切斷、憑證永久作廢，就算它拿舊憑證也進不來；要再用得重新配對（新身分）。": "⚠ Revoking can't be undone: the connection is cut right away and the certificate is invalidated forever — even the old certificate won't get in. To use it again, pair it again (new identity).",
+  "⚠ 無法啟動（連接埠都被占用）": "⚠ Can't start (all ports are in use)",
+  "⛔ 撤銷": "⛔ Revoke",
+  "✅ 下載完成：": "✅ Downloaded: ",
+  "✅ 完成後：打開影片網站，左下角出現綠色盾牌「🛡 已攔截 N 次」就成功了。": "✅ When done: open a video site — a green shield \"🛡 Blocked N\" in the bottom-left corner means it works.",
+  "✅ 已更新": "✅ Updated",
+  "✅ 已設定金鑰": "✅ Key set",
+  "✔ 核准": "✔ Approve",
+  "✔ 選中": "✔ Chosen",
+  "✘ 拒絕": "✘ Reject",
+  "❌ GitHub 查不到這個 EXE 的打包紀錄：可能被改過，或不是從官方發布頁下載的。建議重新從發布頁下載。": "❌ GitHub has no build record for this EXE: it may have been modified, or wasn't downloaded from the official release page. Download it again from the release page.",
+  "❌ 下載失敗：": "❌ Download failed: ",
+  "⬆ 匯出": "⬆ Export",
+  "⬇ 下載": "⬇ Download",
+  "⬇ 下載這個畫質": "⬇ Download this quality",
+  "⬇ 匯入": "⬇ Import",
+  "・有節點在等核准": " · a node is waiting for approval",
+  "・讀取網址中…": " · reading links…",
+  "一個網址 → 讀取後選畫質；很多行 → 全部用同一個畫質加入": "One link → read it, then pick a quality. Several lines → all added with the same quality",
+  "一律縮到系統匣": "Always minimize to tray",
+  "一次加入多個網址": "Add several links",
+  "一次最多 50 個網址": "At most 50 links at a time",
+  "一般服務": "General service",
+  "一鍵下載": "download in one click",
+  "上一個網址還在讀取": "The previous link is still being read",
+  "上一批網址還在讀取，等一下再加": "The previous batch is still being read — try again in a moment",
+  "下載中": "Downloading",
+  "下載中才詢問": "Ask only while downloading",
+  "下載任務": "Downloads",
+  "下載佇列": "Download queue",
+  "下載到的清單不對": "The downloaded list is invalid",
+  "下載失敗：": "Download failed: ",
+  "下載完傳回這台": "Send back to this computer",
+  "下載完成，但轉檔失敗；檔案還是可以播放（建議用 VLC）": "Downloaded, but converting failed; the file still plays (VLC recommended)",
+  "下載完成：": "Downloaded: ",
+  "下載影片（節點）": "Download video (node)",
+  "下載日期 標題 [畫質]": "Date Title [quality]",
+  "下載時不想卡到別人上網就設一下（Mbps，馬上生效）": "Set this so downloads don't slow down others on your network (Mbps, applies right away)",
+  "下載的聽寫程式指紋對不上（可能被竄改或下載壞掉），已刪除，請再試一次": "The downloaded transcriber's fingerprint doesn't match (tampered or corrupted) — deleted, please try again",
+  "下載管理": "Downloads",
+  "下載紀錄": "Download history",
+  "下載資料夾": "Download folder",
+  "下載資料夾已更新": "Download folder updated",
+  "下載過就自動跳過": "Skip videos already downloaded",
+  "不再接收瀏覽器送來的影片，下次按「配對」會再打開": "Stops accepting videos from the browser; pressing \"Pair\" turns it back on",
+  "不刪": "Never",
+  "不勾＝檔案留在節點那台": "Unchecked = the file stays on the node",
+  "不合格（已拒絕）": "Invalid (rejected)",
+  "不在常見清單，可以查一下": "Not on the usual list — worth a look",
+  "不支援的方法": "Method not supported",
+  "不支援這個任務類型或版本": "Task type or version not supported",
+  "不明錯誤": "Unknown error",
+  "不確定": "Unsure",
+  "不要": "No",
+  "不認得的任務類型": "Unknown task type",
+  "不限制": "No limit",
+  "中文": "Chinese",
+  "事件順序不對": "Events out of order",
+  "今天下載": "Downloaded today",
+  "今天更新": "updated today",
+  "任務內容不合格": "Invalid task content",
+  "任務剛被別人改過，請重試": "The task was just changed — please retry",
+  "任務目前的狀態不能這樣改": "The task's current state doesn't allow this",
+  "任務詳情": "Task details",
+  "佇列是空的": "The queue is empty",
+  "佇列裡的影片都處理完了": "Everything in the queue is done",
+  "你": "You",
+  "依網站分資料夾/標題 [畫質]": "Folder per site/Title [quality]",
+  "保存下載紀錄": "Keep download history",
+  "借別人用過電腦時可以按；之後要重新配對": "Useful after someone else used your computer; you'll need to pair again",
+  "備份": "Backup",
+  "傳回": "send back",
+  "傳回中": "Sending back",
+  "傳回中（這台空間不夠，清出空間後自動繼續）": "Sending back (not enough space here — continues once you free some)",
+  "傳回失敗（檔案留在節點）": "Send-back failed (file stays on the node)",
+  "儲存": "Save",
+  "先貼上金鑰": "Paste a key first",
+  "先貼上金鑰再測試。": "Paste a key before testing.",
+  "內容不合格": "Invalid content",
+  "內容不對": "Invalid content",
+  "內部錯誤": "Internal error",
+  "全選這頁": "Select page",
+  "全部": "All",
+  "全部網站": "All sites",
+  "兩種模式各有 10 個以上任務、在差不多的網路下比較，才看得出自動調整有沒有比較好。": "Only with 10+ tasks in each mode on a similar network can you tell whether Auto is better.",
+  "兩種都要": "Both",
+  "公開廣告清單": "Public ad list",
+  "公開廣告清單裡沒有": "Not on the public ad list",
+  "再下載一次": "Download again",
+  "出問題要回報時，日誌可以幫忙找原因。確定要清空嗎？": "The log helps find the cause when you report a problem. Clear it anyway?",
+  "出錯了：": "Something went wrong: ",
+  "分數": "Score",
+  "分段一直出錯": "Segments keep failing",
+  "分段一直逾時": "Segments keep timing out",
+  "切片": "Segments (HLS)",
+  "判斷廣告網域": "Ad domain checks",
+  "刪除": "Delete",
+  "刪除紀錄": "Delete record",
+  "剪貼簿裡沒有網址：先複製影片網址再按一次": "No link on the clipboard: copy a video link first, then try again",
+  "加入佇列": "Add to queue",
+  "動作": "Action",
+  "匯入失敗": "Import failed",
+  "匯入完成": "Import done",
+  "匯入設定": "Import settings",
+  "匯出": "Export",
+  "匯出失敗": "Export failed",
+  "匯出完成": "Export done",
+  "匯出設定和紀錄": "Export settings and history",
+  "區域網路": "Local network",
+  "區域網路：第一次啟用 Windows 會問防火牆，選「私人網路」允許": "Local network: the first time, Windows asks about the firewall — allow \"Private networks\"",
+  "協定版本不相容，請更新": "Incompatible protocol version — please update",
+  "原因不明": "Unknown reason",
+  "原始檔已保留；把錯誤日誌回報給作者": "The original file was kept; send the error log to the author",
+  "原始畫質": "Original quality",
+  "參數不對": "Invalid parameters",
+  "取消": "Cancel",
+  "取消下載": "Cancel download",
+  "取消下載並結束": "Cancel downloads and quit",
+  "取消中…": "Cancelling…",
+  "取消任務": "Cancel task",
+  "取消所有配對": "Unpair all",
+  "取消選取": "Clear selection",
+  "取消配對": "Unpair",
+  "另外做一份「中文＋原文」雙語字幕（學語言用）": "Also make a bilingual \"Chinese + original\" subtitle (for language learning)",
+  "只刪下載紀錄，影片檔案不會刪。": "Only the record is deleted — the video file stays.",
+  "只存密碼的雜湊值（看不到原本的密碼）。不認得的就按「取消配對」，那個瀏覽器就不能再送影片過來。": "Only a hash of each password is stored (the password itself can't be seen). If you don't recognize one, press \"Unpair\" and that browser can't send videos anymore.",
+  "只接受 Pornhub、XVideos、XNXX、YouPorn、RedTube、xHamster、Tube8、YouJizz、SpankBang 的影片網址": "Only video links from Pornhub, XVideos, XNXX, YouPorn, RedTube, xHamster, Tube8, YouJizz and SpankBang are accepted",
+  "只接受支援下載的 9 個網站的影片網址": "Only video links from the 9 supported download sites are accepted",
+  "只支援能下載的 9 個網站": "Only the 9 sites that support downloading",
+  "只有這台電腦": "This computer only",
+  "只觀察（記錄建議，照舊 6 段）": "Observe only (log suggestions, keep 6 segments)",
+  "只記次數和字數（token），不記送了什麼內容。": "Only counts and tokens are recorded, never what was sent.",
+  "只記網站名稱和錯誤訊息，不記完整影片網址和檔名；只在這台電腦上，不會上傳。": "Only site names and error messages, never full video links or file names; stays on this computer, never uploaded.",
+  "可以跟 GitHub 發布頁、SECURITY.md 對照。EXE 另外有 GitHub 簽章：": "Compare them with the GitHub release page and SECURITY.md. The EXE also has a GitHub signature: ",
+  "可用磁碟不夠": "Not enough free disk",
+  "可用空間": "Free space",
+  "可用記憶體不夠": "Not enough free memory",
+  "可能是地區限制、要登入，或網站擋下載；稍後或換個網路再試": "Possibly a region block, a login requirement, or the site blocks downloads; try later or on another network",
+  "可靠度": "Reliability",
+  "右鍵：狀態、暫停、貼上網址下載、打開下載資料夾": "Right-click: status, pause, download from clipboard, open download folder",
+  "合格": "Eligible",
+  "同一個 idempotency key 已用在內容不同的任務": "The same idempotency key was used for a different task",
+  "問太快了或額度用完，等一下再試": "Too many requests or out of credit — try again later",
+  "問題排查": "Troubleshooting",
+  "啟動失敗：": "Failed to start: ",
+  "啟用": "Enable",
+  "回傳原文＋SHA-256（測完整流程）": "Echoes the text + SHA-256 (tests the full flow)",
+  "回到視窗": "Back to the window",
+  "回聲": "Echo",
+  "固定 6 段（基準）": "Fixed 6 segments (baseline)",
+  "固定失敗（測重試分類）": "Always fails (tests retry rules)",
+  "在 Chrome 裝好擋廣告（約 2 分鐘，只要做一次）": "Set up the ad blocker in Chrome (about 2 minutes, only once)",
+  "在 Chrome 裝暴力猴和 Video Helper 腳本": "Install Violentmonkey and the Video Helper script in Chrome",
+  "在影片網頁按右下角「⬇ 下載」→「🖥 送到電腦版」，\n跳出配對視窗時輸入：": "On a video page press \"⬇ Download\" (bottom right) → \"🖥 Send to Desktop\",\nand when the pairing box appears, enter:",
+  "在程式最底層記錄，只記網域和次數，關掉程式就清空（不存檔）。正常會看到：影片網站和它的影片伺服器、github.com（檢查更新、廣告清單）、huggingface.co（AI 字幕模型）、api.anthropic.com（有填金鑰才會）。": "Recorded at the lowest level of the program: only domains and counts, cleared when you close it (never saved). Normally you'll see: video sites and their video servers, github.com (updates, ad list), huggingface.co (AI subtitle models), api.anthropic.com (only if you entered a key).",
+  "在節點寫一個 N MB 的測試檔（測傳回、續傳；不連網）": "Writes an N MB test file on the node (tests send-back and resume; no network)",
+  "在節點的沙箱裡下載影片，存在節點那台電腦（可勾選傳回這台）": "Downloads a video in the node's sandbox and keeps it there (optionally sends it back here)",
+  "在線節點": "Nodes online",
+  "在這裡貼網址，節點會下載失敗。還是要照樣送出嗎？": "If you paste the link here, the node's download will fail. Submit anyway?",
+  "埠要在 1024～65535 之間": "Port must be between 1024 and 65535",
+  "執行中": "Running",
+  "執行中的節點任務": "Node tasks running",
+  "執行時間上限（秒）、最多嘗試幾次": "Time limit (seconds), max attempts",
+  "基本（可下載）": "Basic (can download)",
+  "外觀": "Theme",
+  "大小未知": "Size unknown",
+  "大小誤差": "Size error",
+  "大小跟宣告的不一樣": "Size differs from what was declared",
+  "太頻繁了，等一分鐘再試": "Too frequent — wait a minute and try again",
+  "失敗": "Failed",
+  "失敗原因": "Failure reason",
+  "如果 Chrome 沒有自動打開設定頁：在網址列按 Ctrl+V 貼上再按 Enter（網址已複製）": "If Chrome didn't open the settings page: click the address bar, press Ctrl+V, then Enter (the address is copied)",
+  "子分數／排除原因": "Sub-scores / reason excluded",
+  "字幕格式": "Subtitle format",
+  "存在": "Saved at",
+  "安全、乾淨、穩定地下載": "Safe, clean, reliable downloads",
+  "安全與統計": "Security & stats",
+  "安裝 Video Helper 腳本": "Install the Video Helper script",
+  "安裝擋廣告": "Install ad blocker",
+  "安裝暴力猴（Violentmonkey）": "Install Violentmonkey",
+  "完成": "Done",
+  "完成 ": "Done ",
+  "尚未建立": "Not created yet",
+  "已儲存": "Saved",
+  "已取消": "Cancelled",
+  "已取消這個瀏覽器的配對": "This browser was unpaired",
+  "已在 Chrome 打開": "Opened in Chrome",
+  "已完成": "Done",
+  "已完成下載": "Completed downloads",
+  "已建立": "Created",
+  "已恢復": "Resumed",
+  "已拒絕": "Rejected",
+  "已撤銷": "Revoked",
+  "已撤銷（不能復原）": "Revoked (can't be undone)",
+  "已斷線": "Disconnected",
+  "已暫停": "Paused",
+  "已核准": "Approved",
+  "已派出（等確認）": "Assigned (awaiting ack)",
+  "已清除。": "Cleared.",
+  "已知廣告": "Known ad",
+  "已經下載過了": "Already downloaded",
+  "已經在佇列裡": "Already in the queue",
+  "已經在佇列裡了": "Already in the queue",
+  "已經有字幕的影片跳過": "Skip videos that already have subtitles",
+  "已送出，排程器會選一台節點": "Submitted — the scheduler will pick a node",
+  "已選節點": "Node chosen",
+  "平台不符": "Platform mismatch",
+  "平均速度": "Avg speed",
+  "廣告": "Ads",
+  "彈窗廣告": "Pop-up ads",
+  "影片": "Video",
+  "影片不存在": "Video not found",
+  "影片不存在（404）": "Video not found (404)",
+  "影片位址不是這個網站的影片伺服器": "The video address isn't this site's video server",
+  "影片位址不是這個網站的影片伺服器（要 https）": "The video address isn't this site's video server (https required)",
+  "影片位址和網頁不是同一個網站": "The video address and the page are from different sites",
+  "影片可能被刪除或設為私人，確認網頁還開得開嗎": "The video may have been deleted or made private — check whether the page still opens",
+  "影片標題": "Video title",
+  "影片網址": "Video link",
+  "影片處理失敗": "Video processing failed",
+  "影片裡幾乎沒有人說話（或只有喘息、音樂），所以沒有做出字幕": "There's almost no speech in the video (or only breathing/music), so no subtitles were made",
+  "影片說的語言": "Spoken language",
+  "影片／圖片伺服器": "Video/image server",
+  "從清單移除": "Remove from list",
+  "心跳延遲": "Heartbeat late",
+  "心跳超過 30 秒沒來": "No heartbeat for over 30 seconds",
+  "快速功能": "Quick actions",
+  "快（small，約 190 MB）": "Fast (small, about 190 MB)",
+  "恢復後它會自己接回來。": "Once resumed, it reconnects by itself.",
+  "恢復節點": "Resume node",
+  "憑證已被撤銷，請重新配對": "Certificate revoked — please pair again",
+  "憑證已過期，請重新配對": "Certificate expired — please pair again",
+  "憑證身分與請求的裝置不符": "Certificate identity doesn't match the device",
+  "憑證過期": "Certificate expired",
+  "成功": "Succeeded",
+  "所有網卡（不建議）": "All network adapters (not recommended)",
+  "所有配對過的瀏覽器下次「送到電腦版」時都要重新輸入配對碼。": "Every paired browser will have to enter a pairing code again the next time it uses \"Send to Desktop\".",
+  "打開": "Open",
+  "打開 GitHub 簽章紀錄": "Open GitHub attestations",
+  "打開 Video Helper": "Open Video Helper",
+  "打開下載資料夾": "Open download folder",
+  "打開後按「加到 Chrome」→「新增擴充功能」": "Press \"Add to Chrome\" → \"Add extension\"",
+  "打開後按「安裝」，之後有新版本會自動更新": "Press \"Install\"; new versions update automatically",
+  "打開暴力猴的必要設定": "Turn on Violentmonkey's required setting",
+  "打開檔案位置": "Show in folder",
+  "批次、瀏覽器送來的影片，檔案還在就不再下載": "For batches and videos sent from the browser: not downloaded again if the file still exists",
+  "找不到": "Not found",
+  "找不到 ffmpeg": "ffmpeg not found",
+  "找不到 whisper-cli。Windows 會自動下載；其他系統請先自己安裝 whisper.cpp。": "whisper-cli not found. Windows downloads it automatically; on other systems install whisper.cpp yourself.",
+  "找不到可下載的畫質": "No downloadable quality found",
+  "找不到影片檔": "Video file not found",
+  "找不到符合的紀錄": "No matching records",
+  "找不到這個任務": "Task not found",
+  "找不到這個配對": "Pairing not found",
+  "找不到這筆紀錄": "Record not found",
+  "找不到這筆註冊": "Registration not found",
+  "把「允許使用者指令碼」打開；\n有用無痕視窗的話，「在無痕模式下允許」也打開": "Turn on \"Allow user scripts\";\nif you use Incognito windows, also turn on \"Allow in Incognito\"",
+  "拒絕後它要重新配對才能再申請。": "After rejecting, it must pair again to re-apply.",
+  "拒絕節點": "Reject node",
+  "按右邊產生 6 位數，在節點那邊輸入": "Press the button on the right for a 6-digit code and enter it on the node",
+  "按這裡前往下載": "Click here to download it",
+  "排程器": "Scheduler",
+  "排除": "Excluded",
+  "排隊中": "Queued",
+  "換電腦、重灌時用；更新版本時也會自動備份一份": "For moving to a new PC or reinstalling; a backup is also made automatically when updating",
+  "撤銷節點": "Revoke node",
+  "播放": "Play",
+  "支援 Pornhub、XVideos、XNXX、YouPorn、RedTube、xHamster、Tube8、YouJizz、SpankBang。用 ③ 設定的預設畫質，一行一個網址可以一次加很多部。": "Works with Pornhub, XVideos, XNXX, YouPorn, RedTube, xHamster, Tube8, YouJizz and SpankBang. Uses the default quality from Settings; put one link per line to add many at once.",
+  "改了馬上存；原本視窗的 ③ 設定、⚙ 進階設定都在這裡": "Changes are saved right away",
+  "故意失敗": "Fail on purpose",
+  "整個任務斷線": "Whole task disconnected",
+  "整個任務逾時": "Whole task timed out",
+  "整個檔案的 SHA-256 不對": "Whole-file SHA-256 mismatch",
+  "數字格式不對": "Invalid number",
+  "文字": "Text",
+  "新介面和原本的視窗一起換": "Applies to the new interface and the classic window",
+  "新介面啟動失敗（詳細在錯誤日誌）": "The new interface failed to start (details in the error log)",
+  "新介面打不開": "The new interface can't open",
+  "新介面這次沒有成功打開，先用原本的視窗。\n（③ 設定 可以取消「使用新介面」；錯誤日誌在 ⚙ 進階設定 → 問題排查）": "The new interface didn't open this time, so the classic window is used.\n(The error log is in ⚙ Advanced settings → Troubleshooting)",
+  "新增下載": "New download",
+  "新增下載、看佇列、找以前下載的影片": "Add downloads, watch the queue, find past downloads",
+  "日文": "Japanese",
+  "時間": "Time",
+  "時間差太大，請校正電腦時鐘": "Clock difference too large — please fix the computer's clock",
+  "時間是 UTC。": "Times are UTC.",
+  "時間未知": "Time unknown",
+  "時間誤差": "Time error",
+  "時間軸": "Timeline",
+  "智慧分段": "Smart segments",
+  "智慧分段報告": "Smart segments report",
+  "暫停": "Pause",
+  "暫停中": "Paused",
+  "暫停中…（已下載的部分會保留）": "Pausing… (downloaded parts are kept)",
+  "暫停會立刻切斷它的連線，恢復前心跳都會被拒絕。": "Suspending cuts its connection right away; heartbeats are refused until you resume it.",
+  "暫停節點": "Suspend node",
+  "更新中…": "Updating…",
+  "更新內容": "Release notes",
+  "更新廣告清單中…": "Updating the ad list…",
+  "最後": "Last",
+  "最新消息": "What's new",
+  "最近一次排程：": "Latest scheduling: ",
+  "最高": "Best",
+  "會算出這個 EXE 的指紋，去 GitHub 查本專案有沒有它的打包簽章紀錄、再跟發布頁的指紋比對（只送出指紋，按了才連網）。這是查紀錄，不是在你電腦上做完整的密碼學驗證；要完整驗證請用上面的 gh 指令。": "Computes this EXE's fingerprint, asks GitHub whether this project has a signed build record for it, and compares it with the release page (only the fingerprint is sent, and only when you press it). This is a record lookup, not a full cryptographic check on your computer; for that, use the gh command above.",
+  "會通知節點停止；節點確認停下後才會變成「已取消」。": "The node is told to stop; it becomes \"Cancelled\" once the node confirms.",
+  "有新版本": "New version available",
+  "有節點在等核准": "A node is waiting for approval",
+  "未啟動": "Not running",
+  "未知錯誤": "Unknown error",
+  "核准後這台節點會拿到憑證、可以跟 Master 心跳。\n請先核對節點畫面上的 Master 指紋前 8 碼。": "Once approved, the node gets a certificate and can send heartbeats to the Master.\nFirst check the first 8 characters of the Master fingerprint shown on the node.",
+  "核准節點": "Approve node",
+  "核准節點前，核對前 8 碼跟節點畫面上的一樣": "Before approving a node, check that the first 8 characters match what the node shows",
+  "核對中": "Reconciling",
+  "核對模型指紋…": "Checking model fingerprint…",
+  "格式不對": "Invalid format",
+  "標記失敗": "Mark as failed",
+  "標題": "Title",
+  "標題 [畫質]": "Title [quality]",
+  "模型指紋對不上（可能被竄改或下載壞掉），已刪除": "Model fingerprint doesn't match (tampered or corrupted) — deleted",
+  "檔名或副檔名不允許": "File name or extension not allowed",
+  "檔名格式": "File name format",
+  "檔案不見了（可能被移動或刪除）": "The file is gone (moved or deleted?)",
+  "檔案大小（MB）": "File size (MB)",
+  "檢查中": "Checking",
+  "檢查中…": "Checking…",
+  "檢查中…（算指紋、問 GitHub）": "Checking… (computing fingerprint, asking GitHub)",
+  "檢查中，等一下": "Checking, one moment",
+  "檢查更新": "Check for updates",
+  "檢查更新中…": "Checking for updates…",
+  "次數": "Count",
+  "正在下載，要停止請按 ✕": "It's downloading — press ✕ to stop it",
+  "沒有": "None",
+  "沒有任務資料": "No task data",
+  "沒有可以判斷的網域": "No domains to check",
+  "沒有在下載": "Nothing downloading",
+  "沒有失敗的任務": "No failed tasks",
+  "沒有已結束的任務": "No finished tasks",
+  "沒有理由就不執行": "Not done without a reason",
+  "沒有理由就不執行（會寫進稽核紀錄）": "Not done without a reason (it goes into the audit log)",
+  "沒有看到網址": "No links found",
+  "沒有看到網址（一行一個，http 開頭）": "No links found (one per line, starting with http)",
+  "沒有設定金鑰（只用免費清單）": "No key (free list only)",
+  "沒有這一步": "No such step",
+  "沒有這個畫質時，選比它低的最高畫質": "If this quality isn't available, the best lower one is used",
+  "沒有這個連結": "No such link",
+  "沒有通知": "No notifications",
+  "沒有進行中的任務": "No active tasks",
+  "沒有配對過的瀏覽器": "No paired browsers",
+  "沒開 Nexus 節點": "Nexus nodes off",
+  "派送": "Dispatch",
+  "派送已過期，任務已收回": "Assignment expired; the task was taken back",
+  "深色": "Dark",
+  "淺色": "Light",
+  "清出空間後按「▶ 繼續」": "Free up space, then press \"▶ Resume\"",
+  "清單查不到的網域才問 AI；只送網域名稱和網站名稱。金鑰用 Windows 加密存在這台電腦，不會被匯出、也不會再顯示出來": "AI is only asked about domains the list doesn't know; only the domain and site name are sent. The key is encrypted by Windows on this computer, never exported and never shown again",
+  "清空": "Clear",
+  "清空錯誤日誌": "Clear error log",
+  "清除": "Clear",
+  "清除 AI 記憶": "Clear AI memory",
+  "清除後只用免費的公開清單判斷廣告。": "After removing it, only the free public list is used to detect ads.",
+  "清除統計": "Clear stats",
+  "清除金鑰": "Remove key",
+  "測試": "Test",
+  "測試中…": "Testing…",
+  "測試檔（測傳回）": "Test file (send-back)",
+  "準備中": "Preparing",
+  "準（large-v3-turbo，約 550 MB）": "Accurate (large-v3-turbo, about 550 MB)",
+  "瀏覽器未連動": "Browser not linked",
+  "瀏覽器連動已關閉（下次按「配對瀏覽器」會再打開）": "Browser link stopped (pressing \"Pair browser\" turns it back on)",
+  "瀏覽器（交給節點）": "Browser (send to node)",
+  "為什麼選這台": "Why this node",
+  "無法啟動": "Can't start",
+  "照樣送出": "Submit anyway",
+  "照順序按下面 3 個「打開」，每個都會在 Chrome 打開正確的頁面。": "Press the 3 \"Open\" buttons below in order; each one opens the right page in Chrome.",
+  "版本": "Version",
+  "狀態": "Status",
+  "狀態不明（節點失聯）": "Unknown (node lost)",
+  "猜錯太多次，配對碼已作廢，請在電腦版重新按「配對」": "Too many wrong guesses — the code is void. Press \"Pair\" in the desktop app again",
+  "現在不能這樣做": "Can't do that right now",
+  "理由（會寫進稽核紀錄）": "Reason (saved in the audit log)",
+  "理由／說明": "Reason / notes",
+  "產生配對碼": "Create pairing code",
+  "用來校正預估；只存數字和網站名稱": "Used to improve estimates; only numbers and site names are stored",
+  "用預設": "Use default",
+  "用預設播放器打開…": "Opening in your default player…",
+  "畫質上限": "Max quality",
+  "畫質清單已經過期，請重新讀取": "The quality list is out of date — read the link again",
+  "發生什麼": "What happened",
+  "目前大小": "Current size",
+  "目前還沒有日誌": "No log yet",
+  "直接結束": "Quit right away",
+  "看速度和出錯情況決定同時開幾條線；先「只觀察」，報告看得出有幫助再改「自動調整」": "Decides how many connections to open from speed and errors. Start with \"Observe only\"; switch to \"Auto\" once the report shows it helps",
+  "硬碟空間不足": "Not enough disk space",
+  "確定要下載嗎？": "Download this?",
+  "確定要取消嗎？已下載的部分會被刪除；排在後面的會繼續下載。": "Cancel this download? The downloaded part will be deleted; the rest of the queue continues.",
+  "確定要取消所有已配對的瀏覽器嗎？之後要用的話需要重新配對。": "Unpair all browsers? You'll need to pair them again to use them.",
+  "確定要清空錯誤日誌嗎？（出問題要回報時，日誌可以幫忙找原因）": "Clear the error log? (It helps find the cause when you report a problem)",
+  "確認網址是支援的網站、開得出影片頁": "Make sure the link is from a supported site and the video page opens",
+  "磁碟": "Disk",
+  "空閒": "Idle",
+  "立即更新": "Update now",
+  "第一次使用：下載 whisper.cpp 聽寫程式…": "First use: downloading the whisper.cpp transcriber…",
+  "等 N 秒、每秒回報進度，可取消（測取消、逾時）": "Waits N seconds reporting progress each second, cancellable (tests cancel, timeout)",
+  "等幾秒": "Seconds to wait",
+  "等待": "Wait",
+  "等待中": "Waiting",
+  "等待核准": "Waiting for approval",
+  "等核准": "Awaiting approval",
+  "等重試": "Retrying soon",
+  "管理節點": "Manage nodes",
+  "節點": "Node",
+  "節點上線時會自動接著傳（已經收到的部分不用重傳）": "It resumes automatically when the node comes online (parts already received aren't sent again)",
+  "節點不支援這種任務": "Node doesn't support this task type",
+  "節點不是「已核准」狀態（暫停／撤銷／等待核准）": "Node isn't approved (suspended / revoked / waiting)",
+  "節點傳回：": "Sent back by node: ",
+  "節點功能沒有載入（這版打包可能少了 cryptography 套件）": "Node features didn't load (this build may be missing the cryptography package)",
+  "節點功能無法載入": "Node features couldn't load",
+  "節點同時任務數已滿": "Node is at its task limit",
+  "節點名單": "Nodes",
+  "節點已接受": "Accepted by node",
+  "節點沒回報能力資料": "Node didn't report its capabilities",
+  "節點版本太舊，不能把檔案傳回這台（請更新節點）": "Node version too old to send files back here (please update the node)",
+  "節點版本太舊，不能接任務（請更新）": "Node version too old to take tasks (please update)",
+  "節點的任務版本不相容": "Node's task version is incompatible",
+  "節點的沙箱不能用（下載影片一定要在沙箱裡跑）": "Node's sandbox isn't available (video downloads must run in the sandbox)",
+  "節點稽核紀錄（最近 200 筆，只能看不能改）": "Node audit log (latest 200, read-only)",
+  "節點設定成「不接任務」": "Node is set to \"don't take tasks\"",
+  "範例：": "Example: ",
+  "系統匣": "tray",
+  "系統匣小圖示一直顯示": "Always show tray icon",
+  "紀錄格式不對，略過": "History format is wrong, skipped",
+  "約 ": "about ",
+  "累積 3 次以上就會開始校正預估": "Estimates start being corrected after 3+ downloads",
+  "結束": "Quit",
+  "結果": "Result",
+  "結果不通過": "Result rejected",
+  "統計已清除，預估回到沒有校正的狀態": "Stats cleared; estimates are uncorrected again",
+  "綁定位址、埠": "Bind address and port",
+  "網址已複製": "Link copied",
+  "網址有問題": "Problem with the link",
+  "網址要 http 開頭": "Links must start with http",
+  "網域": "Domain",
+  "網站": "Site",
+  "網站 - 標題 [畫質]": "Site - Title [quality]",
+  "網站伺服器出錯（5xx）": "Site server error (5xx)",
+  "網站拒絕存取（403）": "Access denied by the site (403)",
+  "網站自己的": "The site's own",
+  "網路不穩": "Unstable network",
+  "網速紀錄": "Speed record",
+  "網速紀錄已清除": "Speed record cleared",
+  "網速：尚未量測": "Speed: not measured yet",
+  "網速：無法量測（下載時會顯示實際速度）": "Speed: can't measure (the real speed shows while downloading)",
+  "縮到系統匣，繼續下載": "Minimize to tray and keep downloading",
+  "縮到系統匣＝縮到右下角繼續下載，完成會通知": "Minimize to tray = keeps downloading in the bottom-right corner and notifies you when done",
+  "總量": "Total",
+  "翻譯字幕": "Subtitle translation",
+  "自動偵測": "Auto-detect",
+  "自動刪除": "Auto delete",
+  "自動調整": "Auto",
+  "英文": "English",
+  "行數對不上": "Line counts don't match",
+  "裝置": "Device",
+  "裝置不是啟用狀態": "Device isn't active",
+  "裝置已被暫停": "Device is suspended",
+  "裝置還沒被核准": "Device not approved yet",
+  "要先啟用 Master": "Enable the Master first",
+  "要先啟用 Master，節點才連得進來": "Enable the Master first so nodes can connect",
+  "要連下載紀錄一起匯出嗎？\n（選「否」只匯出設定）": "Export the download history too?\n(Choose \"No\" to export settings only)",
+  "計算中…": "Calculating…",
+  "記憶體": "Memory",
+  "記錄下載統計": "Record download stats",
+  "設定": "Settings",
+  "設定資料夾：": "Settings folder: ",
+  "語言 Language": "Language",
+  "誤差＝原本的預估跟實際差多少（中位數）。同一個網站下載 3 次以上，之後的預估會自動校正。只記網站名稱和數字。": "Error = how far the estimate was from reality (median). After 3+ downloads from the same site, later estimates are corrected automatically. Only site names and numbers are stored.",
+  "說明": "Notes",
+  "說明書": "Manual",
+  "誰": "Who",
+  "誰配對過、AI 用了多少、連過哪些網站、元件指紋、下載統計": "Paired browsers, AI usage, sites contacted, component fingerprints, download stats",
+  "請先在清單裡選「已下載完成、檔案還在」的影片（按住 Ctrl 或 Shift 可以一次選很多部）。": "First select downloaded videos whose files still exist (hold Ctrl or Shift to select several).",
+  "請求太頻繁": "Too many requests",
+  "請求太頻繁（429）": "Too many requests (429)",
+  "請貼影片網址": "Paste a video link",
+  "讀取": "Read",
+  "讀取中…": "Reading…",
+  "讀取影片的聲音…": "Reading the video's audio…",
+  "讀取網址中…": "Reading links…",
+  "讓另一台電腦幫你下載、下載完傳回這台": "Let another computer download for you and send files back here",
+  "讓另一台電腦（跑 VideoHelper.exe --worker）安全地連到這台，幫你下載影片、下載完傳回來。每台節點都要你在這裡按「核准」才算數；只有你在這台電腦上能管理，沒有網路管理介面。": "Lets another computer (running VideoHelper.exe --worker) connect safely to this one, download videos for you and send them back. Every node only counts after you press \"Approve\" here; it can only be managed on this computer, there is no network admin interface.",
+  "貼上 sk-ant-… 金鑰": "Paste your sk-ant-… key",
+  "貼上影片網址…": "Paste a video link…",
+  "貼上影片網址（一行一個）…": "Paste video links (one per line)…",
+  "貼上網址下載": "Download from clipboard",
+  "貼上網址，": "Paste a link, ",
+  "貼影片網址…": "Paste a video link…",
+  "資料太大": "Data too large",
+  "資料格式不對": "Invalid data format",
+  "超過幾天沒更新就刪（0＝不刪）": "Delete after this many days without changes (0 = never)",
+  "跟系統": "System",
+  "跟系統＝Windows 是中文就用中文，其他用英文": "System = Chinese if Windows is in Chinese, otherwise English",
+  "載入更多": "Load more",
+  "追蹤": "Tracking",
+  "送出": "Submit",
+  "這一類目前沒有": "Nothing here right now",
+  "這不是 Video Helper 的備份檔": "This isn't a Video Helper backup file",
+  "這個任務沒有派給你": "This task wasn't assigned to you",
+  "這個任務的節點失聯了，不知道有沒有跑完。標記成失敗後不會自動重跑。": "The node for this task went silent and it's unknown whether it finished. Once marked failed, it won't run again automatically.",
+  "這個位址不能用": "That address can't be used",
+  "這個值不能用": "That value can't be used",
+  "這個功能只檢查打包好的 VideoHelper.exe（現在是直接跑 Python 原始碼）": "This only checks a packaged VideoHelper.exe (you're running the Python source)",
+  "這個已經不在下載了": "This isn't downloading anymore",
+  "這個檔案不是你可以傳的（不是派給你的任務，或現在不收）": "You can't send this file (not your task, or not accepting now)",
+  "這個瀏覽器之後就不能再送影片過來，要用得重新配對。": "This browser won't be able to send videos anymore unless you pair it again.",
+  "這個網站要從瀏覽器交": "This site must be sent from the browser",
+  "這個資料夾不能用": "That folder can't be used",
+  "這個金鑰沒有權限": "This key has no permission",
+  "這台之前拒收過這個任務": "This node refused this task before",
+  "這把金鑰已經註冊過（每次配對都要用新的身分）": "This key is already registered (every pairing needs a new identity)",
+  "這次傳回已經放棄（逾時或連續驗證失敗），檔案留在節點": "This send-back was given up (timeout or repeated check failures); the file stays on the node",
+  "這段資料不對，請重傳這段": "This part is corrupted — please resend it",
+  "這部影片的這個畫質已經在排隊、下載中或暫停了": "This video in this quality is already queued, downloading or paused",
+  "這部影片的這個畫質已經在排隊、下載中或暫停了。": "This video in this quality is already queued, downloading or paused.",
+  "這頁還在做，先用原本的視窗打開": "This page isn't ready yet; opening the classic window",
+  "通知": "Notifications",
+  "速度上限": "Speed limit",
+  "連線中": "Connected",
+  "連線服務：": "Link service: ",
+  "連線逾時": "Connection timed out",
+  "連續穩定": "Stable for a while",
+  "進度": "Progress",
+  "進行中": "Active",
+  "進行中下載": "Active downloads",
+  "逾時": "Timed out",
+  "選下載資料夾": "Choose download folder",
+  "選取": "Select",
+  "選的影片裡沒有「下載完成、檔案還在」的": "None of the selected videos is downloaded with its file still present",
+  "選資料夾…": "Choose folder…",
+  "還在下載": "Still downloading",
+  "還在下載，確定要離開嗎？\n目前的下載會被取消，已下載的部分會被刪除。": "Still downloading — quit anyway?\nThe current download will be cancelled and its downloaded part deleted.",
+  "還在傳回中，目前在": "Still sending back; currently at",
+  "還有影片在下載，要怎麼做？\n\n「是」：縮到右下角的系統匣，繼續下載（完成會通知你）\n「否」：取消下載並結束程式\n「取消」：回到視窗": "Videos are still downloading. What would you like to do?\n\n\"Yes\": minimize to the tray and keep downloading (you'll be notified)\n\"No\": cancel downloads and quit\n\"Cancel\": back to the window",
+  "還有影片在下載，要怎麼做？\n縮到右下角的系統匣會繼續下載，完成會通知你。": "Videos are still downloading. What would you like to do?\nMinimizing to the tray keeps downloading and notifies you when done.",
+  "還有段沒收到": "Some parts haven't arrived",
+  "還沒下載": "Not downloaded yet",
+  "還沒下載（第一次按「🔍 檢查」時會自動下載，約 2 MB）": "Not downloaded yet (downloads automatically the first time you press \"🔍 Check\", about 2 MB)",
+  "還沒排程過。": "Not scheduled yet.",
+  "還沒有下載任務：在上面貼網址，或在影片網頁按「🖥 送到電腦版」": "No downloads yet: paste a link above, or press \"🖥 Send to Desktop\" on a video page",
+  "還沒有下載紀錄": "No download history yet",
+  "還沒有節點。在另一台電腦執行 VideoHelper.exe --worker，輸入這裡的配對碼": "No nodes yet. Run VideoHelper.exe --worker on another computer and enter the pairing code shown here",
+  "還沒有節點任務": "No node tasks yet",
+  "還沒有統計。下載完成後會自動記錄。": "No stats yet. They're recorded automatically after downloads.",
+  "還沒用過": "Not used yet",
+  "還沒連過任何網站": "No sites contacted yet",
+  "還沒量過": "Not measured yet",
+  "部": "videos",
+  "配對瀏覽器": "Pair browser",
+  "配對瀏覽器腳本": "Pair the browser script",
+  "配對碼": "Pairing code",
+  "配對碼 5 分鐘內有效、只能用一次。\n配對過的瀏覽器之後就不用再輸入。": "The code is valid for 5 minutes and works once.\nA paired browser won't need it again.",
+  "配對碼不對": "Wrong pairing code",
+  "配對碼已過期，請在 Master 重新產生": "Pairing code expired — create a new one on the Master",
+  "配對碼已過期，請在電腦版重新按「配對」": "The pairing code expired. Press \"Pair\" in the desktop app again",
+  "配對碼猜錯太多次已作廢，請在 Master 重新產生": "Too many wrong guesses — code void; create a new one on the Master",
+  "重新下載": "Download again",
+  "重複的訊息": "Duplicate message",
+  "金鑰已儲存（用 Windows 加密存在這台電腦）": "Key saved (encrypted by Windows on this computer)",
+  "金鑰已清除": "Key removed",
+  "金鑰格式不對（應該是 sk-ant- 開頭的一長串）": "Wrong key format (should be a long string starting with sk-ant-)",
+  "錯誤日誌已清空": "Error log cleared",
+  "錯誤：": "Error: ",
+  "長度未知": "Length unknown",
+  "開始": "Start",
+  "開放區域網路": "Open to local network",
+  "關於": "About",
+  "關於 Video Helper": "About Video Helper",
+  "關閉": "Close",
+  "關閉中": "Stopped",
+  "關閉中（按「配對」會打開）": "Stopped (pressing \"Pair\" turns it on)",
+  "關閉服務": "Stop service",
+  "關閉視窗時": "When closing the window",
+  "關閉（固定 6 段）": "Off (fixed 6 segments)",
+  "離線": "Offline",
+  "電腦版的 Master 沒開：到「⚙ 進階設定 → 🖧 節點」勾「啟用 Master」，並至少核准一台節點": "The desktop app's Master is off: go to \"Nexus\", turn on the Master and approve at least one node",
+  "需要處理": "Needs attention",
+  "需要重新配對": "Please pair again",
+  "韓文": "Korean",
+  "預估會回到沒有校正的狀態。確定要清除嗎？": "Estimates will go back to uncorrected. Clear anyway?",
+  "預設畫質": "Default quality",
+  "類型": "Type",
+  "首頁": "Home",
+  "驗證結果": "Verifying result",
+  "（中途取消）": "(cancelled midway)",
+  "（原始碼執行）": "(running from source)",
+  "（目前有其他影片在下載，會排在後面）": "(Other videos are downloading; this one will wait its turn)",
+  "（舊版配對，沒有紀錄）": "(old pairing, no record)",
+  "（要先在 ⚙ 進階設定 填 AI 金鑰）": "(enter an AI key in Settings first)",
+  "＋ 新增任務": "+ New task",
+  "，下載會繼續": ", downloads continue",
+  "，也沒填 AI 金鑰：完全不會連到 AI": ", and no AI key is set: AI is never contacted",
+  "，也跟發布頁的指紋一樣": ", and it matches the release page fingerprint",
+  "，傳回": ", send back",
+  "：下載中": ": downloading",
+  "；Master 開著：關掉再打開才會換位址": "; the Master is on: turn it off and on to switch address",
+  "；這一版的發布頁還查不到": "; this version's release page isn't available yet",
+  "［只觀察］": "[observe only]",
+  "🌐 這次開著時連過的網站": "🌐 Sites contacted since start",
+  "🎨 外觀與視窗": "🎨 Appearance & window",
+  "💾 備份、更新、問題排查": "💾 Backup, updates, troubleshooting",
+  "💾 硬碟空間不足，下載已暫停": "💾 Not enough disk space — downloads paused",
+  "💾 硬碟空間不足：佇列已暫停。清出空間後按「▶ 繼續」": "💾 Not enough disk space: queue paused. Free up space, then press \"▶ Resume\"",
+  "📂 打開下載資料夾": "📂 Open download folder",
+  "📂 打開檔案位置": "📂 Show in folder",
+  "📂 自動備份": "📂 Auto backups",
+  "📂 設定資料夾": "📂 Settings folder",
+  "📄 打開": "📄 Open",
+  "📄 錯誤日誌": "📄 Error log",
+  "📊 下載統計": "📊 Download stats",
+  "📊 報告": "📊 Report",
+  "📊 統計": "📊 Stats",
+  "📋 節點任務": "📋 Node tasks",
+  "📋 複製網址": "📋 Copy link",
+  "📋 貼上網址下載": "📋 Download from clipboard",
+  "📜 稽核紀錄": "📜 Audit log",
+  "📝 AI 字幕": "📝 AI subtitles",
+  "🔁 重試失敗": "🔁 Retry failed",
+  "🔍 搜尋標題或網站": "🔍 Search title or site",
+  "🔍 檢查這個 EXE 是不是官方打包的": "🔍 Check this EXE is an official build",
+  "🔍 詳情": "🔍 Details",
+  "🔒 安全中心": "🔒 Security center",
+  "🔗 已配對的瀏覽器": "🔗 Paired browsers",
+  "🔗 瀏覽器連動": "🔗 Browser link",
+  "🔗 配對瀏覽器": "🔗 Pair browser",
+  "🖧 Master（這台電腦）": "🖧 Master (this computer)",
+  "🗂 紀錄與統計": "🗂 History & stats",
+  "🗑 刪除紀錄": "🗑 Delete record",
+  "🗑 清空": "🗑 Clear",
+  "🛡 廣告判斷": "🛡 Ad detection",
+  "🤖 AI 使用紀錄": "🤖 AI usage",
+  "🧩 用到的元件和指紋（SHA-256）": "🧩 Components and fingerprints (SHA-256)",
+  "🧹 清掉已結束": "🧹 Clear finished"
+ },
+ "patterns": [
+  [
+   "{a}（{b}）",
+   "{a} ({b})"
+  ],
+  [
+   "{a}（{b}）{c}",
+   "{a} ({b}) {c}"
+  ],
+  [
+   "{a}：{b}",
+   "{a}: {b}"
+  ],
+  [
+   "{a}，{b}",
+   "{a}, {b}"
+  ],
+  [
+   "{a}、{b}",
+   "{a}, {b}"
+  ],
+  [
+   "{a}→{b}",
+   "{a} → {b}"
+  ],
+  [
+   "{a} → {b}",
+   "{a} → {b}"
+  ],
+  [
+   "{a}「{b}」",
+   "{a} \"{b}\""
+  ],
+  [
+   "{a}　{b}",
+   "{a}  {b}"
+  ],
+  [
+   "✨ 有新版本 v{a}",
+   "✨ New version v{a}"
+  ],
+  [
+   "{a}・長度 {b}",
+   "{a} · length {b}"
+  ],
+  [
+   "長度 {a}",
+   "Length {a}"
+  ],
+  [
+   "全部加入（{a} 部）",
+   "Add all ({a} videos)"
+  ],
+  [
+   "下載中 {a}",
+   "Downloading {a}"
+  ],
+  [
+   "排隊 {a}",
+   "Queued {a}"
+  ],
+  [
+   "暫停 {a}",
+   "Paused {a}"
+  ],
+  [
+   "失敗 {a}",
+   "Failed {a}"
+  ],
+  [
+   "速度上限 {a} Mbps",
+   "Speed limit {a} Mbps"
+  ],
+  [
+   "共 {a} 筆，顯示 {b} 筆",
+   "{a} records, showing {b}"
+  ],
+  [
+   "已選 {a} 部",
+   "{a} selected"
+  ],
+  [
+   "範例：{a}",
+   "Example: {a}"
+  ],
+  [
+   "已配對 {a} 個瀏覽器",
+   "{a} browsers paired"
+  ],
+  [
+   "目前記得約 {a} Mbps（換了網路、預估變很不準時清除）",
+   "Remembered about {a} Mbps (clear it after changing networks or if estimates get way off)"
+  ],
+  [
+   "設定資料夾：{a}",
+   "Settings folder: {a}"
+  ],
+  [
+   "● 執行中 https://{a}:{b}",
+   "● Running https://{a}:{b}"
+  ],
+  [
+   "啟動失敗：{a}",
+   "Failed to start: {a}"
+  ],
+  [
+   "{a}:{b} 後失效，只能用一次；在節點那邊輸入",
+   "Expires in {a}:{b}, single use; enter it on the node"
+  ],
+  [
+   "已核准 {a} 台・在線 {b} 台",
+   "{a} approved · {b} online"
+  ],
+  [
+   "已核准 {a} 台",
+   "{a} approved"
+  ],
+  [
+   "在線 {a} 台",
+   "{a} online"
+  ],
+  [
+   "心跳 {a}",
+   "Heartbeat {a}"
+  ],
+  [
+   "沙箱：{a}",
+   "Sandbox: {a}"
+  ],
+  [
+   "配對 {a}",
+   "Paired {a}"
+  ],
+  [
+   "指紋 {a}",
+   "Fingerprint {a}"
+  ],
+  [
+   "節點 {a}",
+   "Node {a}"
+  ],
+  [
+   "嘗試 {a}",
+   "Attempts {a}"
+  ],
+  [
+   "來源 {a}",
+   "From {a}"
+  ],
+  [
+   "⚠ {a} 會擋程式直接開網頁：請改用瀏覽器影片頁「⬇ 下載」→「🖧 交給節點」",
+   "⚠ {a} blocks programs from opening its pages: use \"⬇ Download\" → \"🖧 Send to node\" on the video page in your browser instead"
+  ],
+  [
+   "最後使用 {a}",
+   "Last used {a}"
+  ],
+  [
+   "用過 {a} 次",
+   "Used {a} times"
+  ],
+  [
+   "編號 {a}",
+   "ID {a}"
+  ],
+  [
+   "連線服務：{a}",
+   "Link service: {a}"
+  ],
+  [
+   "還沒用過{a}",
+   "Not used yet{a}"
+  ],
+  [
+   "這個 EXE：{a}",
+   "This EXE: {a}"
+  ],
+  [
+   "發布頁：{a}",
+   "Release page: {a}"
+  ],
+  [
+   "打包紀錄：{a}",
+   "Build record: {a}"
+  ],
+  [
+   "版本 v{a}\n\n全部在你自己的電腦上跑，沒有伺服器。新介面只讀電腦版裡的資料、不連任何網站。",
+   "Version v{a}\n\nEverything runs on your own computer — there is no server. The interface only reads data from the desktop app and doesn't contact any website."
+  ],
+  [
+   "這支影片 {a}，還要再下載一次嗎？",
+   "This video was {a}. Download it again?"
+  ],
+  [
+   "這支影片 {a}",
+   "This video was {a}"
+  ],
+  [
+   "刪除選取的 {a} 筆紀錄？影片檔案不會刪。",
+   "Delete the {a} selected records? Video files are not deleted."
+  ],
+  [
+   "Master 會在 {a}:{b} 聽同一個網路裡的電腦。\n只有你在這裡按「核准」的節點才能真的連上；其他人只會看到被拒絕。",
+   "The Master will listen on {a}:{b} for computers on the same network.\nOnly nodes you \"Approve\" here can actually connect; anyone else is refused."
+  ],
+  [
+   "⚠ 名單裡已經有 {a} 筆也叫「{b}」、還沒撤銷的節點（通常是同一台重新配對留下的舊身分）。核准這筆之後，記得把舊的撤銷。",
+   "⚠ The list already has {a} unrevoked nodes also named \"{b}\" (usually an old identity left from re-pairing the same computer). After approving this one, remember to revoke the old ones."
+  ],
+  [
+   "預設畫質「{a}」不認得，略過",
+   "Unknown default quality \"{a}\", skipped"
+  ],
+  [
+   "檔名格式「{a}」不認得，略過",
+   "Unknown file name format \"{a}\", skipped"
+  ],
+  [
+   "下載資料夾「{a}」在這台電腦上不存在，改用預設的「下載」資料夾",
+   "Download folder \"{a}\" doesn't exist on this computer; using the default Downloads folder"
+  ],
+  [
+   "AI 伺服器回應錯誤（{a}）",
+   "AI server error ({a})"
+  ],
+  [
+   "連不到 AI 伺服器（{a}）",
+   "Can't reach the AI server ({a})"
+  ],
+  [
+   "{a} 秒",
+   "{a} s"
+  ],
+  [
+   "{a} 分 {b} 秒",
+   "{a} min {b} s"
+  ],
+  [
+   "{a} 時 {b} 分",
+   "{a} h {b} min"
+  ],
+  [
+   "連不到 GitHub（{a}），請稍後再試",
+   "Can't reach GitHub ({a}) — try again later"
+  ],
+  [
+   "⚠ 有打包紀錄，但跟 v{a} 發布頁上的指紋不一樣（可能是同版本重新打包、或發布頁被動過）",
+   "⚠ There's a build record, but it differs from the v{a} release page fingerprint (maybe the same version was rebuilt, or the release page was changed)"
+  ],
+  [
+   "✅ 這個 EXE 是 GitHub Actions 從 dadanny1122/video-helper 原始碼打包的（GitHub 有簽章紀錄{a}）",
+   "✅ This EXE was built by GitHub Actions from the dadanny1122/video-helper source (GitHub has a signed record{a})"
+  ],
+  [
+   "最近 {a} 天：完成或失敗的任務 {b} 個",
+   "Last {a} days: {b} tasks finished or failed"
+  ],
+  [
+   "{a}：還沒有資料",
+   "{a}: no data yet"
+  ],
+  [
+   "{a}：{b} 個，成功 {c}，平均速度 {d}，平均重試 {e} 次",
+   "{a}: {b} tasks, {c} succeeded, avg speed {d}, avg {e} retries"
+  ],
+  [
+   "分段調整：實際調整 {a} 次，只觀察的建議 {b} 次",
+   "Segment changes: {a} applied, {b} suggested (observe only)"
+  ],
+  [
+   "{a} {b}：{c} → {d} 段（{e}）{f}",
+   "{a} {b}: {c} → {d} segments ({e}) {f}"
+  ],
+  [
+   "網站冷卻 {a} 次（只停那個網站，其他網站照常下載）",
+   "Site cooldowns: {a} (only that site pauses; others keep downloading)"
+  ],
+  [
+   "下載不完整（{a}/{b}）",
+   "Incomplete download ({a}/{b})"
+  ],
+  [
+   "不認得的模型：{a}",
+   "Unknown model: {a}"
+  ],
+  [
+   "第一次使用這個模型：下載 {a}（只要下載一次）…",
+   "First use of this model: downloading {a} (only once)…"
+  ],
+  [
+   "模型下載失敗（{a}）",
+   "Model download failed ({a})"
+  ],
+  [
+   "讀不出影片的聲音：{a}",
+   "Can't read the video's audio: {a}"
+  ],
+  [
+   "聽到 {a} / {b}｜大約還要 {c} 分鐘\n最新：{d}",
+   "Heard {a} / {b} | about {c} min left\nLatest: {d}"
+  ],
+  [
+   "AI 聽寫失敗：{a}",
+   "AI transcription failed: {a}"
+  ],
+  [
+   "翻成中文（只送字幕文字，共 {a} 句）…",
+   "Translating to Chinese (only subtitle text is sent, {a} lines)…"
+  ],
+  [
+   "目前已經是最新版本（v{a}）",
+   "You're on the latest version (v{a})"
+  ],
+  [
+   "目前已經是最新版本（v{a}）。",
+   "You're on the latest version (v{a})."
+  ],
+  [
+   "無法連到 GitHub 檢查更新：\n{a}",
+   "Can't reach GitHub to check for updates:\n{a}"
+  ],
+  [
+   "有新版本 v{a}（目前 v{b}），在首頁「最新消息」按一下前往下載",
+   "New version v{a} (you have v{b}). Click it under \"What's new\" on Home to download"
+  ],
+  [
+   "有新版本 v{a}（目前 v{b}）。\n\n{c}要前往下載嗎？",
+   "New version v{a} (you have v{b}).\n\n{c}Go to the download page?"
+  ],
+  [
+   "更新內容：\n{a}\n\n",
+   "Release notes:\n{a}\n\n"
+  ],
+  [
+   "{a}　（長度 {b}）",
+   "{a}  (length {b})"
+  ],
+  [
+   "{a}：找不到可下載的畫質",
+   "{a}: no downloadable quality found"
+  ],
+  [
+   "約 {a}",
+   "about {a}"
+  ],
+  [
+   "{a}｜預估已依過去 {b} 次下載校正",
+   "{a} | estimate corrected from {b} past downloads"
+  ],
+  [
+   "預估已依過去 {a} 次下載校正",
+   "estimate corrected from {a} past downloads"
+  ],
+  [
+   "這支影片 {a} 下載過（{b}）：\n{c}\n\n還要再下載一次嗎？",
+   "This video was downloaded {a} ({b}):\n{c}\n\nDownload it again?"
+  ],
+  [
+   "{a}\n\n畫質：{b}\n大小：{c}\n時間：{d}\n長度：{e}\n\n儲存到：{f}{g}",
+   "{a}\n\nQuality: {b}\nSize: {c}\nTime: {d}\nLength: {e}\n\nSave to: {f}{g}"
+  ],
+  [
+   "一行貼一個網址。每部都會用「預設畫質」（目前：{a}）加入佇列。",
+   "One link per line. Each is added with the default quality (now: {a})."
+  ],
+  [
+   "讀取網址中 0/{a}…",
+   "Reading links 0/{a}…"
+  ],
+  [
+   "讀取網址中 {a}/{b}…",
+   "Reading links {a}/{b}…"
+  ],
+  [
+   "已加入 {a} 部{b}",
+   "Added {a} videos{b}"
+  ],
+  [
+   "已加入 {a} 部",
+   "Added {a} videos"
+  ],
+  [
+   "，{a} 部讀取失敗（原因在「② 下載紀錄」）",
+   ", {a} couldn't be read (see Download history)"
+  ],
+  [
+   "{a}　｜　批次：{b}",
+   "{a}  |  Batch: {b}"
+  ],
+  [
+   "批次：{a}",
+   "Batch: {a}"
+  ],
+  [
+   "🧊 {a} 冷卻中（{b}），{c} 秒後再下載這個網站",
+   "🧊 {a} cooling down ({b}); downloads from this site resume in {c} s"
+  ],
+  [
+   "🌐 網路連續出錯，暫緩 {a} 秒再繼續（成功一次就恢復正常）",
+   "🌐 Repeated network errors — pausing {a} s (back to normal after one success)"
+  ],
+  [
+   "準備下載：{a}",
+   "Preparing: {a}"
+  ],
+  [
+   "確定要取消「{a}」嗎？\n已下載的部分會被刪除；排在後面的會繼續下載。",
+   "Cancel \"{a}\"?\nThe downloaded part will be deleted; the rest of the queue continues."
+  ],
+  [
+   "剩約 {a}",
+   "about {a} left"
+  ],
+  [
+   "下載中「{a}」：{b}{c}",
+   "Downloading \"{a}\": {b}{c}"
+  ],
+  [
+   "後面還有 {a} 部",
+   "{a} more queued"
+  ],
+  [
+   "Video Helper：下載中 {a}%{b}",
+   "Video Helper: downloading {a}%{b}"
+  ],
+  [
+   "下載中 {a}%{b}",
+   "Downloading {a}%{b}"
+  ],
+  [
+   "下載中 {a}%",
+   "Downloading {a}%"
+  ],
+  [
+   "還有 {a} 部",
+   "{a} more"
+  ],
+  [
+   "下載完成：{a}",
+   "Downloaded: {a}"
+  ],
+  [
+   "下載失敗：{a}",
+   "Download failed: {a}"
+  ],
+  [
+   "✅ 下載完成：{a}",
+   "✅ Downloaded: {a}"
+  ],
+  [
+   "❌ 下載失敗：{a}",
+   "❌ Download failed: {a}"
+  ],
+  [
+   "{a}，{b} 秒後自動重試（第 {c}/{d} 次）",
+   "{a}; retrying in {b} s (attempt {c}/{d})"
+  ],
+  [
+   "🔁 {a}：{b} 秒後自動重試（第 {c}/{d} 次）",
+   "🔁 {a}: retrying in {b} s (attempt {c}/{d})"
+  ],
+  [
+   "❌ {a}：自動重試 {b} 次都失敗　→ 可以按「↻ 重試失敗的」",
+   "❌ {a}: failed after {b} automatic retries → you can press \"Retry failed\""
+  ],
+  [
+   "{a}（自動重試 {b} 次）：{c}",
+   "{a} (retried {b} times): {c}"
+  ],
+  [
+   "在公開廣告清單裡（{a}）",
+   "On the public ad list ({a})"
+  ],
+  [
+   "任務不合格：{a}",
+   "Invalid task: {a}"
+  ],
+  [
+   "讀取失敗：{a}",
+   "Couldn't read: {a}"
+  ],
+  [
+   "已經下載過了：{a}",
+   "Already downloaded: {a}"
+  ],
+  [
+   "🔗 略過（已經下載過）：{a}",
+   "🔗 Skipped (already downloaded): {a}"
+  ],
+  [
+   "🔗 從瀏覽器加入：{a}（{b}）",
+   "🔗 Added from browser: {a} ({b})"
+  ],
+  [
+   "從瀏覽器加入：{a}",
+   "Added from browser: {a}"
+  ],
+  [
+   "✅ 執行中（127.0.0.1:{a}）｜已配對 {b} 個瀏覽器",
+   "✅ Running (127.0.0.1:{a}) | {b} browsers paired"
+  ],
+  [
+   "連接埠 {a}～{b} 都被占用，暫時無法使用瀏覽器連動。",
+   "Ports {a}–{b} are all in use, so the browser link can't be used for now."
+  ],
+  [
+   "✅ 已取消 {a} 個配對。\n瀏覽器下次「送到電腦版」時會要你重新輸入配對碼。",
+   "✅ Unpaired {a} browsers.\nNext time a browser uses \"Send to Desktop\" it will ask for a pairing code."
+  ],
+  [
+   "{a} 秒後重試",
+   "Retry in {a} s"
+  ],
+  [
+   "目前 {a} Mbps",
+   "Now {a} Mbps"
+  ],
+  [
+   "排隊 {a} 部",
+   "{a} queued"
+  ],
+  [
+   "今天 {a} 部",
+   "{a} today"
+  ],
+  [
+   "下載資料夾在 {a}",
+   "Download folder on {a}"
+  ],
+  [
+   "讀不到節點資料：{a}",
+   "Can't read node data: {a}"
+  ],
+  [
+   "出錯了：{a}",
+   "Something went wrong: {a}"
+  ],
+  [
+   "已加入 {a} 部，讀取網址中…（畫質：{b}以內最高的）",
+   "Added {a} videos, reading links… (quality: best up to {b})"
+  ],
+  [
+   "重新排隊 {a} 部",
+   "Re-queued {a} videos"
+  ],
+  [
+   "{a} 下載過（{b}）",
+   "was downloaded {a} ({b})"
+  ],
+  [
+   "已加入佇列：{a}",
+   "Added to queue: {a}"
+  ],
+  [
+   "清掉 {a} 筆已結束的",
+   "Cleared {a} finished"
+  ],
+  [
+   "AI 字幕：{a} 部（設定視窗已打開）",
+   "AI subtitles: {a} videos (settings window opened)"
+  ],
+  [
+   "刪除 {a} 筆紀錄（影片檔案不會刪）",
+   "Deleted {a} records (video files kept)"
+  ],
+  [
+   "已取消 {a} 個配對",
+   "Unpaired {a} browsers"
+  ],
+  [
+   "不能用：{a}",
+   "Not available: {a}"
+  ],
+  [
+   "傳回中 {a}%（{b}／{c}）",
+   "Sending back {a}% ({b}/{c})"
+  ],
+  [
+   "Master 啟動失敗：{a}",
+   "Master failed to start: {a}"
+  ],
+  [
+   "已儲存{a}",
+   "Saved{a}"
+  ],
+  [
+   "錯誤：{a}　{b}\n{c}",
+   "Error: {a}  {b}\n{c}"
+  ],
+  [
+   "結果：{a}",
+   "Result: {a}"
+  ],
+  [
+   "錯誤：{a}　{b}",
+   "Error: {a}  {b}"
+  ],
+  [
+   "錯誤：{a}",
+   "Error: {a}"
+  ],
+  [
+   "最近一次排程：{a}（{b}）。先排除不合格的節點，再替合格的打 0～100 分，最高分的拿到。{c}",
+   "Latest scheduling: {a} ({b}). Ineligible nodes are excluded first, the eligible ones get a 0–100 score, and the highest wins. {c}"
+  ],
+  [
+   "這個任務一共排程過 {a} 次。",
+   "This task was scheduled {a} times."
+  ],
+  [
+   "{a}｜{b}｜節點：{c}｜嘗試 {d}/{e}｜{f}",
+   "{a} | {b} | Node: {c} | Attempt {d}/{e} | {f}"
+  ],
+  [
+   "{a} {b} 次（送 {c}／收 {d} token）",
+   "{a}: {b} times (sent {c} / received {d} tokens)"
+  ],
+  [
+   "開著（127.0.0.1:{a}，只有這台電腦連得到）",
+   "On (127.0.0.1:{a}, only this computer can connect)"
+  ],
+  [
+   "共下載 {a} 部｜總量 {b}｜{c}",
+   "{a} downloads | {b} total | {c}"
+  ],
+  [
+   "共下載 {a} 部",
+   "{a} downloads"
+  ],
+  [
+   "總量 {a}",
+   "{a} total"
+  ],
+  [
+   "整體來說實際時間是預估的 {a} 倍（依最近 {b} 次）",
+   "Overall, actual time is {a}× the estimate (last {b} downloads)"
+  ],
+  [
+   "檢查失敗：{a}",
+   "Check failed: {a}"
+  ],
+  [
+   "\n排隊中的 {a} 部也不會下載。",
+   "\nThe {a} queued videos won't download either."
+  ],
+  [
+   "排隊中的 {a} 部也不會下載。",
+   "The {a} queued videos won't download either."
+  ],
+  [
+   "Video Helper 在背景執行中{a}。點右下角的圖示可以打開視窗。",
+   "Video Helper is running in the background{a}. Click the tray icon to open the window."
+  ],
+  [
+   "⏸ 已暫停{a}",
+   "⏸ Paused{a}"
+  ],
+  [
+   "{a} 部等待中",
+   "{a} waiting"
+  ],
+  [
+   "已加入 {n} 部影片",
+   "Added {n} videos"
+  ],
+  [
+   "節點傳回：{a}{b}",
+   "Sent back by node: {a}{b}"
+  ],
+  [
+   "節點傳回：{a}",
+   "Sent back by node: {a}"
+  ],
+  [
+   "共 {a} 部影片（一部接一部做）",
+   "{a} videos (done one after another)"
+  ],
+  [
+   "翻成繁體中文{a}",
+   "Translate to Traditional Chinese{a}"
+  ],
+  [
+   "完成！共 {a} 句，語言：{b}\n\n原文字幕：{c}",
+   "Done! {a} lines, language: {b}\n\nOriginal subtitles: {c}"
+  ],
+  [
+   "中文字幕：{a}",
+   "Chinese subtitles: {a}"
+  ],
+  [
+   "雙語字幕：{a}",
+   "Bilingual subtitles: {a}"
+  ],
+  [
+   "完成 {a} 部{b}{c}{d}。",
+   "Done: {a} videos{b}{c}{d}."
+  ],
+  [
+   "完成 {a} 部",
+   "Done: {a} videos"
+  ],
+  [
+   "跳過 {a} 部（已經有字幕）",
+   "skipped {a} (already have subtitles)"
+  ],
+  [
+   "失敗 {a} 部",
+   "{a} failed"
+  ],
+  [
+   "失敗的：\n{a}",
+   "Failed:\n{a}"
+  ],
+  [
+   "{a}\n\n要打開檔案位置嗎？",
+   "{a}\n\nOpen the file's folder?"
+  ],
+  [
+   "沒有做成功：{a}\n\n（詳細原因在 ⚙ 進階設定 → 問題排查 → 打開錯誤日誌）",
+   "It didn't work: {a}\n\n(Details: Security & stats → Error log)"
+  ],
+  [
+   "{a}｜AI 記住 {b} 個網域{c}",
+   "{a} | AI remembers {b} domains{c}"
+  ],
+  [
+   "AI 記住 {a} 個網域",
+   "AI remembers {a} domains"
+  ],
+  [
+   "測試成功：{a}",
+   "Test passed: {a}"
+  ],
+  [
+   "❌ 測試失敗：{a}",
+   "❌ Test failed: {a}"
+  ],
+  [
+   "{a} 筆",
+   "{a} entries"
+  ],
+  [
+   "{a} 天前更新",
+   "updated {a} days ago"
+  ],
+  [
+   "❌ 更新失敗：{a}",
+   "❌ Update failed: {a}"
+  ],
+  [
+   "已存到：\n{a}",
+   "Saved to:\n{a}"
+  ],
+  [
+   "讀不了這個檔案：\n{a}",
+   "Can't read this file:\n{a}"
+  ],
+  [
+   "已匯入 {a} 項設定{b}。",
+   "Imported {a} settings{b}."
+  ],
+  [
+   "已匯入 {a} 項設定",
+   "Imported {a} settings"
+  ],
+  [
+   "{a} 筆新的下載紀錄",
+   "{a} new history records"
+  ],
+  [
+   "注意：\n{a}",
+   "Note:\n{a}"
+  ],
+  [
+   "選 {a}（{b} 分）",
+   "Chose {a} ({b} points)"
+  ],
+  [
+   "url 不行：{a}",
+   "url not allowed: {a}"
+  ],
+  [
+   "media_url 不行：{a}",
+   "media_url not allowed: {a}"
+  ],
+  [
+   "不認得的參數：{a}",
+   "Unknown parameter: {a}"
+  ],
+  [
+   "缺少參數：{a}",
+   "Missing parameter: {a}"
+  ],
+  [
+   "{a} 型別不對",
+   "{a} has the wrong type"
+  ],
+  [
+   "{a} 太長（最多 {b}）",
+   "{a} too long (max {b})"
+  ],
+  [
+   "{a} 太小（最少 {b}）",
+   "{a} too small (min {b})"
+  ],
+  [
+   "{a} 太大（最多 {b}）",
+   "{a} too large (max {b})"
+  ],
+  [
+   "{a} 只能是 {b}",
+   "{a} must be {b}"
+  ],
+  [
+   "{a} 秒前",
+   "{a} s ago"
+  ],
+  [
+   "{a} 分前",
+   "{a} min ago"
+  ],
+  [
+   "{a} 小時前",
+   "{a} h ago"
+  ],
+  [
+   "下載完成：{a}　{b}",
+   "Downloaded: {a}  {b}"
+  ],
+  [
+   "{a}（{b}）已傳回這台：{c}",
+   "{a} ({b}) sent back here: {c}"
+  ],
+  [
+   "節點 {a}",
+   "Node {a}"
+  ],
+  [
+   "AI 伺服器錯誤（{a}）",
+   "AI server error ({a})"
+  ],
+  [
+   "{a} 分鐘",
+   "{a} min"
+  ],
+  [
+   "影片標題 {a}",
+   "Video title {a}"
+  ]
+ ],
+ "ignore": [
+  "每個狀態都要在轉移表裡",
+  "VideoHelper-備份-{a}.json",
+  "{a}.雙語",
+  "繁體中文"
+ ]
+}

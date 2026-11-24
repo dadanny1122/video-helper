@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
 
 const dir = path.join(__dirname, '..', 'webui');
 const read = (f) => fs.readFileSync(path.join(dir, f), 'utf8');
-const html = read('index.html').replace('/*CSS*/', () => read('app.css')).replace('/*JS*/', () => read('app.js'));
+const html = require('./webui_fake.js').pageHtml();
 const out = process.argv[2] || 'docs/manual/img';
 fs.mkdirSync(out, { recursive: true });
 
