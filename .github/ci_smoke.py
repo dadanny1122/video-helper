@@ -36,6 +36,13 @@ print("FFMPEG_OK", a.FFMPEG)
 # 2. 視窗：4 個分頁、安裝精靈 3 步、進階設定
 r = tk.Tk()
 app = a.App(r)
+# v1.44.0：GitHub 的 Windows 是英文，「跟系統」會變英文；下面檢查的都是中文字 → 先固定中文，英文另外檢查
+_lang_auto = a.I18N.LANG
+a.I18N.set_lang("zh")
+a.I18N.set_lang("en")
+assert a.T("結束") == "Quit" and a.T("已加入 {n} 部影片", n=2) == "Added 2 videos", "英文字典沒有載入"
+a.I18N.set_lang("zh")
+print(f"::notice title=語言::這台 Windows「跟系統」＝{_lang_auto}；英文字典 OK，下面用中文測")
 from tkinter import ttk as _ttk
 assert _ttk.Style().theme_use().startswith("sun-valley"), "Sun Valley 主題沒有載入：" + _ttk.Style().theme_use()
 app.theme_var.set("深色"); app.change_theme(); app.theme_var.set("淺色"); app.change_theme()
