@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.34.0"
+VERSION = "1.34.1"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -2276,17 +2276,18 @@ def unlayer(win):
 
 
 def grab_window_client(win):
-    """v1.34.0：把視窗裡面現在的樣子拍成一張圖（Windows 的 PrintWindow＋PW_RENDERFULLCONTENT，
-    讀 Windows 畫面合成器裡的那份，被別的視窗擋住也拍得到）。失敗回 None，呼叫的人就照舊不蓋圖。"""
+    """把視窗裡面現在的樣子拍成一張圖。v1.34.1 改快：直接 BitBlt 視窗自己的畫面（不再用 PrintWindow 請 Windows 重算一次），
+    也不經過 PIL，自己把 BGRA 排成 PPM（Tk 內建就讀得懂）。拍不到（全黑）才退回 PrintWindow。失敗回 None。"""
     if sys.platform != "win32":
         return None
     import ctypes
     from ctypes import wintypes as w
-    from PIL import Image
     u, g = ctypes.windll.user32, ctypes.windll.gdi32
     for fn, args, res in ((u.GetParent, [w.HWND], w.HWND), (u.GetClientRect, [w.HWND, ctypes.POINTER(w.RECT)], w.BOOL),
                           (u.GetDC, [w.HWND], w.HDC), (u.ReleaseDC, [w.HWND, w.HDC], ctypes.c_int),
                           (u.PrintWindow, [w.HWND, w.HDC, w.UINT], w.BOOL),
+                          (g.BitBlt, [w.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, w.HDC, ctypes.c_int,
+                                      ctypes.c_int, w.DWORD], w.BOOL),
                           (g.CreateCompatibleDC, [w.HDC], w.HDC), (g.CreateCompatibleBitmap, [w.HDC, ctypes.c_int, ctypes.c_int], w.HBITMAP),
                           (g.SelectObject, [w.HDC, w.HGDIOBJ], w.HGDIOBJ), (g.DeleteObject, [w.HGDIOBJ], w.BOOL),
                           (g.DeleteDC, [w.HDC], w.BOOL),
@@ -2298,31 +2299,34 @@ def grab_window_client(win):
     wd, ht = r.right - r.left, r.bottom - r.top
     if wd <= 0 or ht <= 0:
         return None
+
+    class BIH(ctypes.Structure):
+        _fields_ = [("biSize", w.DWORD), ("biWidth", w.LONG), ("biHeight", w.LONG), ("biPlanes", w.WORD),
+                    ("biBitCount", w.WORD), ("biCompression", w.DWORD), ("biSizeImage", w.DWORD),
+                    ("biXPelsPerMeter", w.LONG), ("biYPelsPerMeter", w.LONG), ("biClrUsed", w.DWORD),
+                    ("biClrImportant", w.DWORD)]
     sdc = u.GetDC(hwnd)
     mdc = g.CreateCompatibleDC(sdc)
     bmp = g.CreateCompatibleBitmap(sdc, wd, ht)
     old = g.SelectObject(mdc, bmp)
+    buf = ctypes.create_string_buffer(wd * ht * 4)
     try:
-        if not u.PrintWindow(hwnd, mdc, 0x1 | 0x2):          # PW_CLIENTONLY | PW_RENDERFULLCONTENT
+        def read():
+            g.SelectObject(mdc, old)
+            bih = BIH(ctypes.sizeof(BIH), wd, -ht, 1, 32, 0, 0, 0, 0, 0, 0)       # 負的高度＝由上往下
+            ok = g.GetDIBits(mdc, bmp, 0, ht, buf, ctypes.byref(bih), 0) == ht
+            g.SelectObject(mdc, bmp)
+            raw = buf.raw
+            return raw if ok and any(raw[::40961]) else None                    # 抽樣看是不是全黑
+        g.BitBlt(mdc, 0, 0, wd, ht, sdc, 0, 0, 0x00CC0020)                     # SRCCOPY：複製視窗現在的畫面
+        raw = read()
+        if raw is None and u.PrintWindow(hwnd, mdc, 0x1 | 0x2):               # 退回：PW_CLIENTONLY | PW_RENDERFULLCONTENT
+            raw = read()
+        if raw is None:
             return None
-
-        class BIH(ctypes.Structure):
-            _fields_ = [("biSize", w.DWORD), ("biWidth", w.LONG), ("biHeight", w.LONG), ("biPlanes", w.WORD),
-                        ("biBitCount", w.WORD), ("biCompression", w.DWORD), ("biSizeImage", w.DWORD),
-                        ("biXPelsPerMeter", w.LONG), ("biYPelsPerMeter", w.LONG), ("biClrUsed", w.DWORD),
-                        ("biClrImportant", w.DWORD)]
-        bih = BIH(ctypes.sizeof(BIH), wd, -ht, 1, 32, 0, 0, 0, 0, 0, 0)      # 負的高度＝由上往下
-        buf = ctypes.create_string_buffer(wd * ht * 4)
-        g.SelectObject(mdc, old)
-        if g.GetDIBits(mdc, bmp, 0, ht, buf, ctypes.byref(bih), 0) != ht:
-            return None
-        im = Image.frombuffer("RGB", (wd, ht), buf, "raw", "BGRX", 0, 1)
-        if im.getextrema() in (((0, 0), (0, 0), (0, 0)),):                  # 全黑＝沒拍到
-            return None
-        import io
-        out = io.BytesIO()
-        im.save(out, "PPM")                                                   # PPM 是 Tk 自己讀得懂、最快的格式
-        return tk.PhotoImage(master=win, data=out.getvalue(), format="ppm")
+        rgb = bytearray(wd * ht * 3)                                           # BGRA → RGB（切片在 C 裡做，很快）
+        rgb[0::3], rgb[1::3], rgb[2::3] = raw[2::4], raw[1::4], raw[0::4]
+        return tk.PhotoImage(master=win, data=b"P6 %d %d 255\n" % (wd, ht) + bytes(rgb), format="ppm")
     finally:
         g.SelectObject(mdc, old)
         g.DeleteObject(bmp)
@@ -3336,6 +3340,7 @@ class App:
 
         self.home = Home(root, self.pick_home, self.home_status, top=self.header, below=self.ticker, kpis=self.home_kpis)
         UI_BUSY["on_start"] = self._drag_start             # v1.33.3 拖動測試
+        root.bind("<Leave>", self._preshoot, add="+")       # v1.34.1 往標題列移動時先拍好
         root.bind_all("<Expose>", self._count_expose, add="+")
         self.header.on_nav = self.nav
         self.header.active = self.nb.index("current")
@@ -3375,11 +3380,18 @@ class App:
         """v1.34.0：拖動主視窗時，先拍一張現在畫面的照片蓋上去——Windows 拖動時會一直重畫整個視窗，
         sv-ttk 的按鈕、框框都是圖片，重畫很慢；蓋上照片後只要重畫一張圖（跟首頁一樣順），放開再拿掉"""
         t = time.time()
-        try:
-            img = grab_window_client(self.root)
-        except Exception as e:
-            img = None
-            log.info("拖動快照失敗：%s", type(e).__name__)
+        pre = getattr(self, "_preshot", None)
+        self._preshot = None
+        size = (self.root.winfo_width(), self.root.winfo_height())
+        if pre and t - pre[0] < 3 and pre[1] == size and pre[3] == self.nb.index("current"):
+            img, how = pre[2], "先拍好的"                     # 滑鼠移到標題列時就拍好了，按下去不用等
+        else:
+            try:
+                img = grab_window_client(self.root)
+            except Exception as e:
+                img = None
+                log.info("拖動快照失敗：%s", type(e).__name__)
+            how = "現拍"
         if img is None:
             self._drag["freeze"] = "沒拍到"
             return
@@ -3389,7 +3401,22 @@ class App:
         c.place(x=0, y=0, relwidth=1, relheight=1)
         tk.Misc.lift(c)                                   # Canvas.lift() 是「排圖形」，要用 Misc 的才是蓋到最上層
         self._frozen = c
-        self._drag["freeze"] = f"蓋照片（拍照 {int((time.time() - t) * 1000)} ms）"
+        self._drag["freeze"] = f"蓋照片（{how}，{int((time.time() - t) * 1000)} ms）"
+
+    def _preshoot(self, e):
+        """v1.34.1：滑鼠從視窗上緣移出去（往標題列走）→ 先拍好，等一下按住拖動時直接用"""
+        try:
+            if (e.widget is not self.root or not self.settings["drag_snapshot"] or self.home.visible()
+                    or ui_busy() or e.y_root >= self.root.winfo_rooty()):
+                return
+            t = time.time()
+            img = grab_window_client(self.root)
+            if img is not None:
+                self._preshot = (time.time(), (self.root.winfo_width(), self.root.winfo_height()), img,
+                                 self.nb.index("current"))
+                self._preshot_ms = int((time.time() - t) * 1000)
+        except Exception:
+            self._preshot = None
 
     def _drag_unfreeze(self):
         c = getattr(self, "_frozen", None)
