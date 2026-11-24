@@ -10,7 +10,12 @@ let api = null, S = null, filter = 'all', seenN = 0, lastSig = '', page = 'home'
 const ST = { run: '下載中', wait: '等待中', retry: '等重試', pause: '已暫停', done: '完成', fail: '失敗', need: '需要處理', cancel: '已取消' };
 const FILTERS = { all: () => true, active: (t) => ['run', 'wait', 'retry'].includes(t.st), done: (t) => t.st === 'done',
   paused: (t) => t.st === 'pause', fail: (t) => ['fail', 'need'].includes(t.st) };
-const TITLES = { home: ['首頁', '安全、乾淨、穩定地下載'], dl: ['下載管理', '新增下載、看佇列、找以前下載的影片'] };
+const TITLES = { home: ['首頁', '安全、乾淨、穩定地下載'], dl: ['下載管理', '新增下載、看佇列、找以前下載的影片'],
+  set: ['設定', '改了馬上存；原本視窗的 ③ 設定、⚙ 進階設定都在這裡'], setup: ['安裝擋廣告', '在 Chrome 裝暴力猴和 Video Helper 腳本'] };
+const PAGES = Object.keys(TITLES);
+const STEPS = [['安裝暴力猴（Violentmonkey）', '打開後按「加到 Chrome」→「新增擴充功能」'],
+  ['打開暴力猴的必要設定', '把「允許使用者指令碼」打開；\n有用無痕視窗的話，「在無痕模式下允許」也打開'],
+  ['安裝 Video Helper 腳本', '打開後按「安裝」，之後有新版本會自動更新']];
 
 function hue(s) { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
 
@@ -29,9 +34,9 @@ async function act(name, arg) {
   } catch (e) { toast('出錯了：' + e); }
 }
 
-function modal(title, text, buttons) {
+function modal(title, text, buttons, cls = 'muted') {
   const box = $('#mbox');
-  box.innerHTML = `<h3>${esc(title)}</h3><p class="muted">${esc(text)}</p><div class="btns"></div>`;
+  box.innerHTML = `<h3>${esc(title)}</h3><p class="${cls}">${esc(text)}</p><div class="btns"></div>`;
   return new Promise((res) => {
     for (const [label, val, cls] of buttons) {
       const b = document.createElement('button'); b.textContent = label; if (cls) b.className = cls;
@@ -117,7 +122,7 @@ function renderNews(news, upd) {
 }
 
 function renderNotices(ns) {
-  $('#notices').innerHTML = ns.length ? ns.map((n) => `<div class="ntc"><span>${esc(n.icon)}</span><span class="grow">${esc(n.text)}</span><time>${esc(n.time)}</time></div>`).join('')
+  $('#notices').innerHTML = ns.length ? ns.map((n) => `<div class="ntc${PAGES.includes(n.page) ? ' go' : ''}" data-gopage="${esc(n.page || '')}"><span>${esc(n.icon)}</span><span class="grow">${esc(n.text)}</span><time>${esc(n.time)}</time></div>`).join('')
     : '<div class="empty">沒有通知</div>';
   const unread = Math.max(0, ns.length - seenN);
   const b = $('#badge'); b.hidden = !unread || !$('#panel').hidden; b.textContent = unread;
@@ -181,6 +186,45 @@ function renderHist() {
   askThumbs();
 }
 
+// ---------- 設定 ----------
+let setSig = '';
+function opts(list, cur) {
+  return list.map((x) => { const [v, l] = Array.isArray(x) ? x : [x, x]; return `<option value="${esc(v)}"${String(v) === String(cur) ? ' selected' : ''}>${esc(l)}</option>`; }).join('');
+}
+function renderSettings(c) {
+  if (!c) return;
+  const sig = JSON.stringify(c);
+  if (sig === setSig) return;
+  const focus = document.activeElement;
+  if (focus && focus.closest('#page-set') && focus.matches('input:not([type=checkbox]), select')) return;   // 使用者正在改，先不要蓋掉
+  setSig = sig;
+  $('#s-dir').textContent = c.download_dir; $('#s-dirreset').hidden = c.default_dir;
+  $('#s-q').innerHTML = opts((S.qualities || []).map((q) => [q, q === '最高' ? '最高' : q + 'p']), c.default_quality);
+  const rate = $('#s-rate');
+  if (![...rate.options].some((o) => +o.value === +c.rate_limit)) rate.insertAdjacentHTML('beforeend', `<option>${esc(c.rate_limit)}</option>`);
+  rate.value = [...rate.options].find((o) => +o.value === +c.rate_limit).value;
+  $('#s-smart').innerHTML = opts(c.smart_modes, c.smart_segments);
+  $('#s-tpl').innerHTML = opts(c.templates, c.filename_template);
+  $('#s-tplprev').textContent = '範例：' + c.tpl_preview;
+  $('#s-theme').innerHTML = c.themes.map(([v, l]) => `<button data-theme="${esc(v)}" class="${v === c.theme ? 'on' : ''}">${esc(l)}</button>`).join('');
+  $('#s-close').innerHTML = opts(c.close_choices, c.close_action);
+  $('#s-tray').disabled = !c.tray_ok;
+  for (const el of $$('#page-set input[type=checkbox][data-set]')) el.checked = !!c[el.dataset.set];
+  $('#s-bridge').textContent = c.bridge || (c.bridge_on ? '執行中' : '關閉中') + `｜已配對 ${c.paired} 個瀏覽器`;
+  $('#s-mbps').textContent = c.mbps ? `目前記得約 ${c.mbps} Mbps（換了網路、預估變很不準時清除）` : '還沒量過';
+  $('#s-bl').textContent = c.blocklist;
+  $('#s-ai').textContent = c.ai;
+  $('#s-keyclear').hidden = !c.ai_has_key;
+  $('#s-ver').textContent = 'v' + S.version;
+  $('#s-data').textContent = '設定資料夾：' + c.data_dir;
+}
+function renderSetup(st) {
+  if (!st) return;
+  $('#steps').innerHTML = STEPS.map(([t, h], i) => `<div class="step"><div class="n">${i + 1}</div><div class="grow"><b>${esc(t)}</b><div>${esc(h)}</div></div>
+    <span class="ok">${st.done.includes(String(i + 1)) ? '✓' : ''}</span><button class="accent small" data-act="setup_step:${i + 1}">打開</button></div>`).join('');
+  $('#nochrome').hidden = st.chrome;
+}
+
 // ---------- 右鍵選單 ----------
 function showMenu(x, y, key, open) {
   const items = [['▶ 播放', 'play', open], ['📂 打開檔案位置', 'reveal', open], ['📋 複製網址', 'copy_url', true],
@@ -209,10 +253,11 @@ async function rowAction(a, key) {
 }
 
 function go(p) {
+  if (!PAGES.includes(p)) return;
   page = p;
   for (const a of $$('#nav a')) a.classList.toggle('on', a.dataset.page === p);
-  $('#page-home').hidden = p !== 'home';
-  $('#page-dl').hidden = p !== 'dl';
+  for (const x of PAGES) $('#page-' + x).hidden = x !== p;
+  setSig = '';
   $('#ptitle').textContent = TITLES[p][0]; $('#sub').textContent = TITLES[p][1];
   $('main').scrollTop = 0;
   if (p === 'dl') { loadHist(); if (S) renderDl(S); }
@@ -239,9 +284,11 @@ function render(s) {
   if (sig !== lastSig) {                   // 沒變就不重畫（不然捲動、hover 會一直被打斷）
     lastSig = sig;
     if (page === 'home') { renderKpis(s.kpis); renderTasks(s.tasks); renderNexus(s.nexus); renderNews(window.NEWS, s.update); }
-    else renderDl(s);
+    else if (page === 'dl') renderDl(s);
     renderNotices(s.notices);
   }
+  if (page === 'set') renderSettings(s.settings);
+  if (page === 'setup') renderSetup(s.setup);
   if (s.ask && s.ask.id !== render.asked) {          // 電腦版要問你一件事（例如還在下載時關視窗）
     render.asked = s.ask.id;
     modal(s.ask.title, s.ask.text, s.ask.buttons.map((b, i) => [b, i, i === 0 ? 'accent' : ''])).then((i) => act('answer', { id: s.ask.id, choice: i }));
@@ -257,9 +304,9 @@ function wire() {
   $('#nav').addEventListener('click', (e) => {
     const a = e.target.closest('a'); if (!a) return;
     const p = a.dataset.page;
-    if (p === 'home' || p === 'dl') { go(p); lastSig = ''; if (S) render(S); return; }
+    if (PAGES.includes(p)) { go(p); lastSig = ''; if (S) render(S); return; }
     if (p === 'about') {
-      modal('關於 Video Helper', `版本 v${S ? S.version : ''}（新介面預覽）\n\n全部在你自己的電腦上跑，沒有伺服器。新介面只讀電腦版裡的資料、不連任何網站。\nNexus、設定這兩頁還在做，先用原本的視窗打開。`,
+      modal('關於 Video Helper', `版本 v${S ? S.version : ''}（新介面預覽）\n\n全部在你自己的電腦上跑，沒有伺服器。新介面只讀電腦版裡的資料、不連任何網站。\nNexus 管理這頁還在做，先用原本的視窗打開。`,
         [['說明書', 'manual', 'accent'], ['GitHub 發布頁', 'releases'], ['關閉', null]]).then((v) => v && act('link', v));
       return;
     }
@@ -267,6 +314,10 @@ function wire() {
   });
   document.addEventListener('click', async (e) => {
     if (!e.target.closest('#menu')) $('#menu').hidden = true;
+    const g = e.target.closest('[data-go], [data-gopage]');
+    if (g && (g.dataset.go || g.dataset.gopage)) { go(g.dataset.go || g.dataset.gopage); lastSig = ''; if (S) render(S); if (g.dataset.gopage) $('#panel').hidden = true; return; }
+    const th = e.target.closest('[data-theme]');
+    if (th) { act('set', { key: 'theme', value: th.dataset.theme }); return; }
     const b = e.target.closest('[data-act]');
     if (b) {
       const [name, arg] = b.dataset.act.split(':');
@@ -288,6 +339,13 @@ function wire() {
     }
   });
   document.addEventListener('change', (e) => {
+    const k = e.target.closest('[data-set]');
+    if (k) {
+      const key = k.dataset.set;
+      const value = k.type === 'checkbox' ? k.checked : key === 'rate_limit' ? +k.value : k.value;
+      setSig = ''; act('set', { key, value }); k.blur();
+      return;
+    }
     const c = e.target.closest('[data-sel]'); if (!c) return;
     if (c.checked) SEL.add(c.dataset.sel); else SEL.delete(c.dataset.sel);
     renderHist();
@@ -340,6 +398,22 @@ function wire() {
   $('#bdel').addEventListener('click', async () => {
     if (!await modal('刪除紀錄', `刪除選取的 ${SEL.size} 筆紀錄？影片檔案不會刪。`, [['刪除', 1, 'accent'], ['取消', 0]])) return;
     const keys = [...SEL]; SEL.clear(); act('delete_hist', keys);
+  });
+  // 設定
+  $('#s-report').addEventListener('click', async () => {
+    const r = await act('smart_report');
+    if (r && r.report) modal('智慧分段報告', r.report, [['關閉', 0, 'accent']], 'report');
+  });
+  $('#s-unpair').addEventListener('click', async () => {
+    if (await modal('取消所有配對', '所有配對過的瀏覽器下次「送到電腦版」時都要重新輸入配對碼。', [['取消所有配對', 1, 'accent'], ['不要', 0]])) act('unpair_all');
+  });
+  $('#s-keysave').addEventListener('click', async () => {
+    const v = $('#s-key').value.trim(); if (!v) { toast('先貼上金鑰'); return; }
+    const r = await act('set_ai_key', v);
+    if (r && r.ok) $('#s-key').value = '';
+  });
+  $('#s-keyclear').addEventListener('click', async () => {
+    if (await modal('清除金鑰', '清除後只用免費的公開清單判斷廣告。', [['清除', 1, 'accent'], ['取消', 0]])) act('set_ai_key', '-');
   });
   $('#bell').addEventListener('click', () => {
     const p = $('#panel'); p.hidden = !p.hidden;

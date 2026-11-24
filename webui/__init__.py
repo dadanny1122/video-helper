@@ -20,7 +20,13 @@ ACTIONS = {
     # v1.37.0 下載管理頁
     "add_batch": "dict", "analyze": 2000, "enqueue_fmt": "dict", "clear_analysis": None, "clear_finished": None,
     "redownload": 300, "copy_url": 300, "subtitles": "keys", "delete_hist": "keys",
+    # v1.38.0 設定頁、安裝擋廣告
+    "set": "dict", "choose_dir": None, "reset_dir": None, "smart_report": None, "unpair_all": None, "stop_bridge": None,
+    "update_blocklist": None, "set_ai_key": 300, "test_ai": None, "clear_ai_cache": None, "reset_speed": None,
+    "export": None, "import": None, "open_backups": None, "open_log": None, "open_data": None, "setup_step": 2,
 }
+SETTING_KEYS = ("default_quality", "rate_limit", "skip_downloaded", "tray_always", "keep_history", "keep_stats",
+                "smart_segments", "filename_template", "close_action", "theme")
 MAX_KEYS = 500
 QUALITIES = ("最高", "2160", "1440", "1080", "720", "480", "360")
 LOAD_TIMEOUT = 25            # 秒：網頁這麼久還沒說「好了」→ 改開舊介面
@@ -121,6 +127,11 @@ def check_action(name, arg):
             if not isinstance(arg.get("id"), str) or type(arg.get(n)) is not int:
                 raise ValueError("參數不對")
             return {"id": arg["id"][:200], n: arg[n]}
+        if name == "set":
+            k, v = arg.get("key"), arg.get("value")
+            if k not in SETTING_KEYS or not isinstance(v, (str, bool, int, float)) or (isinstance(v, str) and len(v) > 100):
+                raise ValueError("參數不對")
+            return {"key": k, "value": v}
         if name == "add_batch":
             t, q = arg.get("text"), arg.get("quality")
             if not isinstance(t, str) or not t or len(t) > 20000 or q not in QUALITIES:

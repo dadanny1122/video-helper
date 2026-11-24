@@ -15,7 +15,8 @@
     <a data-page="home" class="on"><i>⌂</i>首頁</a>
     <a data-page="dl"><i>⬇</i>下載管理</a>
     <a data-page="nodes"><i>🖧</i>Nexus 管理<em>舊介面</em></a>
-    <a data-page="set"><i>⚙</i>設定<em>舊介面</em></a>
+    <a data-page="set"><i>⚙</i>設定</a>
+    <a data-page="setup"><i>🛡</i>安裝擋廣告</a>
     <a data-page="about"><i>ⓘ</i>關於</a>
   </nav>
   <div class="grow"></div>
@@ -85,7 +86,7 @@
           <button data-act="pair"><i>🔗</i>配對瀏覽器</button>
           <button data-act="check_update"><i>⟳</i>檢查更新</button>
           <button data-act="link:manual"><i>📖</i>說明書</button>
-          <button data-act="old:setup"><i>🛡</i>安裝擋廣告</button>
+          <button data-go="setup"><i>🛡</i>安裝擋廣告</button>
         </div>
       </section>
     </div>
@@ -136,6 +137,73 @@
       </div>
       <div id="hlist" class="list tall"></div>
       <div class="more"><span class="muted small" id="hcount"></span><button class="ghost small" id="hmore" hidden>載入更多</button></div>
+    </section>
+  </div>
+
+  <!-- v1.38.0 設定 -->
+  <div id="page-set" class="page" hidden>
+    <div class="sgrid">
+      <section class="card">
+        <div class="card-h"><h3>⬇ 下載</h3></div>
+        <div class="srow"><div><b>下載資料夾</b><div class="muted small path" id="s-dir"></div></div>
+          <div class="sbtns"><button class="ghost small" data-act="choose_dir">選資料夾…</button><button class="ghost small" data-act="open_folder">打開</button><button class="ghost small" id="s-dirreset" data-act="reset_dir">用預設</button></div></div>
+        <div class="srow"><div><b>預設畫質</b><div class="muted small">沒有這個畫質時，選比它低的最高畫質</div></div><select data-set="default_quality" id="s-q"></select></div>
+        <div class="srow"><div><b>速度上限</b><div class="muted small">下載時不想卡到別人上網就設一下（Mbps，馬上生效）</div></div>
+          <select data-set="rate_limit" id="s-rate"><option value="0">不限制</option><option>5</option><option>10</option><option>20</option><option>50</option><option>100</option></select></div>
+        <div class="srow"><div><b>下載過就自動跳過</b><div class="muted small">批次、瀏覽器送來的影片，檔案還在就不再下載</div></div><label class="sw"><input type="checkbox" data-set="skip_downloaded"><span></span></label></div>
+        <div class="srow"><div><b>智慧分段</b><div class="muted small">看速度和出錯情況決定同時開幾條線；先「只觀察」，報告看得出有幫助再改「自動調整」</div></div>
+          <div class="sbtns"><select data-set="smart_segments" id="s-smart"></select><button class="ghost small" id="s-report">📊 報告</button></div></div>
+        <div class="srow"><div><b>檔名格式</b><div class="muted small" id="s-tplprev"></div></div><select data-set="filename_template" id="s-tpl"></select></div>
+      </section>
+
+      <section class="card">
+        <div class="card-h"><h3>🎨 外觀與視窗</h3></div>
+        <div class="srow"><div><b>外觀</b><div class="muted small">新介面和原本的視窗一起換</div></div><div class="seg" id="s-theme"></div></div>
+        <div class="srow"><div><b>關閉視窗時</b><div class="muted small">縮到系統匣＝縮到右下角繼續下載，完成會通知</div></div><select data-set="close_action" id="s-close"></select></div>
+        <div class="srow"><div><b>系統匣小圖示一直顯示</b><div class="muted small">右鍵：狀態、暫停、貼上網址下載、打開下載資料夾</div></div><label class="sw"><input type="checkbox" data-set="tray_always" id="s-tray"><span></span></label></div>
+        <div class="srow"><div><b>新介面（預覽）</b><div class="muted small">換回原本的視窗；之後在 ③ 設定 可以再打開</div></div><button class="ghost small" data-act="set_ui_classic">切回舊介面</button></div>
+      </section>
+
+      <section class="card">
+        <div class="card-h"><h3>🔗 瀏覽器連動</h3></div>
+        <div class="srow"><div><b>狀態</b><div class="muted small" id="s-bridge"></div></div><button class="accent small" data-act="pair">🔗 配對瀏覽器</button></div>
+        <div class="srow"><div><b>取消所有配對</b><div class="muted small">借別人用過電腦時可以按；之後要重新配對</div></div><button class="ghost small" id="s-unpair">取消所有配對</button></div>
+        <div class="srow"><div><b>關閉服務</b><div class="muted small">不再接收瀏覽器送來的影片，下次按「配對」會再打開</div></div><button class="ghost small" data-act="stop_bridge">關閉服務</button></div>
+      </section>
+
+      <section class="card">
+        <div class="card-h"><h3>🗂 紀錄與統計</h3></div>
+        <div class="srow"><div><b>保存下載紀錄</b></div><label class="sw"><input type="checkbox" data-set="keep_history"><span></span></label></div>
+        <div class="srow"><div><b>記錄下載統計</b><div class="muted small">用來校正預估；只存數字和網站名稱</div></div><label class="sw"><input type="checkbox" data-set="keep_stats"><span></span></label></div>
+        <div class="srow"><div><b>網速紀錄</b><div class="muted small" id="s-mbps"></div></div><div class="sbtns"><button class="ghost small" data-act="reset_speed">清除</button><button class="ghost small" data-act="old:stats">📊 統計（舊介面）</button></div></div>
+      </section>
+
+      <section class="card">
+        <div class="card-h"><h3>🛡 廣告判斷</h3></div>
+        <div class="srow"><div><b>公開廣告清單</b><div class="muted small" id="s-bl"></div></div><button class="ghost small" data-act="update_blocklist">立即更新</button></div>
+        <div class="srow col"><div><b>AI（選用，要付費）</b><div class="muted small">清單查不到的網域才問 AI；只送網域名稱和網站名稱。金鑰用 Windows 加密存在這台電腦，不會被匯出、也不會再顯示出來</div></div>
+          <div class="sbtns"><input type="password" id="s-key" class="search" placeholder="貼上 sk-ant-… 金鑰" autocomplete="off" spellcheck="false">
+            <button class="ghost small" id="s-keysave">儲存</button><button class="ghost small" data-act="test_ai">測試</button><button class="ghost small" id="s-keyclear">清除金鑰</button><button class="ghost small" data-act="clear_ai_cache">清除 AI 記憶</button></div>
+          <div class="muted small" id="s-ai"></div></div>
+      </section>
+
+      <section class="card">
+        <div class="card-h"><h3>💾 備份、更新、問題排查</h3></div>
+        <div class="srow"><div><b>備份</b><div class="muted small">換電腦、重灌時用；更新版本時也會自動備份一份</div></div><div class="sbtns"><button class="ghost small" data-act="export">⬆ 匯出</button><button class="ghost small" data-act="import">⬇ 匯入</button><button class="ghost small" data-act="open_backups">📂 自動備份</button></div></div>
+        <div class="srow"><div><b>版本</b><div class="muted small" id="s-ver"></div></div><div class="sbtns"><button class="ghost small" data-act="check_update">檢查更新</button><button class="ghost small" data-act="link:releases">更新內容</button></div></div>
+        <div class="srow"><div><b>問題排查</b><div class="muted small path" id="s-data"></div></div><div class="sbtns"><button class="ghost small" data-act="open_log">📄 錯誤日誌</button><button class="ghost small" data-act="open_data">📂 設定資料夾</button><button class="ghost small" data-act="old:security">🔒 安全中心</button></div></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- v1.38.0 安裝擋廣告 -->
+  <div id="page-setup" class="page" hidden>
+    <section class="card">
+      <div class="card-h"><h3>在 Chrome 裝好擋廣告（約 2 分鐘，只要做一次）</h3></div>
+      <p class="muted">照順序按下面 3 個「打開」，每個都會在 Chrome 打開正確的頁面。</p>
+      <div class="steps" id="steps"></div>
+      <div class="note">✅ 完成後：打開影片網站，左下角出現綠色盾牌「🛡 已攔截 N 次」就成功了。</div>
+      <div class="note bad" id="nochrome" hidden>⚠ 找不到 Chrome，會改用預設瀏覽器打開。這個工具是為 Chrome 設計的。</div>
     </section>
   </div>
 </main>

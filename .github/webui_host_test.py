@@ -34,7 +34,8 @@ ok(set(n for n in dir(webui.Api) if not n.startswith("_")) == {"state", "static"
 for name, arg in (("eval", "x"), ("add", ""), ("add", 5), ("add", "x" * 20001), ("cancel", None), ("answer", {"id": 1}),
                   ("old", "x" * 21), ("subtitles", "hab"), ("subtitles", []), ("subtitles", ["x" * 41]),
                   ("delete_hist", ["a"] * 501), ("add_batch", {"text": "x", "quality": "999"}), ("enqueue_fmt", {"id": "a", "i": "1"}),
-                  ("enqueue_fmt", {"id": "a", "i": True})):
+                  ("enqueue_fmt", {"id": "a", "i": True}), ("set", {"key": "download_dir", "value": "C:/x"}),
+                  ("set", {"key": "ai_key", "value": "x"}), ("set", {"key": "theme", "value": ["dark"]}), ("setup_step", "123")):
     try:
         webui.check_action(name, arg)
         ok(False, f"應該拒絕 {name}({arg!r:.30})")
@@ -178,6 +179,59 @@ def fake_mode():
     drain(app, root, 0.2)
     ok(len(app.history.items) == n0 - 1 and os.path.isfile(f) and not any(t["key"] == row["key"] for t in host.hist),
        "刪除紀錄（影片檔還在）")
+    # ---- v1.38.0 設定頁 ----
+    cfg = host.state["settings"]
+    ok(cfg["default_quality"] == app.settings["default_quality"] and "ai_key" not in cfg and "sk-" not in json.dumps(cfg),
+       "設定頁拿得到設定值，但沒有金鑰本身")
+    ok(call("set", {"key": "default_quality", "value": "720"})["ok"] and app.settings["default_quality"] == "720"
+       and app.q_var.get() == "720", "改預設畫質（原本視窗也跟著改）")
+    ok(call("set", {"key": "default_quality", "value": "999"})["ok"] is False, "不認得的畫質不能存")
+    ok(call("set", {"key": "rate_limit", "value": 20})["ok"] and app.settings["rate_limit_mbps"] == 20 and a.THROTTLE.bps > 0,
+       "速度上限馬上生效")
+    ok(call("set", {"key": "rate_limit", "value": -1})["ok"] is False and call("set", {"key": "rate_limit", "value": True})["ok"] is False,
+       "速度上限不能是負的或 true／false")
+    call("set", {"key": "rate_limit", "value": 0})
+    ok(call("set", {"key": "keep_stats", "value": "yes"})["ok"] is False, "開關一定要 true／false")
+    call("set", {"key": "keep_stats", "value": False})
+    ok(app.settings["keep_stats"] is False, "開關 → 存起來")
+    call("set", {"key": "theme", "value": "dark"})
+    drain(app, root, 0.2)
+    ok(app.settings["theme"] == "dark" and host.state["theme"] == "dark", "外觀換成深色（新介面跟著換）")
+    ok(call("set", {"key": "close_action", "value": "亂寫"})["ok"] is False, "關閉視窗的選項要在清單裡")
+    d2 = tempfile.mkdtemp()
+    real_ask = a.filedialog.askdirectory
+    a.filedialog.askdirectory = lambda **k: d2
+    call("choose_dir")
+    a.filedialog.askdirectory = real_ask
+    drain(app, root, 0.2)
+    ok(app.settings.download_dir == d2 and host.state["settings"]["download_dir"] == d2 and root.state() == "withdrawn",
+       "選資料夾（用 Windows 對話框選，選完原本的視窗還是藏著）")
+    call("reset_dir")
+    ok(app.settings["download_dir"] == "", "下載資料夾換回預設")
+    r = call("smart_report")
+    ok(r["ok"] and isinstance(r.get("report"), str), "智慧分段報告")
+    ok(call("set_ai_key", "壞掉的金鑰")["ok"] is False, "金鑰格式不對就不存")
+    ok(call("set_ai_key", "sk-ant-test-" + "a" * 30)["ok"] and app.settings["ai_key"].startswith("sk-ant-test")
+       and host.state["settings"]["ai_has_key"], "存金鑰（網頁只知道「有設定」）")
+    call("set_ai_key", "-")
+    ok(app.settings["ai_key"] == "", "清除金鑰")
+    app.settings["bridge_tokens"] = ["x"]
+    ok("1 個" in call("unpair_all")["msg"] and not app.settings["bridge_tokens"], "取消所有配對")
+    opened2 = []
+    a.webbrowser.open, real_wb = (lambda u: opened2.append(u)), a.webbrowser.open
+    a.subprocess.Popen, real_popen = (lambda args, **k: opened2.append(args[-1])), a.subprocess.Popen
+    call("setup_step", "1")
+    call("setup_step", "3")
+    a.webbrowser.open, a.subprocess.Popen = real_wb, real_popen
+    ok(opened2 == [a.URL_VM_STORE, a.URL_SCRIPT] and host.state["setup"]["done"] == ["1", "3"], "安裝擋廣告：打開對的網頁、打勾")
+    ok(call("setup_step", "9")["ok"] is False, "沒有第 9 步")
+    call("old", "security")
+    drain(app, root, 0.2)
+    ok(app.adv.state() == "normal" and root.state() == "withdrawn", "🔒 安全中心：只開進階設定小視窗")
+    app.adv.withdraw()
+    app.add_notice("🖧", "節點傳回：測試", "dl")
+    app2_notices = json.load(open(os.path.join(os.environ["VIDEO_HELPER_HOME"], "notices.json"), encoding="utf-8"))
+    ok(app2_notices[0]["page"] == "dl", "通知存檔（重開還在）、記得要跳哪一頁")
     # 舊介面
     call("old", "set")
     drain(app, root)
@@ -239,10 +293,13 @@ def real_mode():
                     host.window.evaluate_js("document.querySelector('#nav a[data-page=\"dl\"]').click()")
                     time.sleep(1.0)
                     result["dl"] = host.window.evaluate_js("!document.getElementById('page-dl').hidden && document.querySelectorAll('#dlq option').length")
+                    host.window.evaluate_js("document.querySelector('#nav a[data-page=\"set\"]').click()")
+                    time.sleep(1.0)
+                    result["set"] = host.window.evaluate_js("document.getElementById('s-q').options.length")
                     from PIL import ImageGrab
                     w = host.window
                     ImageGrab.grab(bbox=(w.x, w.y, w.x + w.width, w.y + w.height), all_screens=True).save(
-                        os.path.join(shots, "windows-webview2-dl.png"))
+                        os.path.join(shots, "windows-webview2-set.png"))
                     result["shot"] = True
                 except Exception as e:
                     result["err"] = repr(e)
@@ -260,6 +317,7 @@ def real_mode():
     ok(result.get("kpis") == 4, "WebView2 裡畫出 4 張數據卡")
     ok(result.get("ver") == "v" + a.VERSION, "版本號從電腦版傳到網頁")
     ok(result.get("dl") == 7, "下載管理頁打得開、畫質選單有 7 個")
+    ok(result.get("set") == 7, "設定頁打得開、預設畫質有 7 個選項")
     ok(result.get("shot"), "截圖 " + str(result.get("err", "")))
     # 縮圖：請 Windows 做一張（GitHub 的 Windows Server 不一定有影片縮圖功能 → 只記錄結果，不算失敗）
     try:

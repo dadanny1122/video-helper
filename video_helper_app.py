@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.37.0"
+VERSION = "1.38.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -3597,7 +3597,7 @@ class App:
         tag, url, notes = data
         self.update_info = (tag, url)
         if self.web and not self.web_fallback:            # 新介面：放在「最新消息」最上面＋通知，不跳視窗
-            self.add_notice("✨", f"有新版本 v{tag}（目前 v{VERSION}），在「最新消息」按一下前往下載")
+            self.add_notice("✨", f"有新版本 v{tag}（目前 v{VERSION}），在首頁「最新消息」按一下前往下載", "home")
             return
         notes = notes[:600] + ("…" if len(notes) > 600 else "")
         msg = f"有新版本 v{tag}（目前 v{VERSION}）。\n\n" + (f"更新內容：\n{notes}\n\n" if notes else "") + "要前往下載嗎？"
@@ -4118,7 +4118,7 @@ class App:
                                  error=error or "")
                 self.refresh_history()
         if self.web and t and status in (DONE, FAILED, NEEDS_ACTION):
-            self.add_notice("✅" if status == DONE else "❌", ("下載完成：" if status == DONE else "下載失敗：") + t["title"][:60])
+            self.add_notice("✅" if status == DONE else "❌", ("下載完成：" if status == DONE else "下載失敗：") + t["title"][:60], "dl")
         self.cancel_event = None
         self.worker = None
         self.refresh_queue()
@@ -4554,6 +4554,7 @@ class App:
         from webui import LOAD_TIMEOUT
         self.web.app = self
         self.web.thumb_dir = os.path.join(data_dir(), "thumbs")
+        self._load_notices()
         self.root.withdraw()
         self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw)   # 舊介面的 X 只是藏起來，主視窗是網頁
         self.web_publish()
@@ -4575,9 +4576,32 @@ class App:
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.on_show_window(None)
 
-    def add_notice(self, icon, text):
-        self.notices.insert(0, {"icon": icon, "text": str(text)[:160], "time": datetime.now().strftime("%H:%M")})
+    def add_notice(self, icon, text, page=""):
+        """通知中心（新介面右上角 🔔）：最新的在前、留 30 則、存檔（重開還看得到）；page＝按了跳到哪一頁"""
+        self.notices.insert(0, {"icon": icon, "text": str(text)[:160], "time": datetime.now().strftime("%m-%d %H:%M"),
+                                "page": page if page in ("home", "dl", "set") else ""})
         del self.notices[30:]
+        self._save_notices()
+
+    def _notices_path(self):
+        return os.path.join(data_dir(), "notices.json")
+
+    def _save_notices(self):
+        try:
+            tmp = self._notices_path() + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.notices, f, ensure_ascii=False)
+            os.replace(tmp, self._notices_path())
+        except Exception:
+            log.exception("存通知失敗")
+
+    def _load_notices(self):
+        try:
+            with open(self._notices_path(), encoding="utf-8") as f:
+                items = json.load(f)
+            self.notices = [n for n in items if isinstance(n, dict) and isinstance(n.get("text"), str)][:30]
+        except Exception:
+            self.notices = []
 
     @staticmethod
     def _hist_key(r):
@@ -4689,6 +4713,7 @@ class App:
             "hist_ver": ver, "analysis": self._web_an, "batch": self.batch_running,
             "qualities": QUALITY_CHOICES, "default_quality": self.settings["default_quality"],
             "rate_limit": self.settings["rate_limit_mbps"] or 0,
+            "settings": self._web_settings(), "setup": self._web_setup_state(),
         }
 
     def on_web_action(self, data):
@@ -4792,16 +4817,17 @@ class App:
         open_path(self.settings.download_dir)
 
     def web_old(self, page):
-        """還沒做好的頁面：打開原本的視窗（舊介面）到那一頁"""
+        """還沒做好的頁面：打開原本的視窗（舊介面）到那一頁；進階設定的頁只開進階設定那個小視窗"""
+        if page in ("nodes", "security", "stats", "tasks"):
+            self.show_advanced(self.adv_pages[page])
+            return {"ok": True, "msg": "這頁還在做，先用原本的視窗打開"}
         self.root.deiconify()
         self.root.lift()
         try:
             self.root.focus_force()
         except Exception:
             pass
-        if page == "nodes":
-            self.show_advanced(self.adv_pages["nodes"])
-        elif page in self.WEB_OLD_TABS:
+        if page in self.WEB_OLD_TABS:
             self.nav(self.WEB_OLD_TABS[page])
         return {"ok": True, "msg": "這頁還在做，先用原本的視窗打開"}
 
@@ -4918,6 +4944,196 @@ class App:
             self.refresh_history()
         return {"ok": True, "msg": f"刪除 {n} 筆紀錄（影片檔案不會刪）"}
 
+    # ---- v1.38.0 設定頁、安裝擋廣告頁 ----
+    WEB_BOOL_SETTINGS = ("skip_downloaded", "tray_always", "keep_history", "keep_stats")
+
+    def _web_settings(self):
+        """設定頁要顯示的值（金鑰本身不送出去，只說有沒有設定）"""
+        st = self.settings
+        lbl = lambda w: getattr(self, w).cget("text") if hasattr(self, w) else ""  # noqa: E731
+        return {
+            "download_dir": st.download_dir, "default_dir": st["download_dir"] in ("", None),
+            "default_quality": st["default_quality"], "rate_limit": st["rate_limit_mbps"] or 0,
+            "skip_downloaded": bool(st["skip_downloaded"]), "smart_segments": st["smart_segments"],
+            "smart_modes": [[v, k] for k, v in SMART_MODES.items()],
+            "filename_template": st["filename_template"] if st["filename_template"] in FILENAME_TEMPLATES else DEFAULT_TEMPLATE,
+            "templates": list(FILENAME_TEMPLATES), "tpl_preview": preview_filename(st["filename_template"]),
+            "theme": st["theme"], "themes": [[v, k] for k, v in THEMES.items()],
+            "close_action": st["close_action"], "close_choices": CLOSE_CHOICES if pystray else [c for c in CLOSE_CHOICES if "系統匣" not in c],
+            "tray_always": bool(st["tray_always"]), "tray_ok": pystray is not None,
+            "keep_history": bool(st["keep_history"]), "keep_stats": bool(st["keep_stats"]),
+            "bridge": lbl("bridge_lbl"), "bridge_on": bool(self.bridge.server), "paired": len(st["bridge_tokens"] or []),
+            "blocklist": lbl("bl_lbl"), "ai": lbl("ai_lbl"), "ai_has_key": bool((st["ai_key"] or "").strip()),
+            "mbps": round(self.mbps, 1) if self.mbps else 0, "data_dir": data_dir(),
+        }
+
+    def _web_setup_state(self):
+        return {"chrome": bool(getattr(self, "chrome", None)), "done": sorted(getattr(self, "_web_steps", set()))}
+
+    def web_set(self, arg):
+        """設定頁改一個值：每個值都檢查過才存；原本視窗上的選項也跟著改"""
+        k, v = arg["key"], arg["value"]
+        st = self.settings
+        if k == "default_quality" and v in QUALITY_CHOICES:
+            st[k] = v
+        elif k == "rate_limit" and isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 10000:
+            st["rate_limit_mbps"] = float(v)
+            THROTTLE.set_mbps(float(v))
+            self.refresh_queue()
+        elif k in self.WEB_BOOL_SETTINGS and isinstance(v, bool):
+            st[k] = v
+            if k == "tray_always":
+                if v:
+                    self.start_tray()
+                elif self.tray and not self.is_hidden():          # 縮在系統匣時不能拿掉，不然找不回來
+                    self._stop_tray()
+        elif k == "smart_segments" and v in SMART_MODES.values():
+            st[k] = v
+        elif k == "filename_template" and v in FILENAME_TEMPLATES:
+            st[k] = v
+        elif k == "close_action" and v in CLOSE_CHOICES and (pystray or "系統匣" not in v):
+            st[k] = v
+        elif k == "theme" and v in THEMES.values():
+            self.theme_var.set(next(n for n, m in THEMES.items() if m == v))
+            self.change_theme()                                      # 會存檔、換原本視窗的顏色
+        else:
+            return {"ok": False, "msg": "這個值不能用"}
+        st.save()
+        try:
+            self.apply_settings_to_ui()
+            self.theme_var.set(next((n for n, m in THEMES.items() if m == st["theme"]), "跟系統"))
+            self.tray_var.set(bool(st["tray_always"]))
+        except Exception:
+            log.exception("同步原本視窗的設定")
+        return {"ok": True, "msg": "已儲存"}
+
+    class _DialogHost:
+        """新介面時原本的視窗藏著：要跳 Windows 對話框（選資料夾、存檔）時，暫時把它變成一個看不見的 1×1 小視窗擺最上面當主人，
+        對話框才會出現在新介面前面；關掉對話框就還原"""
+
+        def __init__(self, app):
+            self.app = app
+
+        def __enter__(self):
+            r = self.app.root
+            self.hidden = self.app.web and not self.app.web_fallback and r.state() == "withdrawn"
+            if self.hidden:
+                self.geo = r.geometry()
+                r.attributes("-alpha", 0.0)
+                r.geometry(f"1x1+{r.winfo_screenwidth() // 2}+{r.winfo_screenheight() // 3}")
+                r.deiconify()
+                r.attributes("-topmost", True)
+                r.update()
+            return self
+
+        def __exit__(self, *exc):
+            if self.hidden:
+                r = self.app.root
+                r.withdraw()
+                r.attributes("-topmost", False)
+                r.geometry(self.geo)
+                r.attributes("-alpha", 1.0)
+                unlayer(r)
+            return False
+
+    def web_choose_dir(self, _):
+        with self._DialogHost(self):
+            d = filedialog.askdirectory(initialdir=self.settings.download_dir or default_download_dir(), title="選下載資料夾")
+        if not d:
+            return {"ok": True}
+        return self._web_set_dir(d)
+
+    def _web_set_dir(self, d):
+        if not os.path.isdir(d):
+            return {"ok": False, "msg": "這個資料夾不能用"}
+        self.settings["download_dir"] = "" if os.path.normpath(d) == os.path.normpath(default_download_dir()) else d
+        self.settings.save()
+        self.dir_var.set(self.settings.download_dir)
+        self._web_dk = None
+        return {"ok": True, "msg": "下載資料夾已更新"}
+
+    def web_reset_dir(self, _):
+        return self._web_set_dir(default_download_dir())
+
+    def web_smart_report(self, _):
+        return {"ok": True, "report": smart_report()}
+
+    def web_unpair_all(self, _):
+        n = len(self.settings["bridge_tokens"] or [])
+        self.bridge.unpair_all()
+        self.refresh_bridge_label()
+        return {"ok": True, "msg": f"已取消 {n} 個配對"}
+
+    def web_stop_bridge(self, _):
+        self.stop_bridge()
+        return {"ok": True, "msg": "瀏覽器連動已關閉（下次按「配對瀏覽器」會再打開）"}
+
+    def web_update_blocklist(self, _):
+        self.update_blocklist()
+        return {"ok": True, "msg": "更新廣告清單中…"}
+
+    def web_set_ai_key(self, key):
+        key = key.strip()
+        if key == "-":                                             # 網頁送 "-" ＝清除
+            key = ""
+        if key and not re.fullmatch(r"[A-Za-z0-9_\-]{20,200}", key):
+            return {"ok": False, "msg": "金鑰格式不對（應該是 sk-ant- 開頭的一長串）"}
+        self.ai_key_var.set(key)
+        self.save_ai_key()
+        return {"ok": True, "msg": "金鑰已儲存（用 Windows 加密存在這台電腦）" if key else "金鑰已清除"}
+
+    def web_test_ai(self, _):
+        self.test_ai()
+        return {"ok": True, "msg": "測試中…"}
+
+    def web_clear_ai_cache(self, _):
+        self.clear_ai_cache()
+
+    def web_reset_speed(self, _):
+        self.reset_speed()
+        return {"ok": True, "msg": "網速紀錄已清除"}
+
+    def web_export(self, _):
+        with self._DialogHost(self):
+            self.export_settings()
+
+    def web_import(self, _):
+        with self._DialogHost(self):
+            self.import_settings()
+
+    def web_open_backups(self, _):
+        self.open_backups()
+
+    def web_open_log(self, _):
+        p = getattr(log, "log_path", None)
+        if not (p and os.path.exists(p)):
+            return {"ok": False, "msg": "目前還沒有日誌"}
+        play_file(p) if sys.platform.startswith("win") else open_path(p, select=True)
+
+    def web_open_data(self, _):
+        open_path(data_dir())
+
+    def web_setup_step(self, n):
+        """④ 安裝擋廣告的三步（跟原本視窗的「打開」一樣，在 Chrome 打開對的頁面）"""
+        urls = {"1": URL_VM_STORE, "2": URL_VM_SETTINGS, "3": URL_SCRIPT}
+        url = urls.get(n)
+        if not url:
+            return {"ok": False, "msg": "沒有這一步"}
+        if url.startswith("chrome://"):
+            self.root.clipboard_clear()
+            self.root.clipboard_append(url)
+        try:
+            if getattr(self, "chrome", None):
+                subprocess.Popen([self.chrome, url])
+            else:
+                webbrowser.open(url)
+        except Exception:
+            webbrowser.open(url)
+        self._web_steps = getattr(self, "_web_steps", set()) | {n}
+        if url.startswith("chrome://"):
+            return {"ok": True, "msg": "如果 Chrome 沒有自動打開設定頁：在網址列按 Ctrl+V 貼上再按 Enter（網址已複製）"}
+        return {"ok": True, "msg": "已在 Chrome 打開"}
+
     def web_pair(self, _):
         self.pair_browser()
 
@@ -4959,6 +5175,7 @@ class App:
 
     def web_clear_notices(self, _):
         self.notices = []
+        self._save_notices()
 
     def on_web_close(self, _):
         """按新介面右上角的 X（跟原本的 on_close 一樣的規則，只是用網頁對話框問）"""
@@ -5359,6 +5576,8 @@ class App:
             title = r.get("title") or params.get("title") or os.path.splitext(f.get("name", ""))[0]
             self.history.add(title=title, url=params.get("url", ""), height=r.get("height"), status=DONE,
                              file=f.get("path", ""), size=f.get("size") or 0, error="", node=node or "節點")
+            if self.web:
+                self.add_notice("🖧", f"節點傳回：{title[:60]}" + (f"（{node}）" if node else ""), "dl")
         self.refresh_history()
 
     def build_tasks_tab(self, page):

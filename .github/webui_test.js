@@ -31,9 +31,16 @@ function state(theme, extra = {}) {
       { key: 'hef', title: '失敗的影片', site: 'spankbang.com', st: 'fail', progress: 0, note: 'HTTP 404：影片不存在' },
     ],
     nexus: { enabled: true, running: true, online: 1, total: 2, tasks: 1, devices: [{ name: '書房電腦', online: true, state: '連線中' }, { name: EVIL, online: false, state: '離線' }] },
-    notices: [{ icon: '✅', text: '下載完成：' + EVIL, time: '20:31' }],
+    notices: [{ icon: '✅', text: '下載完成：' + EVIL, time: '20:31', page: 'dl' }],
     update: { tag: '1.38.0' }, ask: null, hist_ver: 1, analysis: null, batch: false,
     qualities: ['最高', '2160', '1440', '1080', '720', '480', '360'], default_quality: '1080', rate_limit: 0,
+    settings: { download_dir: 'C:\\Users\\me\\Downloads', default_dir: true, default_quality: '1080', rate_limit: 7, skip_downloaded: true,
+      smart_segments: 'observe', smart_modes: [['observe', '只觀察'], ['auto', '自動調整'], ['off', '關閉']], filename_template: '標題 [畫質]',
+      templates: ['標題 [畫質]', '標題'], tpl_preview: '影片標題 [1080p].mp4', theme: 'auto', themes: [['auto', '跟系統'], ['dark', '深色'], ['light', '淺色']],
+      close_action: '下載中才詢問', close_choices: ['下載中才詢問', '一律縮到系統匣', '直接結束'], tray_always: true, tray_ok: true,
+      keep_history: true, keep_stats: false, bridge: '✅ 執行中（127.0.0.1:47321）｜已配對 1 個瀏覽器', bridge_on: true, paired: 1,
+      blocklist: '71,234 筆｜今天更新', ai: '沒有設定金鑰（只用免費清單）｜AI 記住 0 個網域', ai_has_key: false, mbps: 85.2, data_dir: 'C:\\Users\\me\\AppData\\Roaming\\VideoHelper' },
+    setup: { chrome: true, done: ['1'] },
   }, extra);
 }
 
@@ -65,7 +72,7 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
       window.pywebview = { api: {
         state: async () => Object.assign(await window.__state(), window.__ask ? { ask: window.__ask } : {}),
         static: async () => ({ news: [{ ver: '1.36.0', title: '新介面預覽', items: ['左側選單', '數據卡'] }, { ver: '1.35.0', title: '系統匣', items: ['一直都在'] }] }),
-        act: async (n, a) => { window.__acts.push([n, a]); return { ok: true, msg: 'ok:' + n }; },
+        act: async (n, a) => { window.__acts.push([n, a]); return n === 'smart_report' ? { ok: true, report: '網站   次數\npornhub  12' } : { ok: true, msg: 'ok:' + n }; },
         ready: () => { window.__ready = true; return true; },
         history: (q) => window.__hist(q),
         thumbs: (k) => window.__thumbs(k),
@@ -95,12 +102,12 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
       await page.keyboard.press('Enter');
       await page.waitForTimeout(200);
       await page.click('[data-act="open_folder"]');
-      await page.click('#nav a[data-page="set"]');
+      await page.click('#nav a[data-page="nodes"]');
       await page.click('[data-a="play"]');
       await page.waitForTimeout(200);
       const acts = await page.evaluate(() => window.__acts);
       ok(JSON.stringify(acts[0]) === JSON.stringify(['add', 'https://www.pornhub.com/view_video.php?viewkey=x']), '貼網址按 Enter → add');
-      ok(acts.some((a) => a[0] === 'open_folder') && acts.some((a) => a[0] === 'old' && a[1] === 'set') && acts.some((a) => a[0] === 'play' && a[1] === 'hab'),
+      ok(acts.some((a) => a[0] === 'open_folder') && acts.some((a) => a[0] === 'old' && a[1] === 'nodes') && acts.some((a) => a[0] === 'play' && a[1] === 'hab'),
         '快速功能、選單、播放都送出正確動作');
       ok(await page.inputValue('#urls') === '', '送出後清空輸入框');
       // 取消要先確認
@@ -176,6 +183,45 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
       ok(acts2.some((a) => a[0] === 'subtitles' && a[1].length === 2), '勾選的一起做 AI 字幕');
       ok(acts2.some((a) => a[0] === 'redownload' && a[1] === 'hef'), '雙擊失敗的 → 重新下載');
       await page.screenshot({ path: path.join(out, 'dl-dark-2.png') });
+      // ---- v1.38.0 設定、安裝擋廣告、通知跳頁 ----
+      await page.click('#nav a[data-page="set"]');
+      await page.waitForTimeout(400);
+      ok(await page.isVisible('#page-set') && (await page.inputValue('#s-q')) === '1080', '設定頁打得開、顯示目前畫質');
+      ok((await page.inputValue('#s-rate')) === '7' && (await page.isChecked('input[data-set="skip_downloaded"]')) && !(await page.isChecked('input[data-set="keep_stats"]')),
+        '速度上限（自訂的 7）和開關都對');
+      await page.screenshot({ path: path.join(out, 'set-dark.png') });
+      await page.selectOption('#s-q', '720');
+      await page.click('label.sw:has(input[data-set="keep_stats"])');
+      await page.selectOption('#s-rate', '20');
+      await page.click('#s-theme button[data-theme="light"]');
+      await page.click('#s-report');
+      await page.waitForSelector('#modal:not([hidden]) .report', { timeout: 2000 });
+      ok((await page.textContent('#mbox .report')).includes('pornhub'), '📊 報告顯示在對話框');
+      await page.click('#mbox button');
+      await page.fill('#s-key', 'sk-ant-test-1234567890abcdef');
+      await page.click('#s-keysave');
+      await page.click('#s-unpair');
+      await page.click('#mbox button:has-text("取消所有配對")');
+      await page.waitForTimeout(300);
+      let a3 = await page.evaluate(() => window.__acts);
+      const has = (n, f) => a3.some((a) => a[0] === n && f(a[1]));
+      ok(has('set', (v) => v.key === 'default_quality' && v.value === '720'), '改預設畫質 → set');
+      ok(has('set', (v) => v.key === 'keep_stats' && v.value === true), '開關 → set（true）');
+      ok(has('set', (v) => v.key === 'rate_limit' && v.value === 20), '速度上限送數字');
+      ok(has('set', (v) => v.key === 'theme' && v.value === 'light'), '外觀 → set theme');
+      ok(has('set_ai_key', (v) => v === 'sk-ant-test-1234567890abcdef') && (await page.inputValue('#s-key')) === '', 'AI 金鑰送出後輸入框清空');
+      ok(has('unpair_all', () => true), '取消所有配對要先確認');
+      await page.click('#nav a[data-page="setup"]');
+      await page.waitForTimeout(300);
+      ok(await page.locator('.step').count() === 3 && (await page.textContent('.step .ok')) === '✓', '安裝擋廣告：3 步、第 1 步打勾');
+      await page.click('.step:nth-child(2) button');
+      await page.screenshot({ path: path.join(out, 'setup-dark.png') });
+      a3 = await page.evaluate(() => window.__acts);
+      ok(a3.some((a) => a[0] === 'setup_step' && a[1] === '2'), '按「打開」→ setup_step 2');
+      await page.click('#bell');
+      await page.click('.ntc.go');
+      await page.waitForTimeout(200);
+      ok(await page.isVisible('#page-dl') && !(await page.isVisible('#panel')), '按通知 → 跳到下載管理');
       await page.click('#nav a[data-page="home"]');
       await page.setViewportSize({ width: 1000, height: 760 });
       await page.waitForTimeout(200);
