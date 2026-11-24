@@ -60,6 +60,18 @@ assert not app.home.visible()
 assert [x[0] for x in _ttk.Style().layout("Hidden.TNotebook.Tab")] in ([], ["null"]), "主視窗的分頁籤要藏起來（換主題後也是）"
 app.nb.select(_tab0); r.update()
 print("::notice title=外觀::Sun Valley 主題、深淺色切換、首頁卡片 OK")
+# v1.34.0 拖動快照：Windows 上真的拍得到畫面（大小＝視窗內容、不是全黑），蓋上去、拿掉都正常
+if sys.platform == "win32":
+    r.deiconify(); r.update()
+    _img = a.grab_window_client(r)
+    assert _img is not None, "拖動快照拍不到畫面（PrintWindow 失敗或全黑）"
+    assert abs(_img.width() - r.winfo_width()) <= 2 and abs(_img.height() - r.winfo_height()) <= 2, \
+        f"快照大小不對：{_img.width()}x{_img.height()} vs {r.winfo_width()}x{r.winfo_height()}"
+    app._drag = {"freeze": "", "size": (r.winfo_width(), r.winfo_height())}
+    app._drag_freeze(); r.update()
+    assert app._frozen is not None and app._frozen.winfo_ismapped()
+    app._drag_unfreeze(); app._drag = None; r.update()
+    print(f"::notice title=拖動快照::Windows 拍到 {_img.width()}x{_img.height()} 的畫面、蓋上拿掉 OK")
 r.update()
 assert len(app.nb.tabs()) == 4, "分頁數量不對"
 assert len(app.step_marks) == 3, "安裝精靈步驟數量不對"

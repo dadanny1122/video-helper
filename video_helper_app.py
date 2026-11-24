@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.33.3"
+VERSION = "1.34.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -175,6 +175,7 @@ DEFAULT_SETTINGS = {
     "bridge_meta": {},                # 雜湊值 → {"paired", "last", "uses", "ua"}（給「🔒 安全」分頁看）
     "ai_usage": {},                   # 月份 → {"classify"/"translate": {"calls", "in", "out"}}（只記次數和字數，不記內容）
     "log_keep_days": 14,              # 錯誤日誌超過幾天自動刪掉（0＝不刪）
+    "drag_snapshot": True,            # v1.34.0：拖動主視窗時先蓋一張畫面照片（Windows 上比較順）
     "mbps": 0,                   # 上次量到的網速
     "setup_seen": False,         # 看過「安裝擋廣告」了（第一次打開才自動切過去）
     "ai_key": "",                # AI 判斷廣告網域用的 API 金鑰（只存在這台電腦，不會匯出）
@@ -2274,6 +2275,61 @@ def unlayer(win):
         pass
 
 
+def grab_window_client(win):
+    """v1.34.0：把視窗裡面現在的樣子拍成一張圖（Windows 的 PrintWindow＋PW_RENDERFULLCONTENT，
+    讀 Windows 畫面合成器裡的那份，被別的視窗擋住也拍得到）。失敗回 None，呼叫的人就照舊不蓋圖。"""
+    if sys.platform != "win32":
+        return None
+    import ctypes
+    from ctypes import wintypes as w
+    from PIL import Image
+    u, g = ctypes.windll.user32, ctypes.windll.gdi32
+    for fn, args, res in ((u.GetParent, [w.HWND], w.HWND), (u.GetClientRect, [w.HWND, ctypes.POINTER(w.RECT)], w.BOOL),
+                          (u.GetDC, [w.HWND], w.HDC), (u.ReleaseDC, [w.HWND, w.HDC], ctypes.c_int),
+                          (u.PrintWindow, [w.HWND, w.HDC, w.UINT], w.BOOL),
+                          (g.CreateCompatibleDC, [w.HDC], w.HDC), (g.CreateCompatibleBitmap, [w.HDC, ctypes.c_int, ctypes.c_int], w.HBITMAP),
+                          (g.SelectObject, [w.HDC, w.HGDIOBJ], w.HGDIOBJ), (g.DeleteObject, [w.HGDIOBJ], w.BOOL),
+                          (g.DeleteDC, [w.HDC], w.BOOL),
+                          (g.GetDIBits, [w.HDC, w.HBITMAP, w.UINT, w.UINT, ctypes.c_void_p, ctypes.c_void_p, w.UINT], ctypes.c_int)):
+        fn.argtypes, fn.restype = args, res
+    hwnd = u.GetParent(win.winfo_id()) or win.winfo_id()
+    r = w.RECT()
+    u.GetClientRect(hwnd, ctypes.byref(r))
+    wd, ht = r.right - r.left, r.bottom - r.top
+    if wd <= 0 or ht <= 0:
+        return None
+    sdc = u.GetDC(hwnd)
+    mdc = g.CreateCompatibleDC(sdc)
+    bmp = g.CreateCompatibleBitmap(sdc, wd, ht)
+    old = g.SelectObject(mdc, bmp)
+    try:
+        if not u.PrintWindow(hwnd, mdc, 0x1 | 0x2):          # PW_CLIENTONLY | PW_RENDERFULLCONTENT
+            return None
+
+        class BIH(ctypes.Structure):
+            _fields_ = [("biSize", w.DWORD), ("biWidth", w.LONG), ("biHeight", w.LONG), ("biPlanes", w.WORD),
+                        ("biBitCount", w.WORD), ("biCompression", w.DWORD), ("biSizeImage", w.DWORD),
+                        ("biXPelsPerMeter", w.LONG), ("biYPelsPerMeter", w.LONG), ("biClrUsed", w.DWORD),
+                        ("biClrImportant", w.DWORD)]
+        bih = BIH(ctypes.sizeof(BIH), wd, -ht, 1, 32, 0, 0, 0, 0, 0, 0)      # 負的高度＝由上往下
+        buf = ctypes.create_string_buffer(wd * ht * 4)
+        g.SelectObject(mdc, old)
+        if g.GetDIBits(mdc, bmp, 0, ht, buf, ctypes.byref(bih), 0) != ht:
+            return None
+        im = Image.frombuffer("RGB", (wd, ht), buf, "raw", "BGRX", 0, 1)
+        if im.getextrema() in (((0, 0), (0, 0), (0, 0)),):                  # 全黑＝沒拍到
+            return None
+        import io
+        out = io.BytesIO()
+        im.save(out, "PPM")                                                   # PPM 是 Tk 自己讀得懂、最快的格式
+        return tk.PhotoImage(master=win, data=out.getvalue(), format="ppm")
+    finally:
+        g.SelectObject(mdc, old)
+        g.DeleteObject(bmp)
+        g.DeleteDC(mdc)
+        u.ReleaseDC(hwnd, sdc)
+
+
 # v1.33.2：視窗正在被拖動／改大小時，動畫（跑馬燈、首頁數字）先停一下，把時間讓給 Windows 重畫視窗
 UI_BUSY = {"until": 0.0}
 
@@ -3305,8 +3361,44 @@ class App:
         page = "首頁" if self.home.visible() else next((n for n, i in NAV_ITEMS if i == cur), str(cur))
         now = time.time()
         self._drag = {"t0": now, "last": now, "beats": 0, "maxgap": 0.0, "expose": {},
-                      "page": page, "win": "主視窗" if win is self.root else "小視窗"}
-        self.root.after(15, self._drag_beat)
+                      "page": page, "win": "主視窗" if win is self.root else "小視窗",
+                      "size": (self.root.winfo_width(), self.root.winfo_height()), "freeze": ""}
+        self.root.after(15, self._drag_beat)                  # 先排好心跳：拍照出錯也不會卡在「拖動中」
+        if win is self.root and page != "首頁" and self.settings["drag_snapshot"]:
+            try:
+                self._drag_freeze()
+            except Exception as e:
+                self._drag_unfreeze()
+                self._drag["freeze"] = "出錯：" + type(e).__name__
+
+    def _drag_freeze(self):
+        """v1.34.0：拖動主視窗時，先拍一張現在畫面的照片蓋上去——Windows 拖動時會一直重畫整個視窗，
+        sv-ttk 的按鈕、框框都是圖片，重畫很慢；蓋上照片後只要重畫一張圖（跟首頁一樣順），放開再拿掉"""
+        t = time.time()
+        try:
+            img = grab_window_client(self.root)
+        except Exception as e:
+            img = None
+            log.info("拖動快照失敗：%s", type(e).__name__)
+        if img is None:
+            self._drag["freeze"] = "沒拍到"
+            return
+        c = tk.Canvas(self.root, highlightthickness=0, bd=0)
+        c.create_image(0, 0, image=img, anchor="nw")
+        c._img = img
+        c.place(x=0, y=0, relwidth=1, relheight=1)
+        tk.Misc.lift(c)                                   # Canvas.lift() 是「排圖形」，要用 Misc 的才是蓋到最上層
+        self._frozen = c
+        self._drag["freeze"] = f"蓋照片（拍照 {int((time.time() - t) * 1000)} ms）"
+
+    def _drag_unfreeze(self):
+        c = getattr(self, "_frozen", None)
+        self._frozen = None
+        if c is not None:
+            try:
+                c.destroy()
+            except tk.TclError:
+                pass
 
     def _drag_beat(self):
         d = self._drag
@@ -3316,18 +3408,22 @@ class App:
         d["maxgap"] = max(d["maxgap"], now - d["last"])
         d["last"] = now
         d["beats"] += 1
+        if getattr(self, "_frozen", None) and (self.root.winfo_width(), self.root.winfo_height()) != d["size"]:
+            self._drag_unfreeze()                             # 其實是在改大小：照片會不對，馬上拿掉
+            d["freeze"] += "→改大小，拿掉"
         if ui_busy():
             self.root.after(15, self._drag_beat)
             return
+        self._drag_unfreeze()
         self._drag = None
         dur = now - d["t0"] - 0.35                           # 扣掉放開後等的 0.35 秒
         if dur < 0.3:
             return
         ex = sorted(d["expose"].items(), key=lambda x: -x[1])
         total = sum(d["expose"].values())
-        log.info("拖動測試：%s／%s，%.1f 秒｜重畫 %d 次（%s）｜程式每秒能處理 %.0f 次、最久卡 %d ms",
+        log.info("拖動測試：%s／%s，%.1f 秒｜重畫 %d 次（%s）｜程式每秒能處理 %.0f 次、最久卡 %d ms｜%s",
                  d["win"], d["page"], dur, total, "、".join(f"{k} {v}" for k, v in ex[:6]) or "沒有",
-                 d["beats"] / max(now - d["t0"], 0.01), d["maxgap"] * 1000)
+                 d["beats"] / max(now - d["t0"], 0.01), d["maxgap"] * 1000, d["freeze"] or "沒蓋照片")
 
     def _count_expose(self, e):
         d = getattr(self, "_drag", None)
@@ -5037,6 +5133,10 @@ class App:
             row=7, column=0, columnspan=3, sticky="w")
         ttk.Label(f, text="（深色／淺色；部分文字顏色重新打開程式後才會全部換好）", style="Muted.TLabel").grid(
             row=6, column=1, sticky="w", padx=(110, 0), pady=(8, 4))
+        self.snap_var = tk.BooleanVar(value=bool(self.settings["drag_snapshot"]))
+        ttk.Checkbutton(f, text="拖動視窗時比較順（拖動時先顯示一張畫面照片，放開就恢復）", variable=self.snap_var,
+                        command=lambda: (self.settings.__setitem__("drag_snapshot", self.snap_var.get()), self.settings.save())).grid(
+            row=8, column=0, columnspan=3, sticky="w")
 
         # --- 瀏覽器連動 ---
         c = box("瀏覽器連動（在影片網頁按「🖥 送到電腦版」）")
