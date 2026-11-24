@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.33.1"
+VERSION = "1.33.2"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -2172,6 +2172,8 @@ def apply_theme(root, mode="auto"):
     if not getattr(root, "_vh_tb_hook", False):     # 之後打開的小視窗也換深色標題列
         root.bind_class("Toplevel", "<Map>", lambda e: (dark_titlebar(e.widget, C["bg"] == PALETTE["dark"]["bg"]),
                                                         fade_in(e.widget)) if isinstance(e.widget, tk.Toplevel) else None, add="+")
+        root.bind_class("Toplevel", "<Configure>", mark_ui_busy, add="+")
+        root.bind("<Configure>", mark_ui_busy, add="+")
         root._vh_tb_hook = True
     return m
 
@@ -2238,7 +2240,64 @@ def fade_in(win, ms=220):
         if t < 1:
             win.after(15, step)
     win.after(10, step)
-    win.after(ms + 400, lambda: win.winfo_exists() and win.attributes("-alpha", 1.0))   # 保險：一定會完全出現
+
+    def done():
+        if win.winfo_exists():
+            win.attributes("-alpha", 1.0)      # 保險：一定會完全出現
+            unlayer(win)
+    win.after(ms + 400, done)
+
+
+def unlayer(win):
+    """v1.33.2：淡入用的透明度會把視窗變成 Windows 的「分層視窗」（layered），之後一直都是——
+    分層視窗每次移動、放大都要整張重新合成，大視窗（進階設定）會卡、放大時一瞬間灰色／黑色。
+    淡入結束就把這個屬性拿掉，變回一般視窗（主視窗本來就沒淡入，見 v1.28.2）"""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        u.GetParent.argtypes = [ctypes.c_void_p]
+        u.GetParent.restype = ctypes.c_void_p
+        u.GetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        u.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_long]
+        u.SetWindowPos.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
+                                   ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+        hwnd = u.GetParent(win.winfo_id()) or win.winfo_id()
+        GWL_EXSTYLE, WS_EX_LAYERED = -20, 0x80000
+        st = u.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        if st & WS_EX_LAYERED:
+            u.SetWindowLongW(hwnd, GWL_EXSTYLE, st & ~WS_EX_LAYERED)
+            # SWP_NOSIZE|NOMOVE|NOZORDER|NOACTIVATE|FRAMECHANGED：只是讓 Windows 重新套用樣式
+            u.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x1 | 0x2 | 0x4 | 0x10 | 0x20)
+    except Exception:
+        pass
+
+
+# v1.33.2：視窗正在被拖動／改大小時，動畫（跑馬燈、首頁數字）先停一下，把時間讓給 Windows 重畫視窗
+UI_BUSY = {"until": 0.0}
+
+
+def ui_busy() -> bool:
+    return time.time() < UI_BUSY["until"]
+
+
+def mark_ui_busy(e=None):
+    if e is None or isinstance(getattr(e, "widget", None), (tk.Tk, tk.Toplevel)):
+        UI_BUSY["until"] = time.time() + 0.35
+
+
+def debounced(widget, fn, ms=60):
+    """改大小時 <Configure> 一秒來幾十次；只在停下來 60ms 後重畫一次（自己畫的 Canvas 元件用）"""
+    def handler(e=None):
+        job = getattr(widget, "_vh_redraw", None)
+        if job:
+            try:
+                widget.after_cancel(job)
+            except Exception:
+                pass
+        widget._vh_redraw = widget.after(ms, fn)
+    return handler
 
 
 HOME_CARDS = (   # (圖示, 標題, 說明, 去哪個分頁)
@@ -2261,7 +2320,7 @@ class Home(tk.Canvas):
         self.on_pick, self.status, self.topw, self.below, self.kpis = on_pick, status, top, below, kpis
         self.top, self.tiles = 0, []
         self.t0, self.hover, self.lift, self.leaving, self.anim = 0.0, None, [0.0] * len(HOME_CARDS), None, None
-        self.bind("<Configure>", lambda e: self.draw())
+        self.bind("<Configure>", debounced(self, self.draw))
         self.bind("<Motion>", self._motion)
         self.bind("<Leave>", lambda e: self._set_hover(None))
         self.bind("<Button-1>", self._click)
@@ -2467,7 +2526,7 @@ class Header(tk.Canvas):
         self.bar_from = self.bar_to = None
         self.bar_t0, self.anim = 0.0, None
         self.items = []                               # [(x0, x1, idx)]
-        self.bind("<Configure>", lambda e: self.draw())
+        self.bind("<Configure>", debounced(self, self.draw))
         self.bind("<Motion>", self._motion)
         self.bind("<Leave>", lambda e: self._set_hover(None))
         self.bind("<Button-1>", self._click)
@@ -2600,12 +2659,13 @@ class Ticker(tk.Canvas):
         super().__init__(master, height=px(26), highlightthickness=0, bd=0)
         self.text, self.x, self.anim = "", 0.0, None
         self.SPEED = max(1, round(UI_S))           # 螢幕放大時每次多移一點，看起來速度一樣
-        self.bind("<Configure>", lambda e: self.draw())
+        self.bind("<Configure>", debounced(self, self.draw))
 
     def set_items(self, items):
         text = "     ✦     ".join(items) + "     ✦     "
         if text != self.text:
             self.text = text
+            self._tw = None
             self.draw()
         if not self.anim:
             self._tick()
@@ -2616,11 +2676,19 @@ class Ticker(tk.Canvas):
             self._f = tkfont.Font(self, family=tkfont.nametofont("TkDefaultFont").actual("family"), size=9)
         return self._f
 
+    def _text_width(self):
+        if getattr(self, "_tw", None) is None:            # 量字寬很花時間：文字沒變就用上次的
+            self._tw = self._font().measure(self.text) or 1
+        return self._tw
+
     def _tick(self):
         if not self.winfo_exists():
             return
+        if ui_busy():                                      # 視窗正在拖動／改大小：先不動
+            self.anim = self.after(100, self._tick)
+            return
         self.x -= self.SPEED
-        tw = self._font().measure(self.text) or 1
+        tw = self._text_width()
         if self.x <= -tw:
             self.x += tw
         if self.find_withtag("run") and abs(self.x) > self.SPEED:   # 平常只移動文字（省電）
@@ -2634,7 +2702,7 @@ class Ticker(tk.Canvas):
         dark = C["bg"] == PALETTE["dark"]["bg"]
         self.configure(bg="#14171e" if dark else "#eef2fa")
         w = max(self.winfo_width(), 200)
-        tw = self._font().measure(self.text) or 1
+        tw = self._text_width()
         x = self.x
         while x < w:
             self.create_text(x, px(13), text=self.text, anchor="w", font=self._font(), tags=("run",),
@@ -3223,6 +3291,11 @@ class App:
 
     # 讓背景工作把結果丟回主畫面
     def poll(self):
+        now = time.time()
+        gap = now - getattr(self, "_last_poll", now)
+        self._last_poll = now
+        if gap > 0.5 and not ui_busy():                    # 畫面卡住超過 0.5 秒：記在日誌，方便找原因
+            log.warning("畫面卡住約 %d ms（分頁 %s）", gap * 1000 - 100, self.nb.index("current") if hasattr(self, "nb") else "?")
         try:
             while True:
                 kind, data = self.q.get_nowait()
@@ -3231,9 +3304,10 @@ class App:
             pass
         self._tick = getattr(self, "_tick", 0) + 1
         if self._tick % 10 == 0:                       # 約每 1 秒：把「等重試」時間到的放回佇列
-            self.refresh_header()
-            if self.home.visible() and not self.home.anim:   # 首頁開著：數字每秒更新
-                self.home.draw()
+            if not ui_busy():                            # 拖動視窗時先不重畫
+                self.refresh_header()
+                if self.home.visible() and not self.home.anim:   # 首頁開著：數字每秒更新
+                    self.home.draw()
             if not self.queue_paused and self.queue.due_retries():
                 self.refresh_queue()
             if not self.queue.running() and (self.queue.next_waiting() or None) is not None:
@@ -4506,6 +4580,11 @@ class App:
             from nexus.gui.devices_tab import DevicesTab
             from nexus.master.service import MasterService
             self.nexus = MasterService()
+            try:                                           # v1.33.2：拖動視窗時節點分頁先不重整
+                from nexus.gui import devices_tab as _dt, tasks_tab as _tt
+                _dt.UI_BUSY = _tt.UI_BUSY = ui_busy
+            except Exception:
+                pass
             # V4：節點傳回的影片放進 ① 下載影片 同一個資料夾、上傳照 ③ 的下載限速、收完寫進 ② 下載紀錄（D4、D5）
             self.nexus.dest_dir = lambda: self.settings.download_dir
             self.nexus.rate_limit_mbps = lambda: self.settings["rate_limit_mbps"] or 0

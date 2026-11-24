@@ -75,6 +75,11 @@ def fmt_size(n) -> str:
     return f"{n:.1f} GB"
 
 
+
+def UI_BUSY():
+    """電腦版會換成 video_helper_app.ui_busy（視窗正在被拖動／改大小）"""
+    return False
+
 class TasksTab:
     def __init__(self, page, service, colors, px=lambda n: n):
         self.page, self.svc, self.C, self.px = page, service, colors, px
@@ -259,7 +264,7 @@ class TasksTab:
 
     def _tick(self):
         try:
-            if self.page.winfo_viewable():
+            if self.page.winfo_viewable() and not UI_BUSY():     # 視窗拖動／改大小時先不重整（電腦版會接上）
                 self.refresh()
         except tk.TclError:
             return
