@@ -519,6 +519,24 @@ print("::notice title=智慧下載::單一網站 429 只冷卻那個網站、自
 
 # 8. 系統匣：關視窗 → 縮到系統匣 → 從系統匣打開 → 結束
 assert a.pystray is not None, "pystray 沒有裝進去"
+# v1.35.0：系統匣一打開就在；選單有狀態、暫停／繼續、貼上網址下載、打開下載資料夾
+wait(lambda: app.tray is not None, 5)
+assert app.tray is not None, "系統匣小圖示沒有一打開就出現"
+_items = [str(i.text) for i in app.tray.menu.items if str(i.text)]
+for _w in ("打開 Video Helper", "貼上網址下載", "打開下載資料夾", "結束"):
+    assert any(_w in x for x in _items), f"系統匣選單少了「{_w}」：{_items}"
+app.update_tray(); assert "Video Helper" in app.tray.title
+_was = app.queue_paused
+app.q.put(("tray_pause", None)); wait(lambda: app.queue_paused != _was, 5)
+assert app.tray_paused == bool(app.queue_paused or app.queue.count(a.PAUSED)), "選單的暫停狀態沒跟上"
+app.q.put(("tray_pause", None)); wait(lambda: app.queue_paused == _was, 5)
+r.clipboard_clear(); r.clipboard_append("不是網址"); r.update()
+_n = len(app.queue.tasks)
+app.q.put(("tray_paste", None))
+_t = time.time()
+while time.time() - _t < 1: r.update(); time.sleep(0.02)
+assert len(app.queue.tasks) == _n, "剪貼簿沒網址時不應該加任務"
+print("::notice title=系統匣::一打開就有小圖示；選單（狀態、暫停／繼續、貼上網址、下載資料夾）OK")
 app.settings["close_action"] = "一律縮到系統匣"
 app.on_close(); r.update()
 assert app.tray is not None, "系統匣圖示沒有建立"

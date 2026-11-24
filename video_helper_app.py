@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.34.1"
+VERSION = "1.35.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -175,7 +175,8 @@ DEFAULT_SETTINGS = {
     "bridge_meta": {},                # 雜湊值 → {"paired", "last", "uses", "ua"}（給「🔒 安全」分頁看）
     "ai_usage": {},                   # 月份 → {"classify"/"translate": {"calls", "in", "out"}}（只記次數和字數，不記內容）
     "log_keep_days": 14,              # 錯誤日誌超過幾天自動刪掉（0＝不刪）
-    "drag_snapshot": True,            # v1.34.0：拖動主視窗時先蓋一張畫面照片（Windows 上比較順）
+    "drag_snapshot": True,
+    "tray_always": True,              # v1.35.0：系統匣小圖示一直都在（不只縮小時）            # v1.34.0：拖動主視窗時先蓋一張畫面照片（Windows 上比較順）
     "mbps": 0,                   # 上次量到的網速
     "setup_seen": False,         # 看過「安裝擋廣告」了（第一次打開才自動切過去）
     "ai_key": "",                # AI 判斷廣告網域用的 API 金鑰（只存在這台電腦，不會匯出）
@@ -3263,7 +3264,9 @@ class App:
         self.history = History()
         self.stats = Stats()
         self.auto_backup = auto_backup_on_upgrade(self.settings, self.history)
-        self.tray = None               # 系統匣圖示（第一次縮下去時才建立）
+        self.tray = None               # 系統匣圖示（v1.35.0 起預設一打開就建立）
+        self.tray_status = "沒有在下載"   # 系統匣選單第一行（主執行緒更新，系統匣執行緒只讀）
+        self.tray_paused = False
         self.tray_hinted = False       # 「在背景繼續下載」的提示只講一次
         self.quitting = False
         self.formats = []
@@ -3340,6 +3343,8 @@ class App:
 
         self.home = Home(root, self.pick_home, self.home_status, top=self.header, below=self.ticker, kpis=self.home_kpis)
         UI_BUSY["on_start"] = self._drag_start             # v1.33.3 拖動測試
+        if self.settings["tray_always"]:                    # v1.35.0 系統匣小圖示一打開就在
+            root.after(800, self.start_tray)
         root.bind("<Leave>", self._preshoot, add="+")       # v1.34.1 往標題列移動時先拍好
         root.bind_all("<Expose>", self._count_expose, add="+")
         self.header.on_nav = self.nav
@@ -3475,6 +3480,7 @@ class App:
             pass
         self._tick = getattr(self, "_tick", 0) + 1
         if self._tick % 10 == 0:                       # 約每 1 秒：把「等重試」時間到的放回佇列
+            self.update_tray()
             if not ui_busy():                            # 拖動視窗時先不重畫
                 self.refresh_header()
                 if self.home.visible() and not self.home.anim:   # 首頁開著：數字每秒更新
@@ -4555,9 +4561,18 @@ class App:
             return self.tray is not None
         try:
             # 系統匣的按鈕是在另一個執行緒觸發的，一律透過 self.q 交給主畫面處理
+            # v1.35.0：一直都在（設定可關）；右鍵選單多了狀態、暫停／繼續、打開下載資料夾、貼上網址下載
+            M = pystray.MenuItem
             menu = pystray.Menu(
-                pystray.MenuItem("打開 Video Helper", lambda: self.q.put(("show_window", None)), default=True),
-                pystray.MenuItem("結束", lambda: self.q.put(("tray_quit", None))))
+                M("打開 Video Helper", lambda: self.q.put(("show_window", None)), default=True),
+                M(lambda item: self.tray_status, None, enabled=False),
+                pystray.Menu.SEPARATOR,
+                M(lambda item: "▶ 繼續全部下載" if self.tray_paused else "⏸ 暫停全部下載",
+                  lambda: self.q.put(("tray_pause", None))),
+                M("📋 貼上網址下載", lambda: self.q.put(("tray_paste", None))),
+                M("📂 打開下載資料夾", lambda: self.q.put(("tray_folder", None))),
+                pystray.Menu.SEPARATOR,
+                M("結束", lambda: self.q.put(("tray_quit", None))))
             self.tray = pystray.Icon("VideoHelper", make_icon_image(), "Video Helper", menu)
             self.tray.run_detached()
             return True
@@ -4589,6 +4604,57 @@ class App:
                 self.tray.notify(msg, "Video Helper")
             except Exception:
                 pass
+
+    def update_tray(self):
+        """把下載狀態寫到系統匣的提示文字和選單（每秒由 poll 呼叫；沒變就不動）"""
+        if not self.tray:
+            return
+        run = self.queue.running()
+        waiting = self.queue.count(WAITING)
+        paused = bool(self.queue_paused or self.queue.count(PAUSED))
+        if run:
+            st = f"下載中 {run.get('progress', 0):.0f}%" + (f"（還有 {waiting} 部）" if waiting else "")
+        elif paused:
+            st = "⏸ 已暫停" + (f"（{waiting} 部等待中）" if waiting else "")
+        else:
+            st = f"{waiting} 部等待中" if waiting else "沒有在下載"
+        if (st, paused) != (self.tray_status, self.tray_paused):
+            self.tray_status, self.tray_paused = st, paused
+            try:
+                self.tray.title = "Video Helper：" + st
+                self.tray.update_menu()
+            except Exception:
+                pass
+
+    def on_tray_pause(self, _):
+        self.toggle_pause()
+        self.update_tray()
+
+    def on_tray_folder(self, _):
+        open_path(self.settings.download_dir)
+
+    def on_tray_paste(self, _):
+        """系統匣「貼上網址下載」：剪貼簿裡每行一個 http 網址，用預設畫質加入佇列（跟 ① 的批次一樣）"""
+        try:
+            clip = self.root.clipboard_get()
+        except Exception:
+            clip = ""
+        urls = []
+        for line in clip.splitlines():
+            u = line.strip()
+            if u.startswith("http") and u not in urls:
+                urls.append(u)
+        if not urls:
+            try:
+                self.tray.notify("剪貼簿裡沒有網址：先複製影片網址再按一次", "Video Helper")
+            except Exception:
+                pass
+            return
+        self.start_batch(urls)
+        try:
+            self.tray.notify(f"已加入 {len(urls)} 部影片", "Video Helper")
+        except Exception:
+            pass
 
     def on_show_window(self, _):
         self.root.deiconify()
@@ -5160,6 +5226,21 @@ class App:
             row=7, column=0, columnspan=3, sticky="w")
         ttk.Label(f, text="（深色／淺色；部分文字顏色重新打開程式後才會全部換好）", style="Muted.TLabel").grid(
             row=6, column=1, sticky="w", padx=(110, 0), pady=(8, 4))
+        self.tray_var = tk.BooleanVar(value=bool(self.settings["tray_always"]))
+
+        def on_tray_opt():
+            self.settings["tray_always"] = self.tray_var.get()
+            self.settings.save()
+            if self.tray_var.get():
+                self.start_tray()
+            elif self.tray and self.root.state() != "withdrawn":   # 視窗開著才收掉（縮在系統匣時不能拿掉，不然找不回來）
+                try:
+                    self.tray.stop()
+                except Exception:
+                    pass
+                self.tray = None
+        ttk.Checkbutton(f, text="右下角系統匣一直顯示小圖示（右鍵：狀態、暫停、貼上網址下載、打開下載資料夾）",
+                        variable=self.tray_var, command=on_tray_opt).grid(row=9, column=0, columnspan=3, sticky="w")
         self.snap_var = tk.BooleanVar(value=bool(self.settings["drag_snapshot"]))
         ttk.Checkbutton(f, text="拖動視窗時比較順（拖動時先顯示一張畫面照片，放開就恢復）", variable=self.snap_var,
                         command=lambda: (self.settings.__setitem__("drag_snapshot", self.snap_var.get()), self.settings.save())).grid(
