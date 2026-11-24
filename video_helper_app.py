@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.38.0"
+VERSION = "1.39.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -4715,6 +4715,14 @@ class App:
             "rate_limit": self.settings["rate_limit_mbps"] or 0,
             "settings": self._web_settings(), "setup": self._web_setup_state(),
         }
+        # Nexus 管理頁開著（網頁 5 秒內問過）才讀資料庫，2 秒一次；在 Tk 執行緒做（資料庫連線不跨執行緒）
+        if now - self.web.want_nexus < 5 and now - getattr(self, "_web_nx_full_t", 0) >= 2:
+            self._web_nx_full_t = now
+            try:
+                self.web.nexus_full = self._web_nexus_full()
+            except Exception as e:
+                log.exception("新介面讀節點")
+                self.web.nexus_full = {"ok": False, "err": f"讀不到節點資料：{type(e).__name__}"}
 
     def on_web_action(self, data):
         name, arg, box, ev = data
@@ -5133,6 +5141,288 @@ class App:
         if url.startswith("chrome://"):
             return {"ok": True, "msg": "如果 Chrome 沒有自動打開設定頁：在網址列按 Ctrl+V 貼上再按 Enter（網址已複製）"}
         return {"ok": True, "msg": "已在 Chrome 打開"}
+
+    # ---- v1.39.0 Nexus 管理頁（跟「⚙ 進階設定 → 🖧 節點／📋 節點任務」做一樣的事，只呼叫 MasterService） ----
+    NX_OPS = ("approve", "reject", "suspend", "resume", "revoke")
+    NX_CANCELLABLE = ("CREATED", "QUEUED", "SCHEDULED", "DISPATCHED", "ACCEPTED", "PREPARING", "RUNNING", "UPLOADING")
+
+    def _nx_addrs(self):
+        from nexus.master.server import BindPolicy
+        c = getattr(self, "_web_addrs", None)
+        if not c or time.time() - c[0] > 30:
+            c = self._web_addrs = (time.time(), BindPolicy.local_addresses())
+        return list(c[1])
+
+    def _web_nexus_full(self):
+        svc = getattr(self, "nexus", None)
+        if not svc:
+            return {"ok": False, "err": "節點功能沒有載入（這版打包可能少了 cryptography 套件）"}
+        from nexus.gui import devices_tab as dt
+        from nexus.gui import tasks_tab as tt
+        from nexus.master.server import BindPolicy
+        on, cfg = svc.running, svc.cfg
+        try:
+            fp = svc.ca_fingerprint()[:16]
+        except Exception:
+            fp = ""
+        rem = svc.registry.pair.remaining() if on and svc.registry else 0
+        cur = str(cfg["bind_host"])
+        addrs = self._nx_addrs()
+        if cur not in addrs and BindPolicy.classify(cur) != "invalid":
+            addrs.append(cur)
+        order = {"PENDING": 0, "ACTIVE": 1, "SUSPENDED": 2}
+        devs = sorted(svc.devices(), key=lambda d: d["created_at"] or "", reverse=True)
+        devs = sorted(devs, key=lambda d: order.get(d["status"], 9))
+        names = {d["device_id"]: d["name"] for d in devs}
+        drows = []
+        for d in devs[:60]:
+            st, act = d["status"], d["status"] == "ACTIVE"
+            iso = "—"
+            if act:
+                res = ((svc.capabilities(d["device_id"]) or {}).get("resources") or {})
+                iso = ("基本（可下載）" if res.get("isolation") == "basic" else
+                       "不能用：" + (res.get("isolation_reason") or "原因不明")[:40] if "isolation" in res else "—")
+            drows.append({"id": d["device_id"], "name": d["name"], "status": st, "status_name": dt.STATE_NAME.get(st, st),
+                          "conn": dt.CONN_NAME.get(d["connection_state"], d["connection_state"]) if act else "—",
+                          "online": act and d["connection_state"] == "CONNECTED",
+                          "seen": dt._ago(d["last_seen_at"]) if act else "—", "iso": iso, "created": dt._local(d["created_at"]),
+                          "ip": d["source_ip_first"] or "—", "fp": d["public_key_fingerprint"][:16],
+                          "ops": [o for o, ok in (("approve", st == "PENDING"), ("reject", st == "PENDING"), ("suspend", act),
+                                                  ("resume", st == "SUSPENDED"), ("revoke", st in ("ACTIVE", "SUSPENDED"))) if ok and on]})
+        trows = []
+        ts = svc.task_view()
+        if ts:
+            for t in ts.list(active_only=False, limit=100):
+                st = t["status"]
+                text = tt.STATE_NAME.get(st, st)
+                prog = None
+                if st == "UPLOADING":
+                    pr = svc.upload_progress(t["task_id"])
+                    if pr and pr.get("disk_full"):
+                        text = "傳回中（這台空間不夠，清出空間後自動繼續）"
+                    elif pr:
+                        prog = int(pr["ratio"] * 100)
+                        text = f"傳回中 {prog}%（{tt.fmt_size(pr['received'])}／{tt.fmt_size(pr['size'])}）"
+                if st == "FAILED" and t.get("error_code") in tt.RETURN_ERRORS:
+                    text = "傳回失敗（檔案留在節點）"
+                trows.append({"id": t["task_id"], "type": tt.TYPE_NAME.get(t["type"], t["type"]), "what": tt.summary_of(t),
+                              "status": st, "text": text, "tag": tt.TAG.get(st, ""), "progress": prog,
+                              "node": names.get(t["assigned_device_id"], "—") if t["assigned_device_id"] else "—",
+                              "tries": f"{t['attempt_count']}/{t['max_attempts']}", "created": tt.local(t["created_at"]),
+                              "cancel": on and st in self.NX_CANCELLABLE, "fail": on and st == "UNKNOWN",
+                              "retry_return": on and st == "FAILED" and t.get("error_code") in tt.RETURN_ERRORS})
+        from nexus.tasks import adapters
+        types = sorted(adapters.ADAPTERS, key=lambda n: (not n.startswith("video."), n))
+        from nexus.net import sites as nsites
+        browser_only = sorted(h for h in nsites.page_hosts() if nsites.needs_browser(h))
+        return {"ok": True, "running": on, "error": svc.error or "", "host": str(svc.host or ""), "port": svc.port,
+                "cfg_host": cur, "cfg_port": int(cfg["port"]), "enabled": bool(cfg["enabled"]),
+                "addrs": [[a, f"{a}（{dt.KIND_NAME.get(BindPolicy.classify(a), BindPolicy.classify(a))}）"] for a in addrs],
+                "lan": BindPolicy.classify(cur) == "lan", "fp": fp,
+                "pair": getattr(self, "_web_pair_code", "") if rem else "", "pair_left": rem,
+                "devices": drows, "tasks": trows, "browser_only": browser_only,
+                "types": [[n, tt.TYPE_NAME.get(n, n), adapters.get(n).description, adapters.get(n).default_runtime_seconds] for n in types]}
+
+    def _nx(self):
+        svc = getattr(self, "nexus", None)
+        if not svc:
+            raise RuntimeError("節點功能沒有載入")
+        return svc
+
+    def _nx_refresh(self):
+        self._web_nx_full_t = 0                           # 下一次 publish 馬上重讀
+        for tab in (getattr(self, "nodes_tab", None), getattr(self, "tasks_tab", None)):
+            try:
+                tab and tab.refresh()
+            except Exception:
+                pass
+
+    def web_nx_enable(self, v):
+        svc = self._nx()
+        if v not in ("on", "off"):
+            return {"ok": False, "msg": "參數不對"}
+        if v == "on":
+            try:
+                svc.start()
+            except Exception as e:
+                self._nx_refresh()
+                return {"ok": False, "msg": f"Master 啟動失敗：{e}"[:200]}
+        else:
+            svc.stop()
+        svc.cfg["enabled"] = v == "on"
+        svc.cfg.save()
+        self._nx_refresh()
+        return {"ok": True, "msg": "Master 已啟用" if v == "on" else "Master 已關閉（所有節點連線切斷）"}
+
+    def web_nx_bind(self, arg):
+        from nexus.master.server import BindPolicy
+        svc = self._nx()
+        host, port = str(arg.get("host") or ""), arg.get("port")
+        if (host not in self._nx_addrs() and host != str(svc.cfg["bind_host"])) or BindPolicy.classify(host) == "invalid":
+            return {"ok": False, "msg": "這個位址不能用"}
+        if type(port) is not int or not 1024 <= port <= 65535:
+            return {"ok": False, "msg": "埠要在 1024～65535 之間"}
+        svc.cfg["bind_host"], svc.cfg["port"] = host, port
+        svc.cfg.save()
+        self._nx_refresh()
+        return {"ok": True, "msg": "已儲存" + ("；Master 開著：關掉再打開才會換位址" if svc.running else "")}
+
+    def web_nx_pair(self, _):
+        svc = self._nx()
+        if not svc.running:
+            return {"ok": False, "msg": "要先啟用 Master，節點才連得進來"}
+        self._web_pair_code = svc.registry.pair.new()
+        self._nx_refresh()
+        return {"ok": True}
+
+    def web_nx_device(self, arg):
+        svc = self._nx()
+        op, did, reason = arg.get("op"), str(arg.get("id") or ""), str(arg.get("reason") or "").strip()
+        if op not in self.NX_OPS or not svc.running:
+            return {"ok": False, "msg": "現在不能這樣做"}
+        if not reason:
+            return {"ok": False, "msg": "沒有理由就不執行（會寫進稽核紀錄）"}
+        try:
+            getattr(svc.registry, op)(did, "owner", reason[:200])
+        except Exception as e:
+            return {"ok": False, "msg": getattr(e, "message", None) or str(e)}
+        finally:
+            self._nx_refresh()
+        return {"ok": True, "msg": {"approve": "已核准", "reject": "已拒絕", "suspend": "已暫停", "resume": "已恢復",
+                                    "revoke": "已撤銷（不能復原）"}[op]}
+
+    def web_nx_task_new(self, arg):
+        """新增節點任務（跟「📋 節點任務 → ＋ 新增任務」一樣）"""
+        import uuid
+        from nexus.tasks import adapters
+        svc = self._nx()
+        if not svc.running:
+            return {"ok": False, "msg": "要先啟用 Master"}
+        n = arg.get("type")
+        if n not in adapters.ADAPTERS:
+            return {"ok": False, "msg": "不認得的任務類型"}
+        ret = {"return_to_master": True} if arg.get("ret") is True else {}
+        try:
+            if n == "video.download":
+                q = arg.get("quality") if arg.get("quality") in ("best", "1080", "720", "480") else "best"
+                params = {"url": str(arg.get("url") or "").strip(), "quality": q, **ret}
+            elif n == "test.file":
+                params = {"size_mb": int(arg.get("size_mb") or 20), **ret}
+            elif n == "test.echo":
+                params = {"text": str(arg.get("text") or "")}
+            elif n == "test.sleep":
+                params = {"seconds": int(arg.get("seconds") or 10)}
+            else:
+                params = {"code": str(arg.get("code") or "ADAPTER_ERROR")}
+            spec = adapters.get(n)
+            runtime = int(arg.get("runtime") or spec.default_runtime_seconds)
+            tries = int(arg.get("tries") or 2)
+            t = svc.tasks.create(n, params, actor="owner", idempotency_key=str(uuid.uuid4())[:8],
+                                 max_runtime_seconds=runtime, max_attempts=tries)
+        except (TypeError, ValueError):
+            return {"ok": False, "msg": "數字格式不對"}
+        except Exception as e:
+            return {"ok": False, "msg": getattr(e, "message", None) or str(e)}
+        finally:
+            self._nx_refresh()
+        if t["status"] == "REJECTED":
+            return {"ok": False, "msg": "任務不合格：" + (t.get("error_message") or "內容不合格")[:200]}
+        return {"ok": True, "msg": "已送出，排程器會選一台節點"}
+
+    def _nx_task_op(self, arg, op):
+        svc = self._nx()
+        tid, reason = str(arg.get("id") or ""), str(arg.get("reason") or "").strip()
+        if not svc.running:
+            return {"ok": False, "msg": "要先啟用 Master"}
+        if not reason:
+            return {"ok": False, "msg": "沒有理由就不執行（會寫進稽核紀錄）"}
+        try:
+            r = getattr(svc.tasks, op)(tid, "owner", reason[:200])
+        except Exception as e:
+            return {"ok": False, "msg": getattr(e, "message", None) or str(e)}
+        finally:
+            self._nx_refresh()
+        if op == "cancel" and r.get("status") == "CANCELLING":
+            return {"ok": True, "msg": "已通知節點停止；節點確認停下後才會變成「已取消」"}
+        return {"ok": True, "msg": "好了"}
+
+    def web_nx_cancel(self, arg):
+        return self._nx_task_op(arg, "cancel")
+
+    def web_nx_fail(self, arg):
+        return self._nx_task_op(arg, "mark_failed")
+
+    def web_nx_retry_return(self, tid):
+        try:
+            self._nx().retry_return(tid)
+        except Exception as e:
+            return {"ok": False, "msg": getattr(e, "message", None) or str(e)}
+        finally:
+            self._nx_refresh()
+        return {"ok": True, "msg": "節點上線時會自動接著傳（已經收到的部分不用重傳）"}
+
+    def web_nx_detail(self, tid):
+        """任務詳情：結果、為什麼選這台、時間軸"""
+        from nexus.gui import tasks_tab as tt
+        from nexus.tasks.scheduler import REASONS, WEIGHTS
+        svc = self._nx()
+        ts = svc.task_view()
+        if not ts:
+            return {"ok": False, "msg": "沒有任務資料"}
+        try:
+            d = ts.detail(tid)
+        except Exception:
+            return {"ok": False, "msg": "找不到這個任務"}
+        t = d["task"]
+        names = {x["device_id"]: x["name"] for x in svc.devices()}
+        node = names.get(t["assigned_device_id"], "節點")
+        res = ""
+        if t["result_json"] and t["type"] in tt.FILE_TYPES:
+            res = tt.DetailWindow._download_result(t["result_json"], node, t["status"])
+            if t["error_message"]:
+                res = f"錯誤：{t['error_code']}　{t['error_message'][:200]}\n" + res
+        elif t["result_json"]:
+            res = "結果：" + t["result_json"][:200]
+        elif t["error_message"]:
+            res = f"錯誤：{t['error_code']}　{t['error_message'][:200]}"
+        why = []
+        note = "還沒排程過。"
+        if d["decisions"]:
+            last = d["decisions"][-1]
+            w = WEIGHTS.get(last["weights_version"], {})
+            note = (f"最近一次排程：{tt.local(last['decided_at'])}（" + "、".join(f"{tt.SCORE_NAME[k]} {int(v * 100)}%" for k, v in w.items())
+                    + "）。先排除不合格的節點，再替合格的打 0～100 分，最高分的拿到。"
+                    + (f"這個任務一共排程過 {len(d['decisions'])} 次。" if len(d["decisions"]) > 1 else ""))
+            for c in last["candidates"]:
+                if c["eligible"]:
+                    why.append([names.get(c["device_id"], c["name"]), "✔ 選中" if c["device_id"] == last["chosen_device_id"] else "合格",
+                                f"{c['total']:.1f}", "　".join(f"{tt.SCORE_NAME[k]} {v:.2f}" for k, v in c["scores"].items())])
+                else:
+                    why.append([names.get(c["device_id"], c["name"]), "排除", "—", "；".join(REASONS.get(r, r) for r in c["reasons"])])
+        rows = []
+        for a in d["audit"]:
+            st = a["action"].split(".", 1)[-1].upper()
+            rows.append((a["ts"], tt._who(a["actor"], names), tt.STATE_NAME.get(st, a["action"]), a["reason"] or ""))
+        for e in d["events"]:
+            if e["type"] == "PROGRESS":
+                try:
+                    pct = int(json.loads(e["data_json"]).get("progress", 0) * 100)
+                except Exception:
+                    pct = 0
+                rows.append((e["received_at"], names.get(e["device_id"], "節點"), "進度", f"{pct}%"))
+        rows = [[tt.local(r[0]), *r[1:]] for r in sorted(rows, key=lambda x: x[0])][-200:]
+        good = bool(t["result_json"]) and t["status"] in ("SUCCEEDED", "UPLOADING", "VERIFYING")
+        return {"ok": True, "detail": {
+            "head": f"{tt.TYPE_NAME.get(t['type'], t['type'])}｜{tt.STATE_NAME.get(t['status'], t['status'])}｜節點：{names.get(t['assigned_device_id'], '—')}"
+                    f"｜嘗試 {t['attempt_count']}/{t['max_attempts']}｜{tt.summary_of(t)}",
+            "result": res, "good": good, "note": note, "why": why, "timeline": rows}}
+
+    def web_nx_audit(self, _):
+        svc = self._nx()
+        names = {d["device_id"]: d["name"] for d in svc.devices()}
+        return {"ok": True, "audit": [[ev["ts"][:19].replace("T", " "), ev["action"], ev["actor"],
+                                       names.get(ev["resource_id"], (ev["resource_id"] or "")[:12]), ev["outcome"], ev["reason"] or ""]
+                                      for ev in svc.audit(200)]}
 
     def web_pair(self, _):
         self.pair_browser()

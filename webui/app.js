@@ -11,6 +11,7 @@ const ST = { run: '下載中', wait: '等待中', retry: '等重試', pause: '�
 const FILTERS = { all: () => true, active: (t) => ['run', 'wait', 'retry'].includes(t.st), done: (t) => t.st === 'done',
   paused: (t) => t.st === 'pause', fail: (t) => ['fail', 'need'].includes(t.st) };
 const TITLES = { home: ['首頁', '安全、乾淨、穩定地下載'], dl: ['下載管理', '新增下載、看佇列、找以前下載的影片'],
+  nodes: ['Nexus 管理', '讓另一台電腦幫你下載、下載完傳回這台'],
   set: ['設定', '改了馬上存；原本視窗的 ③ 設定、⚙ 進階設定都在這裡'], setup: ['安裝擋廣告', '在 Chrome 裝暴力猴和 Video Helper 腳本'] };
 const PAGES = Object.keys(TITLES);
 const STEPS = [['安裝暴力猴（Violentmonkey）', '打開後按「加到 Chrome」→「新增擴充功能」'],
@@ -34,17 +35,26 @@ async function act(name, arg) {
   } catch (e) { toast('出錯了：' + e); }
 }
 
-function modal(title, text, buttons, cls = 'muted') {
+function modal(title, text, buttons, cls = 'muted', opt = {}) {
   const box = $('#mbox');
-  box.innerHTML = `<h3>${esc(title)}</h3><p class="${cls}">${esc(text)}</p><div class="btns"></div>`;
+  box.className = 'box' + (opt.wide ? ' wide' : '');
+  box.innerHTML = `<h3>${esc(title)}</h3><p class="${cls}">${esc(text)}</p>${opt.html || ''}${opt.input ? `<input class="search reason" placeholder="${esc(opt.input)}">` : ''}<div class="btns"></div>`;
+  const inp = $('input.reason', box);
   return new Promise((res) => {
     for (const [label, val, cls] of buttons) {
       const b = document.createElement('button'); b.textContent = label; if (cls) b.className = cls;
-      b.onclick = () => { $('#modal').hidden = true; res(val); };
+      b.onclick = () => { $('#modal').hidden = true; res(inp ? (val ? inp.value.trim() || '' : null) : val); };
       $('.btns', box).appendChild(b);
     }
     $('#modal').hidden = false;
+    if (inp) inp.focus();
   });
+}
+// 要理由的操作（會寫進稽核紀錄）：按取消回 null；沒填理由回 ''（不執行）
+async function askReason(title, text, ok) {
+  const r = await modal(title, text, [[ok, 1, 'accent'], ['取消', 0]], 'muted', { input: '理由（會寫進稽核紀錄）' });
+  if (r === '') toast('沒有理由就不執行');
+  return r || null;
 }
 
 // ---------- 縮圖：沒有的先顯示網站色塊，做好再換 ----------
@@ -112,7 +122,7 @@ function renderNexus(n) {
   el.innerHTML = `<div class="card-h"><h3>Nexus 節點</h3><div class="grow"></div><span class="pill ${n.running ? 'ok' : ''}">${n.running ? 'Master 執行中' : '未啟動'}</span></div>
     <div class="nx-row"><span>在線節點</span><b>${esc(n.online)} / ${esc(n.total)}</b></div>
     <div class="nx-row"><span>執行中的節點任務</span><b>${esc(n.tasks)}</b></div>${rows}
-    <button class="ghost mt" data-act="old:nodes">管理節點（舊介面）</button>`;
+    <button class="ghost mt" data-go="nodes">管理節點</button>`;
 }
 
 function renderNews(news, upd) {
@@ -225,6 +235,92 @@ function renderSetup(st) {
   $('#nochrome').hidden = st.chrome;
 }
 
+// ---------- Nexus 管理 ----------
+let NX = null, nxSig = '', nxFilter = 'all';
+const DEV_OPS = { approve: ['✔ 核准', '核准節點', '核准後這台節點會拿到憑證、可以跟 Master 心跳。\n請先核對節點畫面上的 Master 指紋前 8 碼。'],
+  reject: ['✘ 拒絕', '拒絕節點', '拒絕後它要重新配對才能再申請。'],
+  suspend: ['⏸ 暫停', '暫停節點', '暫停會立刻切斷它的連線，恢復前心跳都會被拒絕。'],
+  resume: ['▶ 恢復', '恢復節點', '恢復後它會自己接回來。'],
+  revoke: ['⛔ 撤銷', '撤銷節點', '⚠ 撤銷不能復原：連線立刻切斷、憑證永久作廢，就算它拿舊憑證也進不來；要再用得重新配對（新身分）。'] };
+async function loadNexus() {
+  if (!api || !api.nexus) return;
+  try { NX = await api.nexus(); } catch (e) { return; }
+  renderNexusPage();
+}
+function renderNexusPage() {
+  const n = NX;
+  $('#nx-err').hidden = !(n && !n.ok); if (n && !n.ok) $('#nx-err').textContent = n.err;
+  if (!n || !n.ok) return;
+  const sig = JSON.stringify([n, nxFilter]);
+  if (sig === nxSig) return;
+  const focus = document.activeElement;
+  const editing = focus && focus.closest('#page-nodes') && focus.matches('input:not([type=checkbox]), select');
+  nxSig = sig;
+  const st = $('#nx-state');
+  st.textContent = n.running ? `● 執行中 https://${n.host}:${n.port}` : (n.error ? '啟動失敗：' + n.error : '○ 未啟用');
+  st.className = 'pill' + (n.running ? ' ok' : '');
+  $('#nx-on').checked = n.running;
+  if (!editing) {
+    $('#nx-host').innerHTML = n.addrs.map(([a, l]) => `<option value="${esc(a)}"${a === n.cfg_host ? ' selected' : ''}>${esc(l)}</option>`).join('');
+    $('#nx-port').value = n.cfg_port;
+    if (!$('#nf-type').options.length) $('#nf-type').innerHTML = n.types.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+  }
+  $('#nx-fp').textContent = n.fp ? n.fp + '…' : '尚未建立';
+  $('#nx-code').textContent = n.pair ? n.pair.slice(0, 3) + ' ' + n.pair.slice(3) : '';
+  $('#nx-pairnote').textContent = n.pair ? `${Math.floor(n.pair_left / 60)}:${String(n.pair_left % 60).padStart(2, '0')} 後失效，只能用一次；在節點那邊輸入` : (n.running ? '按右邊產生 6 位數，在節點那邊輸入' : '要先啟用 Master');
+  $('#nx-pair').disabled = !n.running; $('#nx-new').disabled = !n.running;
+  const online = n.devices.filter((d) => d.online).length, act = n.devices.filter((d) => d.status === 'ACTIVE').length;
+  $('#nx-dsum').textContent = `已核准 ${act} 台・在線 ${online} 台` + (n.devices.some((d) => d.status === 'PENDING') ? '・有節點在等核准' : '');
+  $('#nx-devs').innerHTML = n.devices.length ? n.devices.map((d) => `<div class="nrow"><div style="min-width:0">
+      <div class="t1"><span class="dot ${d.online ? 'ok' : ''}"></span>${esc(d.name)}</div>
+      <div class="t2"><span class="badge2 ${esc(d.status)}">${esc(d.status_name)}</span><span>${esc(d.conn)}</span><span>心跳 ${esc(d.seen)}</span><span>沙箱：${esc(d.iso)}</span></div>
+      <div class="t2 mono"><span>配對 ${esc(d.created)}</span><span>${esc(d.ip)}</span><span>指紋 ${esc(d.fp)}</span></div></div>
+      <div class="acts">${d.ops.map((o) => `<button data-nxdev="${esc(o)}" data-id="${esc(d.id)}">${esc(DEV_OPS[o][0])}</button>`).join('')}</div></div>`).join('')
+    : `<div class="empty">還沒有節點。在另一台電腦執行 VideoHelper.exe --worker，輸入這裡的配對碼</div>`;
+  const ts = n.tasks.filter((t) => nxFilter === 'all' || t.cancel || t.status === 'UNKNOWN');
+  $('#nx-tasks').innerHTML = ts.length ? ts.map((t) => `<div class="nrow"><div style="min-width:0">
+      <div class="t1">${esc(t.type)}　<span class="muted">${esc(t.what)}</span></div>
+      <div class="t2"><span class="badge2 ${esc(t.tag)}">${esc(t.text)}</span><span>節點 ${esc(t.node)}</span><span>嘗試 ${esc(t.tries)}</span><span>${esc(t.created)}</span></div>
+      ${t.progress !== null && t.progress !== undefined ? `<div class="bar"><b style="width:${Math.min(100, +t.progress)}%"></b></div>` : ''}</div>
+      <div class="acts"><button data-nxt="detail" data-id="${esc(t.id)}">🔍 詳情</button>${t.cancel ? `<button data-nxt="cancel" data-id="${esc(t.id)}">⏹ 取消</button>` : ''}
+      ${t.retry_return ? `<button data-nxt="retry" data-id="${esc(t.id)}">↩ 重新傳回</button>` : ''}${t.fail ? `<button data-nxt="fail" data-id="${esc(t.id)}">✘ 標記失敗</button>` : ''}</div></div>`).join('')
+    : `<div class="empty">${nxFilter === 'all' ? '還沒有節點任務' : '沒有進行中的任務'}</div>`;
+}
+function nfSwitch() {
+  const n = $('#nf-type').value;
+  const t = NX && NX.types.find((x) => x[0] === n);
+  $('#nf-desc').textContent = t ? t[2] : '';
+  $('#nf-run').value = t ? Math.min(t[3], n === 'video.download' || n === 'test.file' ? 7200 : 900) : 60;
+  for (const r of $$('#nx-form .nf')) r.hidden = !r.dataset.for.split(' ').includes(n);
+  nfWarn();
+}
+function nfWarn() {
+  let host = '';
+  try { host = new URL($('#nf-url').value.trim()).hostname.toLowerCase(); } catch (e) { host = ''; }
+  const hit = NX && NX.browser_only.find((h) => host === h || host.endsWith('.' + h));
+  $('#nf-warn').textContent = hit ? `⚠ ${hit} 會擋程式直接開網頁：請改用瀏覽器影片頁「⬇ 下載」→「🖧 交給節點」` : '只支援能下載的 9 個網站';
+  return hit;
+}
+async function nxTask(op, id) {
+  if (op === 'detail') {
+    const r = await act('nx_detail', id);
+    if (!r || !r.ok) return;
+    const d = r.detail;
+    const tbl = (head, rows) => `<div class="tblwrap"><table class="tbl"><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr>${rows.map((row) => `<tr>${row.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table></div>`;
+    const html = (d.result ? `<div class="res ${d.good ? 'good' : 'bad'}">${esc(d.result)}</div>` : '')
+      + `<h4>為什麼選這台</h4><p class="muted small">${esc(d.note)}</p>` + (d.why.length ? tbl(['節點', '結果', '分數', '子分數／排除原因'], d.why) : '')
+      + `<h4>時間軸</h4>` + tbl(['時間', '誰', '發生什麼', '說明'], d.timeline);
+    modal('任務詳情', d.head, [['關閉', 0, 'accent']], 'muted', { wide: true, html });
+    return;
+  }
+  if (op === 'retry') return act('nx_retry_return', id);
+  const [title, text, ok, name] = op === 'cancel'
+    ? ['取消任務', '會通知節點停止；節點確認停下後才會變成「已取消」。', '取消任務', 'nx_cancel']
+    : ['標記失敗', '這個任務的節點失聯了，不知道有沒有跑完。標記成失敗後不會自動重跑。', '標記失敗', 'nx_fail'];
+  const reason = await askReason(title, text, ok);
+  if (reason) { nxSig = ''; await act(name, { id, reason }); loadNexus(); }
+}
+
 // ---------- 右鍵選單 ----------
 function showMenu(x, y, key, open) {
   const items = [['▶ 播放', 'play', open], ['📂 打開檔案位置', 'reveal', open], ['📋 複製網址', 'copy_url', true],
@@ -257,7 +353,8 @@ function go(p) {
   page = p;
   for (const a of $$('#nav a')) a.classList.toggle('on', a.dataset.page === p);
   for (const x of PAGES) $('#page-' + x).hidden = x !== p;
-  setSig = '';
+  setSig = ''; nxSig = '';
+  if (p === 'nodes') loadNexus();
   $('#ptitle').textContent = TITLES[p][0]; $('#sub').textContent = TITLES[p][1];
   $('main').scrollTop = 0;
   if (p === 'dl') { loadHist(); if (S) renderDl(S); }
@@ -288,6 +385,7 @@ function render(s) {
     renderNotices(s.notices);
   }
   if (page === 'set') renderSettings(s.settings);
+  if (page === 'nodes' && (tick.n = (tick.n || 0) + 1) % 2 === 0) loadNexus();
   if (page === 'setup') renderSetup(s.setup);
   if (s.ask && s.ask.id !== render.asked) {          // 電腦版要問你一件事（例如還在下載時關視窗）
     render.asked = s.ask.id;
@@ -306,7 +404,7 @@ function wire() {
     const p = a.dataset.page;
     if (PAGES.includes(p)) { go(p); lastSig = ''; if (S) render(S); return; }
     if (p === 'about') {
-      modal('關於 Video Helper', `版本 v${S ? S.version : ''}（新介面預覽）\n\n全部在你自己的電腦上跑，沒有伺服器。新介面只讀電腦版裡的資料、不連任何網站。\nNexus 管理這頁還在做，先用原本的視窗打開。`,
+      modal('關於 Video Helper', `版本 v${S ? S.version : ''}（新介面預覽）\n\n全部在你自己的電腦上跑，沒有伺服器。新介面只讀電腦版裡的資料、不連任何網站。\n🔒 安全中心、統計還沒搬過來，按了會打開原本的小視窗。`,
         [['說明書', 'manual', 'accent'], ['GitHub 發布頁', 'releases'], ['關閉', null]]).then((v) => v && act('link', v));
       return;
     }
@@ -398,6 +496,52 @@ function wire() {
   $('#bdel').addEventListener('click', async () => {
     if (!await modal('刪除紀錄', `刪除選取的 ${SEL.size} 筆紀錄？影片檔案不會刪。`, [['刪除', 1, 'accent'], ['取消', 0]])) return;
     const keys = [...SEL]; SEL.clear(); act('delete_hist', keys);
+  });
+  // Nexus 管理
+  $('#nx-on').addEventListener('change', async (e) => {
+    const on = e.target.checked;
+    if (on && NX && NX.lan && !await modal('開放區域網路', `Master 會在 ${NX.cfg_host}:${NX.cfg_port} 聽同一個網路裡的電腦。\n只有你在這裡按「核准」的節點才能真的連上；其他人只會看到被拒絕。`, [['啟用', 1, 'accent'], ['取消', 0]])) { e.target.checked = false; return; }
+    nxSig = ''; await act('nx_enable', on ? 'on' : 'off'); loadNexus();
+  });
+  $('#nx-bind').addEventListener('click', async () => { nxSig = ''; await act('nx_bind', { host: $('#nx-host').value, port: +$('#nx-port').value }); loadNexus(); });
+  $('#nx-pair').addEventListener('click', async () => { nxSig = ''; await act('nx_pair'); loadNexus(); });
+  $('#nx-audit').addEventListener('click', async () => {
+    const r = await act('nx_audit'); if (!r || !r.ok) return;
+    const rows = r.audit.map((x) => `<tr>${x.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('');
+    modal('節點稽核紀錄（最近 200 筆，只能看不能改）', '時間是 UTC。', [['關閉', 0, 'accent']], 'muted', { wide: true,
+      html: `<div class="tblwrap"><table class="tbl"><tr><th>時間</th><th>動作</th><th>誰</th><th>裝置</th><th>結果</th><th>理由／說明</th></tr>${rows}</table></div>` });
+  });
+  $('#nx-chips').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    nxFilter = b.dataset.f; for (const x of $('#nx-chips').children) x.classList.toggle('on', x === b);
+    nxSig = ''; renderNexusPage();
+  });
+  $('#nx-devs').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-nxdev]'); if (!b) return;
+    const op = b.dataset.nxdev, d = NX.devices.find((x) => x.id === b.dataset.id); if (!d) return;
+    let note = DEV_OPS[op][2];
+    if (op === 'approve') {
+      const same = NX.devices.filter((o) => o.id !== d.id && o.name === d.name && ['ACTIVE', 'SUSPENDED', 'PENDING'].includes(o.status));
+      if (same.length) note += `\n\n⚠ 名單裡已經有 ${same.length} 筆也叫「${d.name}」、還沒撤銷的節點（通常是同一台重新配對留下的舊身分）。核准這筆之後，記得把舊的撤銷。`;
+    }
+    const reason = await askReason(DEV_OPS[op][1], `${d.name}\n指紋 ${d.fp}\n來源 ${d.ip}\n\n${note}`, DEV_OPS[op][0]);
+    if (reason) { nxSig = ''; await act('nx_device', { op, id: d.id, reason }); loadNexus(); }
+  });
+  $('#nx-tasks').addEventListener('click', (e) => { const b = e.target.closest('[data-nxt]'); if (b) nxTask(b.dataset.nxt, b.dataset.id); });
+  $('#nx-new').addEventListener('click', () => { $('#nx-form').hidden = false; nfSwitch(); });
+  $('#nf-close').addEventListener('click', () => { $('#nx-form').hidden = true; });
+  $('#nf-type').addEventListener('change', nfSwitch);
+  $('#nf-url').addEventListener('input', nfWarn);
+  $('#nf-go').addEventListener('click', async () => {
+    const type = $('#nf-type').value;
+    if (type === 'video.download') {
+      if (!/^https?:\/\//.test($('#nf-url').value.trim())) { toast('請貼影片網址'); return; }
+      if (nfWarn() && !await modal('這個網站要從瀏覽器交', '在這裡貼網址，節點會下載失敗。還是要照樣送出嗎？', [['照樣送出', 1], ['不要', 0, 'accent']])) return;
+    }
+    const r = await act('nx_task_new', { type, url: $('#nf-url').value.trim(), quality: $('#nf-q').value, ret: $('#nf-ret').checked,
+      size_mb: +$('#nf-size').value, text: $('#nf-text').value, seconds: +$('#nf-sec').value, code: $('#nf-code').value,
+      runtime: +$('#nf-run').value, tries: +$('#nf-tries').value });
+    if (r && r.ok) { $('#nx-form').hidden = true; $('#nf-url').value = ''; nxSig = ''; loadNexus(); }
   });
   // 設定
   $('#s-report').addEventListener('click', async () => {

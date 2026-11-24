@@ -220,3 +220,23 @@ button.small { font-size: 12px; }
 .ntc.go { cursor: pointer; } .ntc.go:hover { background: var(--card2); }
 .report { white-space: pre-wrap; font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; max-height: 50vh; overflow: auto; text-align: left; }
 @media (max-width: 1100px) { .sgrid { grid-template-columns: 1fr; } }
+
+/* v1.39.0 Nexus 管理 */
+.search.num { width: 90px; border-radius: 10px; }
+.search.wide { width: 340px; max-width: 100%; border-radius: 10px; }
+.fp, .code { font-family: Consolas, "Cascadia Mono", monospace; }
+.code { font-size: 22px; font-weight: 700; letter-spacing: 3px; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.nrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 14px; background: var(--card2); }
+.nrow .t2 span.badge2 { padding: 1px 8px; border-radius: 99px; background: var(--card); }
+.badge2.PENDING, .badge2.warn { color: var(--a1); } .badge2.ACTIVE, .badge2.ok { color: var(--ok); }
+.badge2.REVOKED, .badge2.EXPIRED, .badge2.bad { color: var(--bad); } .badge2.SUSPENDED, .badge2.REJECTED, .badge2.muted { color: var(--muted); }
+.nrow .acts button { width: auto; padding: 0 10px; font-size: 12px; }
+.mono { font-family: Consolas, "Cascadia Mono", monospace; font-size: 11px; }
+.box.wide { width: min(920px, 94vw); }
+.box input.reason { width: 100%; margin-top: 10px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+.tbl th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg2); }
+.tbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tblwrap { max-height: 34vh; overflow: auto; }
+.res { white-space: pre-line; padding: 8px 10px; border-radius: 10px; background: var(--card2); margin: 8px 0; font-size: 13px; }
+.res.good { color: var(--ok); } .res.bad { color: var(--bad); }

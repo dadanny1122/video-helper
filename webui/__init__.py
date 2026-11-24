@@ -24,6 +24,9 @@ ACTIONS = {
     "set": "dict", "choose_dir": None, "reset_dir": None, "smart_report": None, "unpair_all": None, "stop_bridge": None,
     "update_blocklist": None, "set_ai_key": 300, "test_ai": None, "clear_ai_cache": None, "reset_speed": None,
     "export": None, "import": None, "open_backups": None, "open_log": None, "open_data": None, "setup_step": 2,
+    # v1.39.0 Nexus 管理頁（每個值電腦版還會再檢查一次）
+    "nx_enable": 3, "nx_bind": "dict", "nx_pair": None, "nx_device": "dict", "nx_task_new": "dict",
+    "nx_cancel": "dict", "nx_fail": "dict", "nx_retry_return": 100, "nx_detail": 100, "nx_audit": None,
 }
 SETTING_KEYS = ("default_quality", "rate_limit", "skip_downloaded", "tray_always", "keep_history", "keep_stats",
                 "smart_segments", "filename_template", "close_action", "theme")
@@ -127,6 +130,11 @@ def check_action(name, arg):
             if not isinstance(arg.get("id"), str) or type(arg.get(n)) is not int:
                 raise ValueError("參數不對")
             return {"id": arg["id"][:200], n: arg[n]}
+        if name.startswith("nx_"):
+            if len(arg) > 12 or not all(isinstance(k, str) and len(k) <= 20 for k in arg) or not all(
+                    v is None or isinstance(v, (bool, int, float)) or (isinstance(v, str) and len(v) <= 2000) for v in arg.values()):
+                raise ValueError("參數不對")
+            return dict(arg)
         if name == "set":
             k, v = arg.get("key"), arg.get("value")
             if k not in SETTING_KEYS or not isinstance(v, (str, bool, int, float)) or (isinstance(v, str) and len(v) > 100):
@@ -168,6 +176,11 @@ class Api:
     def thumbs(self, keys=None):
         return self._host.thumbs(keys)
 
+    def nexus(self):
+        """Nexus 管理頁：最近一份節點／任務資料（電腦版每 2 秒在自己的執行緒讀一次，只在這頁開著時）"""
+        self._host.want_nexus = time.time()
+        return self._host.nexus_full
+
 
 class Host:
     """網頁視窗這一邊：App 用它來顯示／藏起視窗、發布狀態；網頁用它丟動作給 App"""
@@ -183,6 +196,8 @@ class Host:
         self.hist = None             # 下載紀錄（App 有變才整份換）：[{key, title, site, …}]
         self.files = {}              # 紀錄編號 → 影片檔路徑（縮圖用；網頁拿不到）
         self.thumb_dir = None
+        self.want_nexus = 0.0        # 網頁最後一次問 Nexus 資料的時間
+        self.nexus_full = None
         self._thumbs = None
 
     def act(self, name, arg):

@@ -14,7 +14,7 @@
   <nav id="nav">
     <a data-page="home" class="on"><i>⌂</i>首頁</a>
     <a data-page="dl"><i>⬇</i>下載管理</a>
-    <a data-page="nodes"><i>🖧</i>Nexus 管理<em>舊介面</em></a>
+    <a data-page="nodes"><i>🖧</i>Nexus 管理</a>
     <a data-page="set"><i>⚙</i>設定</a>
     <a data-page="setup"><i>🛡</i>安裝擋廣告</a>
     <a data-page="about"><i>ⓘ</i>關於</a>
@@ -194,6 +194,43 @@
         <div class="srow"><div><b>問題排查</b><div class="muted small path" id="s-data"></div></div><div class="sbtns"><button class="ghost small" data-act="open_log">📄 錯誤日誌</button><button class="ghost small" data-act="open_data">📂 設定資料夾</button><button class="ghost small" data-act="old:security">🔒 安全中心</button></div></div>
       </section>
     </div>
+  </div>
+
+  <!-- v1.39.0 Nexus 管理 -->
+  <div id="page-nodes" class="page" hidden>
+    <div id="nx-err" class="note bad" hidden></div>
+    <section class="card">
+      <div class="card-h"><h3>🖧 Master（這台電腦）</h3><span class="pill" id="nx-state"></span><div class="grow"></div>
+        <span class="muted small">啟用</span><label class="sw"><input type="checkbox" id="nx-on"><span></span></label></div>
+      <p class="muted small">讓另一台電腦（跑 VideoHelper.exe --worker）安全地連到這台，幫你下載影片、下載完傳回來。每台節點都要你在這裡按「核准」才算數；只有你在這台電腦上能管理，沒有網路管理介面。</p>
+      <div class="srow"><div><b>綁定位址、埠</b><div class="muted small">區域網路：第一次啟用 Windows 會問防火牆，選「私人網路」允許</div></div>
+        <div class="sbtns"><select id="nx-host"></select><input id="nx-port" type="number" min="1024" max="65535" class="search num"><button class="ghost small" id="nx-bind">儲存</button></div></div>
+      <div class="srow"><div><b>Master 指紋</b><div class="muted small">核准節點前，核對前 8 碼跟節點畫面上的一樣</div></div><code class="fp" id="nx-fp"></code></div>
+      <div class="srow"><div><b>配對碼</b><div class="muted small" id="nx-pairnote"></div></div><div class="sbtns"><span class="code" id="nx-code"></span><button class="accent small" id="nx-pair">產生配對碼</button></div></div>
+    </section>
+    <section class="card">
+      <div class="card-h"><h3>節點名單</h3><span class="muted small" id="nx-dsum"></span><div class="grow"></div><button class="ghost small" id="nx-audit">📜 稽核紀錄</button></div>
+      <div id="nx-devs" class="list"></div>
+    </section>
+    <section class="card">
+      <div class="card-h"><h3>📋 節點任務</h3>
+        <div class="chips" id="nx-chips"><button data-f="all" class="on">全部</button><button data-f="active">進行中</button></div>
+        <div class="grow"></div><button class="accent small" id="nx-new">＋ 新增任務</button></div>
+      <div id="nx-form" class="an" hidden>
+        <div class="srow"><div><b>類型</b><div class="muted small" id="nf-desc"></div></div><select id="nf-type"></select></div>
+        <div class="srow nf" data-for="video.download"><div><b>影片網址</b><div class="muted small" id="nf-warn"></div></div>
+          <div class="sbtns"><input id="nf-url" class="search wide" placeholder="貼影片網址…" spellcheck="false">
+            <select id="nf-q"><option value="best">最高</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></div></div>
+        <div class="srow nf" data-for="test.file"><div><b>檔案大小（MB）</b></div><input id="nf-size" type="number" min="1" max="2048" value="20" class="search num"></div>
+        <div class="srow nf" data-for="video.download test.file"><div><b>下載完傳回這台</b><div class="muted small">不勾＝檔案留在節點那台</div></div><label class="sw"><input type="checkbox" id="nf-ret" checked><span></span></label></div>
+        <div class="srow nf" data-for="test.echo"><div><b>文字</b></div><input id="nf-text" class="search wide" value="哈囉 Nexus"></div>
+        <div class="srow nf" data-for="test.sleep"><div><b>等幾秒</b></div><input id="nf-sec" type="number" min="1" max="600" value="10" class="search num"></div>
+        <div class="srow nf" data-for="test.fail"><div><b>失敗原因</b></div><select id="nf-code"><option>ADAPTER_ERROR</option><option>RESOURCE_LIMIT</option><option>INVALID_INPUT</option></select></div>
+        <div class="srow"><div><b>執行時間上限（秒）、最多嘗試幾次</b></div><div class="sbtns"><input id="nf-run" type="number" min="1" max="7200" class="search num"><input id="nf-tries" type="number" min="1" max="5" value="2" class="search num"></div></div>
+        <div class="btns"><button class="accent" id="nf-go">送出</button><button class="ghost" id="nf-close">取消</button></div>
+      </div>
+      <div id="nx-tasks" class="list"></div>
+    </section>
   </div>
 
   <!-- v1.38.0 安裝擋廣告 -->

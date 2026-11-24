@@ -30,7 +30,7 @@ def ok(cond, msg):
 
 
 # ---- 1. 不用視窗的部分 ----
-ok(set(n for n in dir(webui.Api) if not n.startswith("_")) == {"state", "static", "act", "ready", "history", "thumbs"}, "網頁只拿得到 6 個函式")
+ok(set(n for n in dir(webui.Api) if not n.startswith("_")) == {"state", "static", "act", "ready", "history", "thumbs", "nexus"}, "網頁只拿得到 7 個函式")
 for name, arg in (("eval", "x"), ("add", ""), ("add", 5), ("add", "x" * 20001), ("cancel", None), ("answer", {"id": 1}),
                   ("old", "x" * 21), ("subtitles", "hab"), ("subtitles", []), ("subtitles", ["x" * 41]),
                   ("delete_hist", ["a"] * 501), ("add_batch", {"text": "x", "quality": "999"}), ("enqueue_fmt", {"id": "a", "i": "1"}),
@@ -232,6 +232,44 @@ def fake_mode():
     app.add_notice("🖧", "節點傳回：測試", "dl")
     app2_notices = json.load(open(os.path.join(os.environ["VIDEO_HELPER_HOME"], "notices.json"), encoding="utf-8"))
     ok(app2_notices[0]["page"] == "dl", "通知存檔（重開還在）、記得要跳哪一頁")
+    # ---- v1.39.0 Nexus 管理頁 ----
+    import socket
+    with socket.socket() as so:
+        so.bind(("127.0.0.1", 0))
+        free_port = so.getsockname()[1]
+
+    def nexus_snapshot():
+        host.want_nexus = time.time()
+        app._web_nx_full_t = 0
+        app.web_publish()
+        return host.nexus_full
+    nx = nexus_snapshot()
+    ok(nx and nx["ok"] and nx["running"] is False and nx["types"], "Nexus 頁：Master 沒開也讀得到")
+    ok(call("nx_bind", {"host": "8.8.8.8", "port": free_port})["ok"] is False, "綁定位址只能選本機網卡")
+    ok(call("nx_bind", {"host": "127.0.0.1", "port": 80})["ok"] is False, "埠要 1024 以上")
+    ok(call("nx_bind", {"host": "127.0.0.1", "port": free_port})["ok"], "存綁定位址和埠")
+    ok(call("nx_pair")["ok"] is False, "Master 沒開不能產生配對碼")
+    ok(call("nx_enable", "maybe")["ok"] is False, "nx_enable 只收 on／off")
+    r = call("nx_enable", "on")
+    ok(r["ok"] and app.nexus.running, "啟用 Master " + str(r.get("msg")))
+    call("nx_pair")
+    nx = nexus_snapshot()
+    ok(nx["running"] and len(nx["pair"]) == 6 and nx["pair_left"] > 0 and nx["port"] == free_port, "配對碼、埠")
+    ok(call("nx_device", {"op": "drop_table", "id": "x", "reason": "r"})["ok"] is False, "裝置操作只收 5 種")
+    ok(call("nx_device", {"op": "approve", "id": "不存在", "reason": ""})["ok"] is False, "沒有理由不執行")
+    ok(call("nx_task_new", {"type": "evil.run"})["ok"] is False, "不認得的任務類型不能送")
+    r = call("nx_task_new", {"type": "test.echo", "text": "哈囉", "runtime": 30, "tries": 1})
+    nx = nexus_snapshot()
+    ok(r["ok"] and nx["tasks"] and nx["tasks"][0]["what"] == "哈囉", "新增節點任務（回聲）")
+    tid = nx["tasks"][0]["id"]
+    d = call("nx_detail", tid)
+    ok(d["ok"] and "回聲" in d["detail"]["head"] and d["detail"]["timeline"], "任務詳情")
+    ok(call("nx_cancel", {"id": tid, "reason": ""})["ok"] is False, "取消要理由")
+    r = call("nx_cancel", {"id": tid, "reason": "測試取消"})
+    ok(r["ok"] and nexus_snapshot()["tasks"][0]["status"] in ("CANCELLED", "CANCELLING"), "取消節點任務")
+    ok(call("nx_audit")["ok"] and any(x[1].startswith("task.") for x in call("nx_audit")["audit"]), "稽核紀錄")
+    call("nx_enable", "off")
+    ok(not app.nexus.running and app.nexus.cfg["enabled"] is False, "關閉 Master")
     # 舊介面
     call("old", "set")
     drain(app, root)
@@ -296,10 +334,13 @@ def real_mode():
                     host.window.evaluate_js("document.querySelector('#nav a[data-page=\"set\"]').click()")
                     time.sleep(1.0)
                     result["set"] = host.window.evaluate_js("document.getElementById('s-q').options.length")
+                    host.window.evaluate_js("document.querySelector('#nav a[data-page=\"nodes\"]').click()")
+                    time.sleep(3.0)
+                    result["nodes"] = host.window.evaluate_js("document.getElementById('nf-type').options.length")
                     from PIL import ImageGrab
                     w = host.window
                     ImageGrab.grab(bbox=(w.x, w.y, w.x + w.width, w.y + w.height), all_screens=True).save(
-                        os.path.join(shots, "windows-webview2-set.png"))
+                        os.path.join(shots, "windows-webview2-nodes.png"))
                     result["shot"] = True
                 except Exception as e:
                     result["err"] = repr(e)
@@ -318,6 +359,7 @@ def real_mode():
     ok(result.get("ver") == "v" + a.VERSION, "版本號從電腦版傳到網頁")
     ok(result.get("dl") == 7, "下載管理頁打得開、畫質選單有 7 個")
     ok(result.get("set") == 7, "設定頁打得開、預設畫質有 7 個選項")
+    ok((result.get("nodes") or 0) >= 4, f"Nexus 管理頁讀得到節點資料（任務類型 {result.get('nodes')} 種）")
     ok(result.get("shot"), "截圖 " + str(result.get("err", "")))
     # 縮圖：請 Windows 做一張（GitHub 的 Windows Server 不一定有影片縮圖功能 → 只記錄結果，不算失敗）
     try:

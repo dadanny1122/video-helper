@@ -44,6 +44,14 @@ function state(theme, extra = {}) {
   }, extra);
 }
 
+const NEXUS = { ok: true, running: true, error: '', host: '192.168.1.5', port: 47400, cfg_host: '192.168.1.5', cfg_port: 47400, enabled: true,
+  addrs: [['127.0.0.1', '127.0.0.1（只有這台電腦）'], ['192.168.1.5', '192.168.1.5（區域網路）']], lan: true, fp: 'ab12cd34ef56ab78',
+  pair: '123456', pair_left: 245, browser_only: ['pornhub.com'],
+  types: [['video.download', '下載影片（節點）', '在節點的沙箱裡下載影片', 7200], ['test.echo', '回聲', '回傳原文', 30], ['test.file', '測試檔（測傳回）', '寫一個檔', 600]],
+  devices: [{ id: 'd1', name: '書房電腦', status: 'ACTIVE', status_name: '已核准', conn: '連線中', online: true, seen: '3 秒前', iso: '基本（可下載）', created: '11-20 10:00', ip: '192.168.1.8', fp: '0011223344556677', ops: ['suspend', 'revoke'] },
+    { id: 'd2', name: EVIL, status: 'PENDING', status_name: '等待核准', conn: '—', online: false, seen: '—', iso: '—', created: '11-24 21:00', ip: '192.168.1.9', fp: '8899aabbccddeeff', ops: ['approve', 'reject'] }],
+  tasks: [{ id: 't1', type: '下載影片（節點）', what: 'xvideos.com／abc（最高，傳回）', status: 'UPLOADING', text: '傳回中 42%（420 MB／1.0 GB）', tag: '', progress: 42, node: '書房電腦', tries: '1/2', created: '11-24 21:30:00', cancel: true, fail: false, retry_return: false },
+    { id: 't2', type: '回聲', what: '哈囉', status: 'SUCCEEDED', text: '成功', tag: 'ok', progress: null, node: '書房電腦', tries: '1/2', created: '11-24 20:00:00', cancel: false, fail: false, retry_return: false }] };
 let fails = 0;
 const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails++; };
 
@@ -65,6 +73,7 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
       if (q.site) rows = rows.filter((t) => t.site === q.site);
       return { total: rows.length, items: rows, sites: ['redtube.com', 'spankbang.com', 'youporn.com'], counts: {} };
     });
+    await page.exposeFunction('__nexus', () => NEXUS);
     await page.exposeFunction('__thumbs', (keys) => Object.fromEntries(keys.map((k) => [k, k === 'hab' ? JPG : k === 'hcd' ? 'javascript:alert(1)' : ''])));
     await page.addInitScript(() => {
       window.__acts = [];
@@ -72,10 +81,15 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
       window.pywebview = { api: {
         state: async () => Object.assign(await window.__state(), window.__ask ? { ask: window.__ask } : {}),
         static: async () => ({ news: [{ ver: '1.36.0', title: '新介面預覽', items: ['左側選單', '數據卡'] }, { ver: '1.35.0', title: '系統匣', items: ['一直都在'] }] }),
-        act: async (n, a) => { window.__acts.push([n, a]); return n === 'smart_report' ? { ok: true, report: '網站   次數\npornhub  12' } : { ok: true, msg: 'ok:' + n }; },
+        act: async (n, a) => { window.__acts.push([n, a]);
+          if (n === 'smart_report') return { ok: true, report: '網站   次數\npornhub  12' };
+          if (n === 'nx_detail') return { ok: true, detail: { head: '下載影片｜傳回中', result: '下載完成：' + '<b>x</b>', good: true, note: '最近一次排程', why: [['書房電腦', '✔ 選中', '88.0', 'CPU 0.90']], timeline: [['11-24 21:30', '你', '已建立', '']] } };
+          if (n === 'nx_audit') return { ok: true, audit: [['2026-11-24 13:00:00', 'device.approve', 'owner', '書房電腦', 'ok', '是我的']] };
+          return { ok: true, msg: 'ok:' + n }; },
         ready: () => { window.__ready = true; return true; },
         history: (q) => window.__hist(q),
         thumbs: (k) => window.__thumbs(k),
+        nexus: () => window.__nexus(),
       } };
     });
     await page.route('**/*', (r) => r.abort());       // 有任何連外請求就擋下（上面另外記錄）
@@ -102,12 +116,12 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
       await page.keyboard.press('Enter');
       await page.waitForTimeout(200);
       await page.click('[data-act="open_folder"]');
-      await page.click('#nav a[data-page="nodes"]');
+      await page.click('[data-act="open_folder"]');
       await page.click('[data-a="play"]');
       await page.waitForTimeout(200);
       const acts = await page.evaluate(() => window.__acts);
       ok(JSON.stringify(acts[0]) === JSON.stringify(['add', 'https://www.pornhub.com/view_video.php?viewkey=x']), '貼網址按 Enter → add');
-      ok(acts.some((a) => a[0] === 'open_folder') && acts.some((a) => a[0] === 'old' && a[1] === 'nodes') && acts.some((a) => a[0] === 'play' && a[1] === 'hab'),
+      ok(acts.some((a) => a[0] === 'open_folder') && true && acts.some((a) => a[0] === 'play' && a[1] === 'hab'),
         '快速功能、選單、播放都送出正確動作');
       ok(await page.inputValue('#urls') === '', '送出後清空輸入框');
       // 取消要先確認
@@ -222,6 +236,54 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
       await page.click('.ntc.go');
       await page.waitForTimeout(200);
       ok(await page.isVisible('#page-dl') && !(await page.isVisible('#panel')), '按通知 → 跳到下載管理');
+      // ---- v1.39.0 Nexus 管理 ----
+      await page.click('#nav a[data-page="nodes"]');
+      await page.waitForTimeout(600);
+      ok(await page.isVisible('#page-nodes') && await page.locator('#nx-devs .nrow').count() === 2 && await page.locator('#nx-tasks .nrow').count() === 2,
+        'Nexus 管理頁：2 台節點、2 個任務');
+      ok((await page.textContent('#nx-code')) === '123 456' && (await page.textContent('#nx-fp')).startsWith('ab12cd34'), '配對碼、Master 指紋');
+      ok(await page.evaluate(() => !window.__pwned), '節點名稱有跳脫');
+      await page.screenshot({ path: path.join(out, 'nodes-dark.png') });
+      await page.click('#nx-devs button[data-nxdev="approve"]');
+      await page.click('#mbox button:has-text("核准")');                     // 沒填理由
+      await page.waitForTimeout(200);
+      let a4 = await page.evaluate(() => window.__acts);
+      ok(!a4.some((a) => a[0] === 'nx_device'), '沒填理由就不核准');
+      await page.click('#nx-devs button[data-nxdev="approve"]');
+      await page.fill('#mbox input.reason', '是我的筆電');
+      await page.click('#mbox button:has-text("核准")');
+      await page.click('#nx-devs button[data-nxdev="revoke"]');
+      await page.fill('#mbox input.reason', '不用了');
+      await page.click('#mbox button:has-text("取消")');
+      await page.waitForTimeout(200);
+      a4 = await page.evaluate(() => window.__acts);
+      ok(a4.some((a) => a[0] === 'nx_device' && a[1].op === 'approve' && a[1].id === 'd2' && a[1].reason === '是我的筆電'), '核准要填理由 → nx_device');
+      ok(!a4.some((a) => a[0] === 'nx_device' && a[1].op === 'revoke'), '撤銷按取消就不做');
+      await page.click('#nx-new');
+      await page.fill('#nf-url', 'https://www.pornhub.com/view_video.php?viewkey=1');
+      ok((await page.textContent('#nf-warn')).includes('交給節點'), 'Pornhub 網址提醒要從瀏覽器交');
+      await page.click('#nf-go');
+      await page.click('#mbox button:has-text("不要")');
+      await page.fill('#nf-url', 'https://www.xvideos.com/video1/a');
+      await page.click('#nf-go');
+      await page.waitForTimeout(200);
+      a4 = await page.evaluate(() => window.__acts);
+      const nt = a4.filter((a) => a[0] === 'nx_task_new');
+      ok(nt.length === 1 && nt[0][1].type === 'video.download' && nt[0][1].ret === true && nt[0][1].url.includes('xvideos'), '新增節點任務（預設傳回這台）');
+      await page.click('#nx-tasks button[data-nxt="detail"]');
+      await page.waitForSelector('#modal:not([hidden]) .tbl', { timeout: 2000 });
+      ok(await page.locator('#mbox .tbl').count() === 2 && !(await page.locator('#mbox .res b').count()), '任務詳情：排程理由＋時間軸（結果有跳脫）');
+      await page.screenshot({ path: path.join(out, 'nodes-detail.png') });
+      await page.click('#mbox button:has-text("關閉")');
+      await page.click('#nx-tasks button[data-nxt="cancel"]');
+      await page.fill('#mbox input.reason', '不要了');
+      await page.click('#mbox button:has-text("取消任務")');
+      await page.click('#nx-audit');
+      await page.waitForSelector('#modal:not([hidden]) .tbl', { timeout: 2000 });
+      await page.click('#mbox button:has-text("關閉")');
+      await page.waitForTimeout(200);
+      a4 = await page.evaluate(() => window.__acts);
+      ok(a4.some((a) => a[0] === 'nx_cancel' && a[1].id === 't1' && a[1].reason === '不要了') && a4.some((a) => a[0] === 'nx_audit'), '取消任務要理由、稽核紀錄打得開');
       await page.click('#nav a[data-page="home"]');
       await page.setViewportSize({ width: 1000, height: 760 });
       await page.waitForTimeout(200);
