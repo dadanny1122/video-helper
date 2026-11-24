@@ -271,6 +271,17 @@ def fake_mode():
     ok(call("nx_audit")["ok"] and any(x[1].startswith("task.") for x in call("nx_audit")["audit"]), "稽核紀錄")
     call("nx_enable", "off")
     ok(not app.nexus.running and app.nexus.cfg["enabled"] is False, "關閉 Master")
+    # ---- v1.41.0 安全與統計 ----
+    app.settings["bridge_tokens"] = ["f" * 64]
+    app.settings["bridge_meta"] = {"f" * 64: {"ua": "Chrome", "paired": time.time(), "last": time.time(), "uses": 3}}
+    r = call("sec_view")
+    ok(r["ok"] and r["sec"]["paired"][0]["ua"] == "Chrome" and r["sec"]["paired"][0]["id"] == "f" * 16 and "f" * 17 not in json.dumps(r),
+       "安全頁：配對清單（只給編號前 16 碼）")
+    ok(call("sec_unpair", "0" * 16)["ok"] is False and call("sec_unpair", "f" * 16)["ok"] and not app.settings["bridge_tokens"], "取消單一配對")
+    ok(call("set", {"key": "log_keep_days", "value": 5})["ok"] is False and call("set", {"key": "log_keep_days", "value": 7})["ok"]
+       and app.settings["log_keep_days"] == 7, "日誌天數只收 0/3/7/14/30")
+    ok(call("clear_stats")["ok"] and not app.stats.items, "清除統計")
+    ok(call("clear_logs")["ok"], "清空日誌")
     # 舊介面
     call("old", "set")
     drain(app, root)

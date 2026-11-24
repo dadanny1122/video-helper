@@ -84,6 +84,10 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
         act: async (n, a) => { window.__acts.push([n, a]);
           if (n === 'smart_report') return { ok: true, report: '網站   次數\npornhub  12' };
           if (n === 'nx_detail') return { ok: true, detail: { head: '下載影片｜傳回中', result: '下載完成：' + '<b>x</b>', good: true, note: '最近一次排程', why: [['書房電腦', '✔ 選中', '88.0', 'CPU 0.90']], timeline: [['11-24 21:30', '你', '已建立', '']] } };
+          if (n === 'sec_view') return { ok: true, sec: { paired: [{ id: 'abcdef0123456789', ua: '<img src=x onerror="window.__pwned=3">', paired: '2026-11-20 10:00', last: '2026-11-24 21:00', uses: 12 }],
+            bridge: '開著（127.0.0.1:47321，只有這台電腦連得到）', ai: [], ai_key: false,
+            net: [{ host: 'github.com', n: 3, last: '21:00:00', odd: false }, { host: 'weird.example', n: 1, last: '21:01:00', odd: true }],
+            log_size: '120 KB', log_keep: 14, components: 'yt-dlp 2026.10.26  sha256 abc…', stats: [['pornhub.com', 12, '8.1 GB', '85.2 Mbps', '±8%', '±3%']], stats_sum: '共下載 12 部' } };
           if (n === 'nx_audit') return { ok: true, audit: [['2026-11-24 13:00:00', 'device.approve', 'owner', '書房電腦', 'ok', '是我的']] };
           return { ok: true, msg: 'ok:' + n }; },
         ready: () => { window.__ready = true; return true; },
@@ -284,6 +288,23 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
       await page.waitForTimeout(200);
       a4 = await page.evaluate(() => window.__acts);
       ok(a4.some((a) => a[0] === 'nx_cancel' && a[1].id === 't1' && a[1].reason === '不要了') && a4.some((a) => a[0] === 'nx_audit'), '取消任務要理由、稽核紀錄打得開');
+      // ---- v1.41.0 安全與統計 ----
+      await page.click('#nav a[data-page="sec"]');
+      await page.waitForTimeout(500);
+      ok(await page.isVisible('#page-sec') && await page.locator('#sec-paired [data-unpair]').count() === 1 && await page.locator('#sec-net tr').count() === 3,
+        '安全與統計頁：配對、連線紀錄');
+      ok(await page.locator('#sec-net .badge2.warn').count() === 1 && (await page.inputValue('#sec-keep')) === '14' && !(await page.evaluate(() => window.__pwned)),
+        '不常見的網域有標記、日誌天數、瀏覽器名稱有跳脫');
+      await page.screenshot({ path: path.join(out, 'sec-dark.png') });
+      await page.click('[data-unpair]');
+      await page.click('#mbox button:has-text("取消配對")');
+      await page.selectOption('#sec-keep', '7');
+      await page.click('#sec-clearlog');
+      await page.click('#mbox button:has-text("不要")');
+      await page.waitForTimeout(200);
+      const a5 = await page.evaluate(() => window.__acts);
+      ok(a5.some((a) => a[0] === 'sec_unpair' && a[1] === 'abcdef0123456789') && a5.some((a) => a[0] === 'set' && a[1].key === 'log_keep_days' && a[1].value === 7)
+        && !a5.some((a) => a[0] === 'clear_logs'), '取消配對、改日誌天數（數字）、清空日誌按「不要」就不清');
       await page.click('#nav a[data-page="home"]');
       await page.setViewportSize({ width: 1000, height: 760 });
       await page.waitForTimeout(200);

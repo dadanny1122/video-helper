@@ -12,6 +12,7 @@ const FILTERS = { all: () => true, active: (t) => ['run', 'wait', 'retry'].inclu
   paused: (t) => t.st === 'pause', fail: (t) => ['fail', 'need'].includes(t.st) };
 const TITLES = { home: ['首頁', '安全、乾淨、穩定地下載'], dl: ['下載管理', '新增下載、看佇列、找以前下載的影片'],
   nodes: ['Nexus 管理', '讓另一台電腦幫你下載、下載完傳回這台'],
+  sec: ['安全與統計', '誰配對過、AI 用了多少、連過哪些網站、元件指紋、下載統計'],
   set: ['設定', '改了馬上存；原本視窗的 ③ 設定、⚙ 進階設定都在這裡'], setup: ['安裝擋廣告', '在 Chrome 裝暴力猴和 Video Helper 腳本'] };
 const PAGES = Object.keys(TITLES);
 const STEPS = [['安裝暴力猴（Violentmonkey）', '打開後按「加到 Chrome」→「新增擴充功能」'],
@@ -321,6 +322,29 @@ async function nxTask(op, id) {
   if (reason) { nxSig = ''; await act(name, { id, reason }); loadNexus(); }
 }
 
+// ---------- 安全與統計 ----------
+let secSig = '';
+async function loadSec() {
+  const r = await act('sec_view');
+  if (!r || !r.ok) return;
+  const c = r.sec, sig = JSON.stringify(c);
+  if (sig === secSig) return;
+  secSig = sig;
+  $('#sec-paired').innerHTML = c.paired.length ? c.paired.map((p) => `<div class="srow"><div><b>${esc(p.ua)}</b>
+      <div class="muted small">配對 ${esc(p.paired)}｜最後使用 ${esc(p.last)}｜用過 ${esc(p.uses)} 次｜編號 ${esc(p.id.slice(0, 8))}</div></div>
+      <button class="ghost small" data-unpair="${esc(p.id)}">取消</button></div>`).join('') : '<div class="empty">沒有配對過的瀏覽器</div>';
+  $('#sec-bridge').textContent = '連線服務：' + c.bridge;
+  $('#sec-ai').innerHTML = c.ai.length ? c.ai.map((m) => `<div class="srow"><div><b>${esc(m.month)}</b><div class="muted small">${m.items.map(esc).join('；')}</div></div></div>`).join('')
+    : `<div class="empty">還沒用過${c.ai_key ? '' : '，也沒填 AI 金鑰：完全不會連到 AI'}</div>`;
+  $('#sec-net').innerHTML = c.net.length ? `<table class="tbl"><tr><th>網域</th><th>次數</th><th>最後</th></tr>${c.net.map((h) => `<tr><td>${esc(h.host)}${h.odd ? ' <span class="badge2 warn">不在常見清單，可以查一下</span>' : ''}</td><td>${esc(h.n)}</td><td>${esc(h.last)}</td></tr>`).join('')}</table>`
+    : '<div class="empty">還沒連過任何網站</div>';
+  $('#sec-logsize').textContent = c.log_size;
+  if (document.activeElement !== $('#sec-keep')) $('#sec-keep').value = String(c.log_keep);
+  $('#sec-statsum').textContent = c.stats_sum;
+  $('#sec-stats').innerHTML = c.stats.length ? `<table class="tbl"><tr><th>網站</th><th>次數</th><th>總量</th><th>平均速度</th><th>時間誤差</th><th>大小誤差</th></tr>${c.stats.map((r) => `<tr>${r.map((x) => `<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</table>` : '';
+  $('#sec-comp').textContent = c.components;
+}
+
 // ---------- 右鍵選單 ----------
 function showMenu(x, y, key, open) {
   const items = [['▶ 播放', 'play', open], ['📂 打開檔案位置', 'reveal', open], ['📋 複製網址', 'copy_url', true],
@@ -355,6 +379,7 @@ function go(p) {
   for (const x of PAGES) $('#page-' + x).hidden = x !== p;
   setSig = ''; nxSig = '';
   if (p === 'nodes') loadNexus();
+  if (p === 'sec') { secSig = ''; loadSec(); }
   $('#ptitle').textContent = TITLES[p][0]; $('#sub').textContent = TITLES[p][1];
   $('main').scrollTop = 0;
   if (p === 'dl') { loadHist(); if (S) renderDl(S); }
@@ -387,6 +412,7 @@ function render(s) {
   }
   if (page === 'set') renderSettings(s.settings);
   if (page === 'nodes' && (tick.n = (tick.n || 0) + 1) % 2 === 0) loadNexus();
+  if (page === 'sec' && (tick.m = (tick.m || 0) + 1) % 10 === 0) loadSec();      // 5 秒更新一次
   if (page === 'setup') renderSetup(s.setup);
   if (s.ask && s.ask.id !== render.asked) {          // 電腦版要問你一件事（例如還在下載時關視窗）
     render.asked = s.ask.id;
@@ -405,7 +431,7 @@ function wire() {
     const p = a.dataset.page;
     if (PAGES.includes(p)) { go(p); lastSig = ''; if (S) render(S); return; }
     if (p === 'about') {
-      modal('關於 Video Helper', `版本 v${S ? S.version : ''}\n\n全部在你自己的電腦上跑，沒有伺服器。新介面只讀電腦版裡的資料、不連任何網站。\n🔒 安全中心、統計還沒搬過來，按了會打開原本的小視窗。`,
+      modal('關於 Video Helper', `版本 v${S ? S.version : ''}\n\n全部在你自己的電腦上跑，沒有伺服器。新介面只讀電腦版裡的資料、不連任何網站。`,
         [['說明書', 'manual', 'accent'], ['GitHub 發布頁', 'releases'], ['關閉', null]]).then((v) => v && act('link', v));
       return;
     }
@@ -441,7 +467,7 @@ function wire() {
     const k = e.target.closest('[data-set]');
     if (k) {
       const key = k.dataset.set;
-      const value = k.type === 'checkbox' ? k.checked : key === 'rate_limit' ? +k.value : k.value;
+      const value = k.type === 'checkbox' ? k.checked : (key === 'rate_limit' || key === 'log_keep_days') ? +k.value : k.value;
       setSig = ''; act('set', { key, value }); k.blur();
       return;
     }
@@ -543,6 +569,18 @@ function wire() {
       size_mb: +$('#nf-size').value, text: $('#nf-text').value, seconds: +$('#nf-sec').value, code: $('#nf-code').value,
       runtime: +$('#nf-run').value, tries: +$('#nf-tries').value });
     if (r && r.ok) { $('#nx-form').hidden = true; $('#nf-url').value = ''; nxSig = ''; loadNexus(); }
+  });
+  // 安全與統計
+  $('#sec-refresh').addEventListener('click', () => { secSig = ''; loadSec(); });
+  $('#sec-paired').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-unpair]'); if (!b) return;
+    if (await modal('取消配對', '這個瀏覽器之後就不能再送影片過來，要用得重新配對。', [['取消配對', 1, 'accent'], ['不要', 0]])) { await act('sec_unpair', b.dataset.unpair); secSig = ''; loadSec(); }
+  });
+  $('#sec-clearlog').addEventListener('click', async () => {
+    if (await modal('清空錯誤日誌', '出問題要回報時，日誌可以幫忙找原因。確定要清空嗎？', [['清空', 1, 'accent'], ['不要', 0]])) { await act('clear_logs'); secSig = ''; loadSec(); }
+  });
+  $('#sec-clearstats').addEventListener('click', async () => {
+    if (await modal('清除統計', '預估會回到沒有校正的狀態。確定要清除嗎？', [['清除', 1, 'accent'], ['不要', 0]])) { await act('clear_stats'); secSig = ''; loadSec(); }
   });
   // 設定
   $('#s-report').addEventListener('click', async () => {

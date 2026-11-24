@@ -27,9 +27,11 @@ ACTIONS = {
     # v1.39.0 Nexus 管理頁（每個值電腦版還會再檢查一次）
     "nx_enable": 3, "nx_bind": "dict", "nx_pair": None, "nx_device": "dict", "nx_task_new": "dict",
     "nx_cancel": "dict", "nx_fail": "dict", "nx_retry_return": 100, "nx_detail": 100, "nx_audit": None,
+    # v1.41.0 安全與統計
+    "sec_view": None, "sec_unpair": 16, "clear_logs": None, "clear_stats": None,
 }
 SETTING_KEYS = ("default_quality", "rate_limit", "skip_downloaded", "tray_always", "keep_history", "keep_stats",
-                "smart_segments", "filename_template", "close_action", "theme")
+                "smart_segments", "filename_template", "close_action", "theme", "log_keep_days")
 MAX_KEYS = 500
 QUALITIES = ("最高", "2160", "1440", "1080", "720", "480", "360")
 LOAD_TIMEOUT = 25            # 秒：網頁這麼久還沒說「好了」→ 改開舊介面

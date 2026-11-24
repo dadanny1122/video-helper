@@ -16,6 +16,7 @@
     <a data-page="dl"><i>⬇</i>下載管理</a>
     <a data-page="nodes"><i>🖧</i>Nexus 管理</a>
     <a data-page="set"><i>⚙</i>設定</a>
+    <a data-page="sec"><i>🔒</i>安全與統計</a>
     <a data-page="setup"><i>🛡</i>安裝擋廣告</a>
     <a data-page="about"><i>ⓘ</i>關於</a>
   </nav>
@@ -175,7 +176,7 @@
         <div class="card-h"><h3>🗂 紀錄與統計</h3></div>
         <div class="srow"><div><b>保存下載紀錄</b></div><label class="sw"><input type="checkbox" data-set="keep_history"><span></span></label></div>
         <div class="srow"><div><b>記錄下載統計</b><div class="muted small">用來校正預估；只存數字和網站名稱</div></div><label class="sw"><input type="checkbox" data-set="keep_stats"><span></span></label></div>
-        <div class="srow"><div><b>網速紀錄</b><div class="muted small" id="s-mbps"></div></div><div class="sbtns"><button class="ghost small" data-act="reset_speed">清除</button><button class="ghost small" data-act="old:stats">📊 統計（舊介面）</button></div></div>
+        <div class="srow"><div><b>網速紀錄</b><div class="muted small" id="s-mbps"></div></div><div class="sbtns"><button class="ghost small" data-act="reset_speed">清除</button><button class="ghost small" data-go="sec">📊 統計</button></div></div>
       </section>
 
       <section class="card">
@@ -191,7 +192,7 @@
         <div class="card-h"><h3>💾 備份、更新、問題排查</h3></div>
         <div class="srow"><div><b>備份</b><div class="muted small">換電腦、重灌時用；更新版本時也會自動備份一份</div></div><div class="sbtns"><button class="ghost small" data-act="export">⬆ 匯出</button><button class="ghost small" data-act="import">⬇ 匯入</button><button class="ghost small" data-act="open_backups">📂 自動備份</button></div></div>
         <div class="srow"><div><b>版本</b><div class="muted small" id="s-ver"></div></div><div class="sbtns"><button class="ghost small" data-act="check_update">檢查更新</button><button class="ghost small" data-act="link:releases">更新內容</button></div></div>
-        <div class="srow"><div><b>問題排查</b><div class="muted small path" id="s-data"></div></div><div class="sbtns"><button class="ghost small" data-act="open_log">📄 錯誤日誌</button><button class="ghost small" data-act="open_data">📂 設定資料夾</button><button class="ghost small" data-act="old:security">🔒 安全中心</button></div></div>
+        <div class="srow"><div><b>問題排查</b><div class="muted small path" id="s-data"></div></div><div class="sbtns"><button class="ghost small" data-act="open_log">📄 錯誤日誌</button><button class="ghost small" data-act="open_data">📂 設定資料夾</button><button class="ghost small" data-go="sec">🔒 安全中心</button></div></div>
       </section>
     </div>
   </div>
@@ -231,6 +232,47 @@
       </div>
       <div id="nx-tasks" class="list"></div>
     </section>
+  </div>
+
+  <!-- v1.41.0 安全與統計 -->
+  <div id="page-sec" class="page" hidden>
+    <div class="sgrid">
+      <section class="card">
+        <div class="card-h"><h3>🔗 已配對的瀏覽器</h3><div class="grow"></div><button class="ghost small" id="sec-refresh">↻ 重新整理</button></div>
+        <p class="muted small">只存密碼的雜湊值（看不到原本的密碼）。不認得的就按「取消」，那個瀏覽器就不能再送影片過來。</p>
+        <div id="sec-paired"></div>
+        <div class="muted small" id="sec-bridge"></div>
+      </section>
+      <section class="card">
+        <div class="card-h"><h3>🤖 AI 使用紀錄</h3></div>
+        <p class="muted small">只記次數和字數（token），不記送了什麼內容。</p>
+        <div id="sec-ai"></div>
+      </section>
+      <section class="card">
+        <div class="card-h"><h3>🌐 這次開著時連過的網站</h3></div>
+        <p class="muted small">在程式最底層記錄，只記網域和次數，關掉程式就清空（不存檔）。正常會看到：影片網站和它的影片伺服器、github.com（檢查更新、廣告清單）、huggingface.co（AI 字幕模型）、api.anthropic.com（有填金鑰才會）。</p>
+        <div id="sec-net"></div>
+      </section>
+      <section class="card">
+        <div class="card-h"><h3>📄 錯誤日誌</h3></div>
+        <p class="muted small">只記網站名稱和錯誤訊息，不記完整影片網址和檔名；只在這台電腦上，不會上傳。</p>
+        <div class="srow"><div><b>目前大小</b><div class="muted small" id="sec-logsize"></div></div><div class="sbtns"><button class="ghost small" data-act="open_log">📄 打開</button><button class="ghost small" id="sec-clearlog">🗑 清空</button></div></div>
+        <div class="srow"><div><b>自動刪除</b><div class="muted small">超過幾天沒更新就刪（0＝不刪）</div></div>
+          <select data-set="log_keep_days" id="sec-keep"><option>3</option><option>7</option><option>14</option><option>30</option><option value="0">不刪</option></select></div>
+      </section>
+      <section class="card">
+        <div class="card-h"><h3>📊 下載統計</h3><div class="grow"></div><button class="ghost small" id="sec-clearstats">清除統計</button></div>
+        <p class="muted small" id="sec-statsum"></p>
+        <div id="sec-stats"></div>
+        <p class="muted small">誤差＝原本的預估跟實際差多少（中位數）。同一個網站下載 3 次以上，之後的預估會自動校正。只記網站名稱和數字。</p>
+      </section>
+      <section class="card">
+        <div class="card-h"><h3>🧩 用到的元件和指紋（SHA-256）</h3></div>
+        <p class="muted small">可以跟 GitHub 發布頁、SECURITY.md 對照。EXE 另外有 GitHub 簽章：<code>gh attestation verify VideoHelper.exe -R dadanny1122/video-helper</code></p>
+        <pre class="report" id="sec-comp"></pre>
+        <button class="ghost small" data-act="link:attest">打開 GitHub 簽章紀錄</button>
+      </section>
+    </div>
   </div>
 
   <!-- v1.38.0 安裝擋廣告 -->

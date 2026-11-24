@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.40.0"
+VERSION = "1.41.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -4831,7 +4831,7 @@ class App:
 
     def web_old(self, page):
         """還沒做好的頁面：打開原本的視窗（舊介面）到那一頁；進階設定的頁只開進階設定那個小視窗"""
-        if page in ("nodes", "security", "stats", "tasks"):
+        if page in ("nodes", "tasks", "security", "stats"):
             self.show_advanced(self.adv_pages[page])
             return {"ok": True, "msg": "這頁還在做，先用原本的視窗打開"}
         self.root.deiconify()
@@ -5005,6 +5005,8 @@ class App:
         elif k == "filename_template" and v in FILENAME_TEMPLATES:
             st[k] = v
         elif k == "close_action" and v in CLOSE_CHOICES and (pystray or "系統匣" not in v):
+            st[k] = v
+        elif k == "log_keep_days" and type(v) is int and v in (0, 3, 7, 14, 30):
             st[k] = v
         elif k == "theme" and v in THEMES.values():
             self.theme_var.set(next(n for n, m in THEMES.items() if m == v))
@@ -5429,6 +5431,58 @@ class App:
                                        names.get(ev["resource_id"], (ev["resource_id"] or "")[:12]), ev["outcome"], ev["reason"] or ""]
                                       for ev in svc.audit(200)]}
 
+    # ---- v1.41.0 安全與統計頁（跟「⚙ 進階設定 → 🔒 安全／統計」一樣的內容） ----
+    KNOWN_HOSTS = ("github.com", "githubusercontent.com", "huggingface.co", "hf.co", "hf-mirror.com", "anthropic.com")
+
+    def web_sec_view(self, _):
+        fmt = lambda t: time.strftime("%Y-%m-%d %H:%M", time.localtime(t)) if t else "—"  # noqa: E731
+        meta = self.settings["bridge_meta"] or {}
+        paired = [{"id": h[:16], "ua": (meta.get(h) or {}).get("ua") or "（舊版配對，沒有紀錄）",
+                   "paired": fmt((meta.get(h) or {}).get("paired")), "last": fmt((meta.get(h) or {}).get("last")),
+                   "uses": (meta.get(h) or {}).get("uses", 0)} for h in (self.settings["bridge_tokens"] or [])]
+        names = {"classify": "判斷廣告網域", "translate": "翻譯字幕"}
+        ai = [{"month": month, "items": [f"{names.get(k, k)} {v['calls']} 次（送 {v['in']:,}／收 {v['out']:,} token）" for k, v in m.items()]}
+              for month, m in sorted((self.settings["ai_usage"] or {}).items(), reverse=True)[:6]]
+        with _NET_LOCK:
+            seen = sorted(NET_SEEN.items(), key=lambda x: -x[1]["n"])[:40]
+        net = [{"host": h, "n": e["n"], "last": time.strftime("%H:%M:%S", time.localtime(e["last"])),
+                "odd": not (any(h == d or h.endswith("." + d) for d in self.KNOWN_HOSTS)
+                            or bridge_url_allowed("https://" + h + "/", BRIDGE_HOSTS + BRIDGE_MEDIA_HOSTS))} for h, e in seen]
+        logp = os.path.join(data_dir(), "video_helper.log")
+        size = sum(os.path.getsize(p) for p in [logp, logp + ".1", logp + ".2"] if os.path.isfile(p))
+        if getattr(self, "_web_comp", None) is None:                 # 元件指紋要讀整個 EXE：背景算一次
+            self._web_comp = "計算中…"
+            threading.Thread(target=lambda: setattr(self, "_web_comp", component_report()), daemon=True).start()
+        pct = lambda x: "—" if x is None else f"±{x * 100:.0f}%"  # noqa: E731
+        rows = self.stats.summary()
+        n, total = sum(r["count"] for r in rows), sum(r["bytes"] for r in rows)
+        tf, tn = self.stats.factor("time")
+        return {"ok": True, "sec": {
+            "paired": paired, "bridge": f"開著（127.0.0.1:{self.bridge.port}，只有這台電腦連得到）" if self.bridge.server else "關閉",
+            "ai": ai, "ai_key": bool((self.settings["ai_key"] or "").strip()), "net": net,
+            "log_size": fmt_size(size), "log_keep": self.settings["log_keep_days"], "components": self._web_comp,
+            "stats": [[r["site"], r["count"], fmt_size(r["bytes"]), f"{r['mbps']:.1f} Mbps" if r["mbps"] else "—",
+                       pct(r["time_err"]), pct(r["size_err"])] for r in rows],
+            "stats_sum": (f"共下載 {n} 部｜總量 {fmt_size(total)}｜" + (f"整體來說實際時間是預估的 {tf:.2f} 倍（依最近 {tn} 次）"
+                                                                    if tf else "累積 3 次以上就會開始校正預估")) if n else "還沒有統計。下載完成後會自動記錄。"}}
+
+    def web_sec_unpair(self, hid):
+        h = next((x for x in (self.settings["bridge_tokens"] or []) if x[:16] == hid), None)
+        if not h:
+            return {"ok": False, "msg": "找不到這個配對"}
+        self.bridge.unpair(h)
+        self.refresh_bridge_label()
+        return {"ok": True, "msg": "已取消這個瀏覽器的配對"}
+
+    def web_clear_logs(self, _):
+        self.clear_logs(ask=False)
+        return {"ok": True, "msg": "錯誤日誌已清空"}
+
+    def web_clear_stats(self, _):
+        self.stats.clear()
+        self.refresh_stats()
+        return {"ok": True, "msg": "統計已清除，預估回到沒有校正的狀態"}
+
     def web_pair(self, _):
         self.pair_browser()
 
@@ -5439,6 +5493,7 @@ class App:
     def web_link(self, key):
         url = {"manual": f"https://{REPO.split('/')[0]}.github.io/{REPO.split('/')[1]}/manual/",
                "releases": f"https://github.com/{REPO}/releases",
+               "attest": f"https://github.com/{REPO}/attestations",
                "update": self.update_info and self.update_info[1]}.get(key)
         if not url:
             return {"ok": False, "msg": "沒有這個連結"}
@@ -5995,8 +6050,8 @@ class App:
         if getattr(self, "sec_comp", None) is not None and self.sec_comp.winfo_exists():
             self.sec_comp.config(text=text)
 
-    def clear_logs(self):
-        if not messagebox.askyesno("清空錯誤日誌", "確定要清空錯誤日誌嗎？（出問題要回報時，日誌可以幫忙找原因）"):
+    def clear_logs(self, ask=True):
+        if ask and not messagebox.askyesno("清空錯誤日誌", "確定要清空錯誤日誌嗎？（出問題要回報時，日誌可以幫忙找原因）"):
             return
         base = os.path.join(data_dir(), "video_helper.log")
         for h in log.handlers:
