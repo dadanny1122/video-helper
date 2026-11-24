@@ -30,9 +30,11 @@ def ok(cond, msg):
 
 
 # ---- 1. 不用視窗的部分 ----
-ok(set(n for n in dir(webui.Api) if not n.startswith("_")) == {"state", "static", "act", "ready"}, "網頁只拿得到 4 個函式")
+ok(set(n for n in dir(webui.Api) if not n.startswith("_")) == {"state", "static", "act", "ready", "history", "thumbs"}, "網頁只拿得到 6 個函式")
 for name, arg in (("eval", "x"), ("add", ""), ("add", 5), ("add", "x" * 20001), ("cancel", None), ("answer", {"id": 1}),
-                  ("old", "x" * 21)):
+                  ("old", "x" * 21), ("subtitles", "hab"), ("subtitles", []), ("subtitles", ["x" * 41]),
+                  ("delete_hist", ["a"] * 501), ("add_batch", {"text": "x", "quality": "999"}), ("enqueue_fmt", {"id": "a", "i": "1"}),
+                  ("enqueue_fmt", {"id": "a", "i": True})):
     try:
         webui.check_action(name, arg)
         ok(False, f"應該拒絕 {name}({arg!r:.30})")
@@ -120,6 +122,62 @@ def fake_mode():
     call("play", row["key"])
     ok(opened == [(f, True), (f, "play")], "📂 打開檔案位置、▶ 用播放器打開影片（不是打開資料夾）")
     a.open_path, a.play_file = real_open, real_play
+    # ---- v1.37.0 下載管理 ----
+    from PIL import Image
+    made = []
+
+    def fake_thumb(p):
+        made.append(p)
+        return Image.linear_gradient("L").convert("RGB").resize((320, 180)) if p == f else None   # 純色會被當成「全黑／全白」
+    host.thumbs([])                                        # 建 ThumbMaker
+    host._thumbs.make = fake_thumb
+    got = host.thumbs([row["key"], "hnotexist"])
+    ok(got.get(row["key"]) is None and "hnotexist" not in got, "縮圖：第一次排隊做、不認得的編號不理")
+    for _ in range(50):
+        time.sleep(0.05)
+        got = host.thumbs([row["key"]])
+        if got.get(row["key"]):
+            break
+    ok(str(got.get(row["key"])).startswith("data:image/jpeg;base64,"), "縮圖做好了（JPEG）")
+    ok(len([n for n in os.listdir(host.thumb_dir) if n.endswith(".jpg")]) == 1, "縮圖存在設定資料夾 thumbs")
+    res = host.history({"text": "測試"})
+    ok(res["total"] == 1 and res["items"][0]["key"] == row["key"], "紀錄搜尋")
+    ok(host.history({"status": "fail"})["total"] >= 1 and host.history({"site": "pornhub.com"})["total"] == 1, "紀錄篩選（失敗、網站）")
+    ok(host.history({"offset": "x", "limit": 10**9})["total"] >= 2, "查詢參數亂給也不會出錯")
+    fmts = [{"height": 1080, "size": 10_000_000, "exact": True, "direct": False},
+            {"height": 720, "size": 5_000_000, "exact": False, "direct": True}]
+    app.analyze_fn = lambda url: ("影片A", 125, fmts, 0)
+    ok(call("analyze", "ftp://x")["ok"] is False, "讀取：網址要 http 開頭")
+    call("analyze", "https://www.xvideos.com/video9/abc")
+    drain(app, root, 0.5)
+    an = host.state["analysis"]
+    ok(an and an["state"] == "ok" and [x["label"] for x in an["formats"]] == ["1080p", "720p"] and an["duration"], "讀取 → 畫質清單")
+    ok(call("enqueue_fmt", {"id": "舊的", "i": 0})["ok"] is False, "過期的畫質清單不能用")
+    n0 = len(app.queue.tasks)
+    r = call("enqueue_fmt", {"id": an["id"], "i": 1})
+    ok(r["ok"] and len(app.queue.tasks) == n0 + 1 and app.queue.tasks[-1]["fmt"]["height"] == 720 and host.state["analysis"] is None,
+       "選 720p 加入佇列")
+    call("analyze", "https://www.xvideos.com/video9/abc")
+    drain(app, root, 0.5)
+    ok(call("enqueue_fmt", {"id": host.state["analysis"]["id"], "i": 1})["ok"] is False, "同一部同畫質不重複加")
+    call("clear_analysis")
+    app.queue.tasks[-1]["status"] = a.CANCELLED
+    ok("清掉" in call("clear_finished")["msg"], "清掉已結束的")
+    call("copy_url", row["key"])
+    ok(root.clipboard_get() == "https://www.pornhub.com/view_video.php?viewkey=1", "複製網址")
+    subs = []
+    app.subtitle_dialog = lambda video=None, files=None: subs.append(files)
+    ok(call("subtitles", [row["key"], "hnotexist"])["ok"] and subs == [[f]], "AI 字幕：只帶檔案還在的")
+    want = []
+    app.web_analyze = lambda url, want_height=None: want.append((url, want_height)) or {"ok": True}
+    call("redownload", row["key"])
+    ok(want == [("https://www.pornhub.com/view_video.php?viewkey=1", 720)], "重新下載：用原本的畫質讀取")
+    del app.web_analyze
+    n0 = len(app.history.items)
+    call("delete_hist", [row["key"]])
+    drain(app, root, 0.2)
+    ok(len(app.history.items) == n0 - 1 and os.path.isfile(f) and not any(t["key"] == row["key"] for t in host.hist),
+       "刪除紀錄（影片檔還在）")
     # 舊介面
     call("old", "set")
     drain(app, root)
@@ -178,10 +236,13 @@ def real_mode():
                     time.sleep(1.5)                     # 讓第一次狀態畫上去
                     result["kpis"] = host.window.evaluate_js("document.querySelectorAll('.kpi').length")
                     result["ver"] = host.window.evaluate_js("document.getElementById('ver').textContent")
+                    host.window.evaluate_js("document.querySelector('#nav a[data-page=\"dl\"]').click()")
+                    time.sleep(1.0)
+                    result["dl"] = host.window.evaluate_js("!document.getElementById('page-dl').hidden && document.querySelectorAll('#dlq option').length")
                     from PIL import ImageGrab
                     w = host.window
                     ImageGrab.grab(bbox=(w.x, w.y, w.x + w.width, w.y + w.height), all_screens=True).save(
-                        os.path.join(shots, "windows-webview2.png"))
+                        os.path.join(shots, "windows-webview2-dl.png"))
                     result["shot"] = True
                 except Exception as e:
                     result["err"] = repr(e)
@@ -198,7 +259,21 @@ def real_mode():
     ok(result.get("load_s") is not None, f"網頁 30 秒內載入（{result.get('load_s')} 秒）")
     ok(result.get("kpis") == 4, "WebView2 裡畫出 4 張數據卡")
     ok(result.get("ver") == "v" + a.VERSION, "版本號從電腦版傳到網頁")
+    ok(result.get("dl") == 7, "下載管理頁打得開、畫質選單有 7 個")
     ok(result.get("shot"), "截圖 " + str(result.get("err", "")))
+    # 縮圖：請 Windows 做一張（GitHub 的 Windows Server 不一定有影片縮圖功能 → 只記錄結果，不算失敗）
+    try:
+        import subprocess
+        from webui.thumbs import fit, shell_thumbnail
+        mp4 = os.path.join(os.environ["VIDEO_HELPER_HOME"], "thumb-test.mp4")
+        subprocess.run([a.FFMPEG, "-y", "-loglevel", "error", "-i", os.path.join(ROOT, ".github", "fixtures", "sample.ts"),
+                        "-c", "copy", "-bsf:a", "aac_adtstoasc", mp4], check=True)
+        img = shell_thumbnail(mp4)
+        if img is not None:
+            fit(img).save(os.path.join(shots, "thumb.jpg"))
+        print(f"::notice title=Windows 縮圖::{'做得出來 ' + str(img.size) if img is not None else '這台 Windows 做不出影片縮圖（會顯示網站色塊）'}", flush=True)
+    except Exception as e:
+        print(f"::warning title=Windows 縮圖::{e!r}", flush=True)
     ok(result.get("close_cancelled") and result.get("quit"), "按 X → 交給 App → 沒在下載就結束")
     ok(time.time() - t < 90, "整個流程 90 秒內結束")
 

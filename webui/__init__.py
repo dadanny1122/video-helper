@@ -11,13 +11,18 @@ import threading
 import time
 
 WEBVIEW2_GUID = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"     # 微軟文件：WebView2 Runtime 的登錄檔位置
-# 網頁可以要求的動作（名稱 → 參數上限長度；None＝不收參數）
+# 網頁可以要求的動作（名稱 → 參數上限長度；None＝不收參數；"keys"＝紀錄編號清單；"dict"＝另外檢查）
 ACTIONS = {
     "add": 20000, "paste": None, "toggle_pause": None, "retry_failed": None,
     "cancel": 100, "remove": 300, "play": 300, "reveal": 300,
     "open_folder": None, "old": 20, "pair": None, "check_update": None, "link": 20,
-    "set_ui": 20, "answer": 200, "clear_notices": None,
+    "set_ui": 20, "answer": "dict", "clear_notices": None,
+    # v1.37.0 下載管理頁
+    "add_batch": "dict", "analyze": 2000, "enqueue_fmt": "dict", "clear_analysis": None, "clear_finished": None,
+    "redownload": 300, "copy_url": 300, "subtitles": "keys", "delete_hist": "keys",
 }
+MAX_KEYS = 500
+QUALITIES = ("最高", "2160", "1440", "1080", "720", "480", "360")
 LOAD_TIMEOUT = 25            # 秒：網頁這麼久還沒說「好了」→ 改開舊介面
 
 
@@ -104,10 +109,24 @@ def check_action(name, arg):
     lim = ACTIONS[name]
     if lim is None:
         return None
-    if name == "answer":
-        if not isinstance(arg, dict) or not isinstance(arg.get("id"), str) or not isinstance(arg.get("choice"), int):
+    if lim == "keys":
+        if not isinstance(arg, list) or not arg or len(arg) > MAX_KEYS or not all(isinstance(k, str) and len(k) <= 40 for k in arg):
             raise ValueError("參數不對")
-        return {"id": arg["id"][:lim], "choice": int(arg["choice"])}
+        return list(arg)
+    if lim == "dict":
+        if not isinstance(arg, dict):
+            raise ValueError("參數不對")
+        if name in ("answer", "enqueue_fmt"):
+            n = "choice" if name == "answer" else "i"
+            if not isinstance(arg.get("id"), str) or type(arg.get(n)) is not int:
+                raise ValueError("參數不對")
+            return {"id": arg["id"][:200], n: arg[n]}
+        if name == "add_batch":
+            t, q = arg.get("text"), arg.get("quality")
+            if not isinstance(t, str) or not t or len(t) > 20000 or q not in QUALITIES:
+                raise ValueError("參數不對")
+            return {"text": t, "quality": q}
+        raise ValueError("參數不對")
     if not isinstance(arg, str) or not arg or len(arg) > lim:
         raise ValueError("參數不對")
     return arg
@@ -132,6 +151,12 @@ class Api:
         self._host.loaded = time.time()
         return True
 
+    def history(self, query=None):
+        return self._host.history(query)
+
+    def thumbs(self, keys=None):
+        return self._host.thumbs(keys)
+
 
 class Host:
     """網頁視窗這一邊：App 用它來顯示／藏起視窗、發布狀態；網頁用它丟動作給 App"""
@@ -144,7 +169,10 @@ class Host:
         self.loaded = None           # 網頁說「好了」的時間
         self.hidden = False
         self.allow_close = False
-        self.replies = {}            # 有的動作要馬上回網頁一句話（例如「已加入 3 部」）
+        self.hist = None             # 下載紀錄（App 有變才整份換）：[{key, title, site, …}]
+        self.files = {}              # 紀錄編號 → 影片檔路徑（縮圖用；網頁拿不到）
+        self.thumb_dir = None
+        self._thumbs = None
 
     def act(self, name, arg):
         try:
@@ -159,6 +187,41 @@ class Host:
         app.q.put(("web_action", (name, arg, box, ev)))
         ev.wait(5)                    # Tk 執行緒處理完會 set；太久就先回「處理中」
         return box.get("reply") or {"ok": True}
+
+    def history(self, query):
+        """下載管理頁：搜尋／篩選下載紀錄（在網頁的執行緒跑，只讀 App 換好的那一份）"""
+        q = query if isinstance(query, dict) else {}
+        text = str(q.get("text") or "")[:100].lower().strip()
+        st = q.get("status") if q.get("status") in ("done", "fail") else ""
+        site = str(q.get("site") or "")[:60]
+        off = max(0, min(int(q.get("offset") or 0), 100000)) if isinstance(q.get("offset"), int) else 0
+        lim = max(1, min(int(q.get("limit") or 100), 200)) if isinstance(q.get("limit"), int) else 100
+        rows = self.hist or []
+        sites = sorted({r["site"] for r in rows if r["site"]})
+        counts = {"all": len(rows), "done": sum(r["st"] == "done" for r in rows)}
+        counts["fail"] = counts["all"] - counts["done"]
+        if st == "done":
+            rows = [r for r in rows if r["st"] == "done"]
+        elif st == "fail":
+            rows = [r for r in rows if r["st"] != "done"]
+        if site:
+            rows = [r for r in rows if r["site"] == site]
+        if text:
+            rows = [r for r in rows if text in r["title"].lower() or text in r["site"]]
+        return {"total": len(rows), "items": rows[off:off + lim], "sites": sites, "counts": counts}
+
+    def thumbs(self, keys):
+        """縮圖：有做好的回 data: 圖片，還沒做的排隊做（回 None），做不出來的回 ""（網頁就不再問）"""
+        if not isinstance(keys, list):
+            return {}
+        if self._thumbs is None:
+            from webui.thumbs import ThumbMaker
+            self._thumbs = ThumbMaker(self.thumb_dir)
+        out = {}
+        for k in keys[:80]:
+            if isinstance(k, str) and k in self.files:
+                out[k] = self._thumbs.get(self.files[k])
+        return out
 
     # ---- 視窗 ----
     def show(self):

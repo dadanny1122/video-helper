@@ -11,6 +11,7 @@ const html = read('index.html').replace('/*CSS*/', () => read('app.css')).replac
 const out = process.argv[2] || 'webui-shots';
 fs.mkdirSync(out, { recursive: true });
 
+const JPG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAJABADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwCvRRRQfZn/2Q==';
 const EVIL = '<img src=x onerror="window.__pwned=1">"><script>window.__pwned=2</script>';
 function state(theme, extra = {}) {
   return Object.assign({
@@ -31,7 +32,8 @@ function state(theme, extra = {}) {
     ],
     nexus: { enabled: true, running: true, online: 1, total: 2, tasks: 1, devices: [{ name: '書房電腦', online: true, state: '連線中' }, { name: EVIL, online: false, state: '離線' }] },
     notices: [{ icon: '✅', text: '下載完成：' + EVIL, time: '20:31' }],
-    update: { tag: '1.37.0' }, ask: null,
+    update: { tag: '1.38.0' }, ask: null, hist_ver: 1, analysis: null, batch: false,
+    qualities: ['最高', '2160', '1440', '1080', '720', '480', '360'], default_quality: '1080', rate_limit: 0,
   }, extra);
 }
 
@@ -42,11 +44,21 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
   const browser = await chromium.launch();
   for (const theme of ['dark', 'light']) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const extra = {};
     const requests = [];
     page.on('request', (r) => { if (!/^(data|about):/.test(r.url())) requests.push(r.url()); });
     const errors = [];
     page.on('pageerror', (e) => errors.push(String(e)));
-    await page.exposeFunction('__state', () => state(theme, globalThis.__extra || {}));
+    await page.exposeFunction('__state', () => state(theme, extra));
+    await page.exposeFunction('__hist', (q) => {
+      let rows = state(theme).tasks.filter((t) => t.key[0] === 'h');
+      if (q.text) rows = rows.filter((t) => t.title.toLowerCase().includes(q.text.toLowerCase()));
+      if (q.status === 'done') rows = rows.filter((t) => t.st === 'done');
+      if (q.status === 'fail') rows = rows.filter((t) => t.st !== 'done');
+      if (q.site) rows = rows.filter((t) => t.site === q.site);
+      return { total: rows.length, items: rows, sites: ['redtube.com', 'spankbang.com', 'youporn.com'], counts: {} };
+    });
+    await page.exposeFunction('__thumbs', (keys) => Object.fromEntries(keys.map((k) => [k, k === 'hab' ? JPG : k === 'hcd' ? 'javascript:alert(1)' : ''])));
     await page.addInitScript(() => {
       window.__acts = [];
       window.__ask = null;
@@ -55,6 +67,8 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
         static: async () => ({ news: [{ ver: '1.36.0', title: '新介面預覽', items: ['左側選單', '數據卡'] }, { ver: '1.35.0', title: '系統匣', items: ['一直都在'] }] }),
         act: async (n, a) => { window.__acts.push([n, a]); return { ok: true, msg: 'ok:' + n }; },
         ready: () => { window.__ready = true; return true; },
+        history: (q) => window.__hist(q),
+        thumbs: (k) => window.__thumbs(k),
       } };
     });
     await page.route('**/*', (r) => r.abort());       // 有任何連外請求就擋下（上面另外記錄）
@@ -65,7 +79,8 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
 
     ok(await page.locator('.kpi').count() === 4, `${theme}：4 張數據卡`);
     ok(await page.locator('#list .row').count() === 6, `${theme}：任務列表 6 筆`);
-    ok(await page.evaluate(() => !window.__pwned && !document.querySelector('#list img, #nexus img, #notices img')), `${theme}：網站來的標題被跳脫，沒有執行`);
+    ok(await page.evaluate(() => !window.__pwned && [...document.querySelectorAll('#list img, #nexus img, #notices img')]
+      .every((i) => i.parentElement.classList.contains('thumb') && i.src.startsWith('data:image/jpeg;base64,'))), `${theme}：網站來的標題被跳脫，沒有執行（只有縮圖是圖片）`);
     ok((await page.locator('.news').count()) === 3, `${theme}：最新消息 2 則＋有新版本`);
     ok(await page.evaluate((t) => document.body.className === t, theme), `${theme}：主題套用`);
     await page.screenshot({ path: path.join(out, `home-${theme}.png`) });
@@ -103,6 +118,65 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
       await page.click('#bell');
       ok(await page.isVisible('#panel'), '通知中心打得開');
       await page.screenshot({ path: path.join(out, 'notices.png') });
+      // ---- v1.37.0 下載管理 ----
+      await page.keyboard.press('Escape');
+      await page.click('#bell');
+      await page.click('#nav a[data-page="dl"]');
+      await page.waitForTimeout(400);
+      ok(await page.isVisible('#page-dl') && !(await page.isVisible('#page-home')), '下載管理頁打得開');
+      ok(await page.locator('#qlist .row').count() === 3, '佇列 3 筆（只有還沒結束的）');
+      ok(await page.locator('#hlist .row').count() === 3, '紀錄 3 筆');
+      await page.waitForTimeout(500);
+      ok(await page.locator('#hlist .row[data-key="hab"] img').count() === 1, '有縮圖的顯示縮圖');
+      ok(await page.locator('#hlist .row[data-key="hcd"] img').count() === 0, '不是 JPEG 的縮圖網址不放進畫面');
+      await page.fill('#hsearch', '節點');
+      await page.waitForTimeout(400);
+      ok(await page.locator('#hlist .row').count() === 1, '搜尋標題');
+      await page.fill('#hsearch', '');
+      await page.click('#hchips button[data-s="fail"]');
+      await page.waitForTimeout(300);
+      ok(await page.locator('#hlist .row').count() === 1, '篩選失敗');
+      await page.click('#hchips button[data-s=""]');
+      await page.waitForTimeout(300);
+      await page.fill('#dlurls', 'https://www.xvideos.com/video1/a\nhttps://www.xvideos.com/video2/b\n');
+      ok((await page.textContent('#dlgo')).includes('2 部'), '貼兩個網址 → 按鈕變「全部加入（2 部）」');
+      await page.selectOption('#dlq', '720');
+      await page.click('#dlgo');
+      await page.fill('#dlurls', 'https://www.xvideos.com/video9/z');
+      await page.click('#dlgo');
+      await page.waitForTimeout(200);
+      let acts2 = await page.evaluate(() => window.__acts);
+      ok(acts2.some((a) => a[0] === 'add_batch' && a[1].quality === '720' && a[1].text.split('\n').length === 2), '批次加入帶著選的畫質');
+      ok(acts2.some((a) => a[0] === 'analyze' && a[1] === 'https://www.xvideos.com/video9/z'), '一個網址 → 讀取');
+      extra.analysis = { id: 'an1', url: 'https://www.xvideos.com/video9/z', state: 'ok', title: EVIL, duration: '12:34', site: 'xvideos.com',
+        pick: 0, downloaded: '', formats: [{ i: 0, label: '1080p', size: '約 1.1 GB', time: '3 分鐘', kind: '切片' }, { i: 1, label: '720p', size: '600 MB', time: '2 分鐘', kind: 'MP4 直連' }] };
+      await page.waitForSelector('.fmt', { timeout: 2000 });
+      ok(await page.locator('.fmt').count() === 2 && await page.evaluate(() => !window.__pwned), '畫質清單出現（標題有跳脫）');
+      await page.screenshot({ path: path.join(out, 'dl-dark.png'), fullPage: false });
+      await page.click('.fmt[data-fmt="1"]');
+      await page.click('#ango');
+      await page.waitForTimeout(200);
+      acts2 = await page.evaluate(() => window.__acts);
+      ok(acts2.some((a) => a[0] === 'enqueue_fmt' && a[1].id === 'an1' && a[1].i === 1), '選 720p 下載 → enqueue_fmt');
+      extra.analysis = null;
+      await page.click('#hlist .row[data-key="hab"]', { button: 'right' });
+      ok(await page.isVisible('#menu'), '右鍵出現選單');
+      await page.click('#menu button[data-m="copy_url"]');
+      await page.click('#hlist .row[data-key="hef"]', { button: 'right' });
+      ok(await page.locator('#menu button[data-m="play"]:disabled').count() === 1, '失敗的紀錄不能播放（選單是灰的）');
+      await page.keyboard.press('Escape');
+      await page.check('#hlist input[data-sel="hab"]');
+      await page.check('#hlist input[data-sel="hcd"]');
+      ok(await page.isVisible('#bulk') && (await page.textContent('#bulkn')).includes('2'), '勾兩部 → 出現批次按鈕');
+      await page.click('#bsub');
+      await page.dblclick('#hlist .row[data-key="hef"] .t1');
+      await page.waitForTimeout(200);
+      acts2 = await page.evaluate(() => window.__acts);
+      ok(acts2.some((a) => a[0] === 'copy_url' && a[1] === 'hab'), '右鍵 → 複製網址');
+      ok(acts2.some((a) => a[0] === 'subtitles' && a[1].length === 2), '勾選的一起做 AI 字幕');
+      ok(acts2.some((a) => a[0] === 'redownload' && a[1] === 'hef'), '雙擊失敗的 → 重新下載');
+      await page.screenshot({ path: path.join(out, 'dl-dark-2.png') });
+      await page.click('#nav a[data-page="home"]');
       await page.setViewportSize({ width: 1000, height: 760 });
       await page.waitForTimeout(200);
       await page.screenshot({ path: path.join(out, 'home-narrow.png') });

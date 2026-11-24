@@ -13,7 +13,7 @@
   <div class="brand"><span class="logo">▶</span><b>Video Helper</b></div>
   <nav id="nav">
     <a data-page="home" class="on"><i>⌂</i>首頁</a>
-    <a data-page="dl"><i>⬇</i>下載管理<em>舊介面</em></a>
+    <a data-page="dl"><i>⬇</i>下載管理</a>
     <a data-page="nodes"><i>🖧</i>Nexus 管理<em>舊介面</em></a>
     <a data-page="set"><i>⚙</i>設定<em>舊介面</em></a>
     <a data-page="about"><i>ⓘ</i>關於</a>
@@ -29,7 +29,7 @@
 <main>
   <header class="top">
     <div>
-      <h1>首頁</h1>
+      <h1 id="ptitle">首頁</h1>
       <div class="muted small" id="sub">安全、乾淨、穩定地下載</div>
     </div>
     <div class="top-r">
@@ -38,6 +38,7 @@
     </div>
   </header>
 
+  <div id="page-home" class="page">
   <section class="hero">
     <div class="hero-l">
       <h2>貼上網址，<span class="grad">一鍵下載</span></h2>
@@ -64,7 +65,7 @@
           <button data-f="fail">失敗</button>
         </div>
         <div class="grow"></div>
-        <button class="ghost small" id="pausebtn" data-act="toggle_pause">⏸ 全部暫停</button>
+        <button class="ghost small pausebtn" data-act="toggle_pause">⏸ 全部暫停</button>
         <button class="ghost small" data-act="retry_failed">🔁 重試失敗</button>
       </div>
       <div id="list" class="list"></div>
@@ -89,7 +90,56 @@
       </section>
     </div>
   </div>
+  </div>
+
+  <!-- v1.37.0 下載管理 -->
+  <div id="page-dl" class="page" hidden>
+    <section class="card">
+      <div class="card-h"><h3>新增下載</h3><span class="muted small">一個網址 → 讀取後選畫質；很多行 → 全部用同一個畫質加入</span></div>
+      <div class="add2">
+        <textarea id="dlurls" rows="2" placeholder="貼上影片網址（一行一個）…" spellcheck="false"></textarea>
+        <div class="addside">
+          <label class="muted small">畫質上限<select id="dlq"></select></label>
+          <button class="accent" id="dlgo">讀取</button>
+        </div>
+      </div>
+      <div id="analysis"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-h">
+        <h3>下載佇列</h3><span class="muted small" id="qsum"></span>
+        <div class="grow"></div>
+        <button class="ghost small pausebtn" data-act="toggle_pause">⏸ 全部暫停</button>
+        <button class="ghost small" data-act="retry_failed">🔁 重試失敗</button>
+        <button class="ghost small" data-act="clear_finished">🧹 清掉已結束</button>
+      </div>
+      <div id="qlist" class="list"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-h">
+        <h3>下載紀錄</h3>
+        <input id="hsearch" class="search" type="search" placeholder="🔍 搜尋標題或網站" spellcheck="false">
+        <select id="hsite" class="sel"><option value="">全部網站</option></select>
+        <div class="chips" id="hchips">
+          <button data-s="" class="on">全部</button><button data-s="done">完成</button><button data-s="fail">失敗</button>
+        </div>
+      </div>
+      <div class="bulk" id="bulk" hidden>
+        <b id="bulkn"></b>
+        <button class="ghost small" id="bsub">📝 AI 字幕</button>
+        <button class="ghost small" id="bdel">🗑 刪除紀錄</button>
+        <div class="grow"></div>
+        <button class="ghost small" id="ball">全選這頁</button>
+        <button class="ghost small" id="bnone">取消選取</button>
+      </div>
+      <div id="hlist" class="list tall"></div>
+      <div class="more"><span class="muted small" id="hcount"></span><button class="ghost small" id="hmore" hidden>載入更多</button></div>
+    </section>
+  </div>
 </main>
+<div id="menu" class="menu" hidden></div>
 
 <div id="panel" class="panel" hidden>
   <div class="card-h"><h3>通知</h3><div class="grow"></div><button class="ghost small" id="clearn">清除</button></div>

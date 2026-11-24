@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.36.1"
+VERSION = "1.37.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -379,6 +379,7 @@ class History:
         return len(new)
 
     def save(self):
+        self.version = getattr(self, "version", 0) + 1     # v1.37.0 新介面看這個號碼決定要不要重送紀錄
         try:
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
@@ -3277,6 +3278,8 @@ class App:
         self.notices = []              # 新介面的通知中心（最新的在前）
         self.update_info = None        # 有新版本：(版本, 網址)
         self._web_ask = None           # 新介面要問使用者的事（例如還在下載時關視窗）
+        self._web_an = None            # 新介面「新增下載」讀取一個網址的結果（畫質清單）
+        self._web_urls = {}            # 新介面紀錄編號 → 網址
         self.q = queue.Queue()
         self.settings = Settings()
         global AI_USAGE_HOOK
@@ -3855,11 +3858,12 @@ class App:
         ttk.Button(win, text="加入佇列", command=go).pack(pady=8)
         self.batch_win = win
 
-    def start_batch(self, urls):
+    def start_batch(self, urls, quality=None):
         self.batch_running = True
         self.set_buttons()
         self.status.config(text=f"讀取網址中 0/{len(urls)}…")
-        threading.Thread(target=self._batch_worker, args=(urls, self.settings["default_quality"]), daemon=True).start()
+        q = quality if quality in QUALITY_CHOICES else self.settings["default_quality"]
+        threading.Thread(target=self._batch_worker, args=(urls, q), daemon=True).start()
 
     def _batch_worker(self, urls, quality):
         ok = fail = 0
@@ -4491,10 +4495,7 @@ class App:
         win = tk.Toplevel(self.root)
         win.title("配對瀏覽器腳本")
         win.geometry(f"{px(440)}x{px(300)}")
-        if self.web and not self.web_fallback and self.root.state() == "withdrawn":
-            win.attributes("-topmost", True)               # 新介面：原本的視窗藏著，不能掛在它下面（會一起藏起來）
-        else:
-            win.transient(self.root)
+        self.float_dialog(win, transient=True)
         ttk.Label(win, text="在影片網頁按右下角「⬇ 下載」→「🖥 送到電腦版」，\n跳出配對視窗時輸入：",
                   justify="center").pack(pady=(18, 8))
         ttk.Label(win, text=f"{code[:3]} {code[3:]}", font=("Consolas", 32, "bold")).pack()
@@ -4539,10 +4540,20 @@ class App:
               FAILED: "fail", NEEDS_ACTION: "need", CANCELLED: "cancel"}
     WEB_OLD_TABS = {"dl": 0, "hist": 1, "set": 2, "setup": 3}
 
+    def float_dialog(self, win, transient=False):
+        """小視窗：新介面時原本的視窗藏著，掛在它下面會一起藏起來 → 改成先跳到最上面"""
+        if self.web and not self.web_fallback and self.root.state() == "withdrawn":
+            win.attributes("-topmost", True)
+            win.after(600, lambda: win.winfo_exists() and win.attributes("-topmost", False))
+            win.after(50, lambda: win.winfo_exists() and (win.lift(), win.focus_force()))
+        elif transient:
+            win.transient(self.root)
+
     def web_attach(self):
         """新介面：原本的視窗藏起來當「舊介面」（還沒做好的頁面先用它）；網頁太久沒說好了就改用原本的視窗"""
         from webui import LOAD_TIMEOUT
         self.web.app = self
+        self.web.thumb_dir = os.path.join(data_dir(), "thumbs")
         self.root.withdraw()
         self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw)   # 舊介面的 X 只是藏起來，主視窗是網頁
         self.web_publish()
@@ -4637,13 +4648,23 @@ class App:
             if t.get("note") and st in ("fail", "need"):
                 item["note"] = str(t["note"])[:80]
             tasks.append(item)
-        for r in self.history.items[:40]:
-            st = self.WEB_ST.get(r.get("status"), "done")
-            tasks.append({"key": self._hist_key(r), "title": r.get("title") or r.get("url", ""), "site": site_of(r.get("url", "")),
-                          "quality": quality_label(r.get("height")) if r.get("height") else "",
-                          "size": fmt_size(r["size"]) if r.get("size") else "", "time": str(r.get("time", ""))[5:],
-                          "st": st, "progress": 100 if st == "done" else 0, "open": st == "done" and bool(r.get("file")),
-                          "node": bool(r.get("node")), "note": "" if st == "done" else str(r.get("error") or "")[:80]})
+        ver = getattr(self.history, "version", 0)
+        if getattr(self, "_web_hver", None) != ver or self.web.hist is None:   # 紀錄有變才重做（最多 500 筆）
+            self._web_hver = ver
+            hist, files, urls = [], {}, {}
+            for r in self.history.items:
+                st = self.WEB_ST.get(r.get("status"), "done")
+                k = self._hist_key(r)
+                hist.append({"key": k, "title": r.get("title") or r.get("url", ""), "site": site_of(r.get("url", "")),
+                             "quality": quality_label(r.get("height")) if r.get("height") else "",
+                             "size": fmt_size(r["size"]) if r.get("size") else "", "time": str(r.get("time", ""))[5:],
+                             "st": st, "progress": 100 if st == "done" else 0, "open": st == "done" and bool(r.get("file")),
+                             "node": bool(r.get("node")), "note": "" if st == "done" else str(r.get("error") or "")[:120]})
+                if r.get("file"):
+                    files[k] = r["file"]
+                urls[k] = r.get("url", "")
+            self.web.hist, self.web.files, self._web_urls = hist, files, urls     # 整份換掉（網頁執行緒只讀）
+        tasks += self.web.hist[:40]
         run, wait = self.queue.count(RUNNING), self.queue.count(WAITING, RETRY_WAIT)
         today = datetime.now().strftime("%Y-%m-%d")
         done = [r for r in self.history.items if r.get("status") == DONE]
@@ -4665,6 +4686,9 @@ class App:
             "version": VERSION, "theme": self.theme, "paused": paused, "bridge": bool(self.bridge.server),
             "kpis": kpis, "tasks": tasks, "nexus": nx, "notices": list(self.notices),
             "update": {"tag": self.update_info[0]} if self.update_info else None, "ask": self._web_ask,
+            "hist_ver": ver, "analysis": self._web_an, "batch": self.batch_running,
+            "qualities": QUALITY_CHOICES, "default_quality": self.settings["default_quality"],
+            "rate_limit": self.settings["rate_limit_mbps"] or 0,
         }
 
     def on_web_action(self, data):
@@ -4682,7 +4706,7 @@ class App:
             except Exception:
                 pass
 
-    def web_add(self, text):
+    def web_add(self, text, quality=None):
         urls = []
         for line in str(text).splitlines():
             u = line.strip()
@@ -4694,8 +4718,9 @@ class App:
             return {"ok": False, "msg": "一次最多 50 個網址"}
         if self.batch_running:
             return {"ok": False, "msg": "上一批網址還在讀取，等一下再加"}
-        self.start_batch(urls)
-        return {"ok": True, "msg": f"已加入 {len(urls)} 部，讀取網址中…（用預設畫質 {self.settings['default_quality']}）"}
+        q = quality if quality in QUALITY_CHOICES else self.settings["default_quality"]
+        self.start_batch(urls, q)
+        return {"ok": True, "msg": f"已加入 {len(urls)} 部，讀取網址中…（畫質：{quality_label(None) if q == '最高' else q + 'p'}以內最高的）"}
 
     def web_paste(self, _):
         try:
@@ -4779,6 +4804,119 @@ class App:
         elif page in self.WEB_OLD_TABS:
             self.nav(self.WEB_OLD_TABS[page])
         return {"ok": True, "msg": "這頁還在做，先用原本的視窗打開"}
+
+    # ---- v1.37.0 下載管理頁 ----
+    def web_add_batch(self, arg):
+        return self.web_add(arg["text"], arg.get("quality"))
+
+    def web_analyze(self, url, want_height=None):
+        """讀取一個網址的畫質清單（跟 ① 的「讀取」一樣），結果放在狀態的 analysis"""
+        url = str(url).strip()
+        if not url.startswith(("http://", "https://")):
+            return {"ok": False, "msg": "網址要 http 開頭"}
+        if self._web_an and self._web_an["state"] == "loading":
+            return {"ok": False, "msg": "上一個網址還在讀取"}
+        aid = str(time.time_ns())
+        self._web_an = {"id": aid, "url": url, "state": "loading"}
+        self._web_an_raw = None
+        self._web_want = want_height
+
+        def work():
+            try:
+                self.q.put(("web_analyzed", (aid, url) + tuple(self.analyze_fn(url))))
+            except Exception as e:
+                log.exception("新介面讀取失敗：%s", log_url(url))
+                self.q.put(("web_analyzed", (aid, url, None, 0, None, str(e))))
+        threading.Thread(target=work, daemon=True).start()
+        return {"ok": True}
+
+    def on_web_analyzed(self, data):
+        aid, url, title, dur, fmts, mbps = data
+        if not self._web_an or self._web_an["id"] != aid:
+            return
+        if fmts is None:
+            self._web_an = {"id": aid, "url": url, "state": "error", "err": f"讀取失敗：{mbps}"[:300]}
+            return
+        if mbps:
+            self.remember_speed(mbps)
+        if not fmts:
+            self._web_an = {"id": aid, "url": url, "state": "error", "title": title, "err": "找不到可下載的畫質"}
+            return
+        site = site_of(url)
+        tf, _ = self.stats.factor("time", site)
+        sf, _ = self.stats.factor("size", site)
+        rows = []
+        for i, f in enumerate(fmts):
+            size = f["size"] * (sf if (sf and not f["exact"]) else 1) if f["size"] else 0
+            raw_t = f["size"] * 8 / (self.mbps * 1e6) if f["size"] and self.mbps else None
+            rows.append({"i": i, "label": quality_label(f["height"]),
+                         "size": ("" if f["exact"] or not size else "約 ") + (fmt_size(size) if size else "大小未知"),
+                         "time": fmt_time(raw_t * (tf or 1)) if raw_t else "時間未知", "kind": "MP4 直連" if f["direct"] else "切片"})
+        want = self._web_want
+        pick = pick_default(fmts, (str(want) if want else "最高") if want is not None else self.settings["default_quality"])
+        old = find_downloaded(self.history.items, url)
+        self._web_an_raw = (url, title, fmts)
+        self._web_an = {"id": aid, "url": url, "state": "ok", "title": title, "duration": fmt_duration(dur),
+                        "formats": rows, "pick": pick, "site": site,
+                        "downloaded": f"{old.get('time', '')} 下載過（{quality_label(old.get('height'))}）" if old else ""}
+
+    def web_enqueue_fmt(self, arg):
+        an, raw = self._web_an, getattr(self, "_web_an_raw", None)
+        if not an or an["id"] != arg["id"] or not raw or not 0 <= arg["i"] < len(raw[2]):
+            return {"ok": False, "msg": "畫質清單已經過期，請重新讀取"}
+        url, title, fmts = raw
+        f = fmts[arg["i"]]
+        if self.queue.is_duplicate(url, f["height"]):
+            return {"ok": False, "msg": "這部影片的這個畫質已經在排隊、下載中或暫停了"}
+        self.enqueue({"url": url, "title": title, "fmt": f, "size": f["size"], "out": self.settings.download_dir})
+        self._web_an = None
+        return {"ok": True, "msg": f"已加入佇列：{quality_label(f['height'])}"}
+
+    def web_clear_analysis(self, _):
+        self._web_an = None
+
+    def web_clear_finished(self, _):
+        n = len(self.queue.tasks)
+        self.queue.clear_finished()
+        self.refresh_queue()
+        n -= len(self.queue.tasks)
+        return {"ok": True, "msg": f"清掉 {n} 筆已結束的" if n else "沒有已結束的任務"}
+
+    def _web_recs(self, keys):
+        keys = set(keys)
+        return [r for r in self.history.items if self._hist_key(r) in keys]
+
+    def web_redownload(self, key):
+        r = self._hist_find(key)
+        if not r or not r.get("url"):
+            return {"ok": False, "msg": "找不到這筆紀錄"}
+        return self.web_analyze(r["url"], want_height=r.get("height") or 0)
+
+    def web_copy_url(self, key):
+        r = self._hist_find(key)
+        if not r or not r.get("url"):
+            return {"ok": False, "msg": "找不到這筆紀錄"}
+        self.root.clipboard_clear()
+        self.root.clipboard_append(r["url"])
+        return {"ok": True, "msg": "網址已複製"}
+
+    def web_subtitles(self, keys):
+        files = [r.get("file") for r in self._web_recs(keys) if r.get("status") == DONE]
+        files = [f for f in files if f and os.path.isfile(f)]
+        if not files:
+            return {"ok": False, "msg": "選的影片裡沒有「下載完成、檔案還在」的"}
+        self.subtitle_dialog(files=files)
+        return {"ok": True, "msg": f"AI 字幕：{len(files)} 部（設定視窗已打開）"}
+
+    def web_delete_hist(self, keys):
+        keys = set(keys)
+        before = len(self.history.items)
+        self.history.items = [r for r in self.history.items if self._hist_key(r) not in keys]
+        n = before - len(self.history.items)
+        if n:
+            self.history.save()
+            self.refresh_history()
+        return {"ok": True, "msg": f"刪除 {n} 筆紀錄（影片檔案不會刪）"}
 
     def web_pair(self, _):
         self.pair_browser()
@@ -5365,10 +5503,12 @@ class App:
     # AI 字幕
     # ------------------------------------------------------------------
 
-    def subtitle_dialog(self, video=None):
-        """一部或多部（下載紀錄可以 Ctrl／Shift 多選）一起做字幕，一部接一部"""
+    def subtitle_dialog(self, video=None, files=None):
+        """一部或多部（下載紀錄可以 Ctrl／Shift 多選）一起做字幕，一部接一部；files＝新介面勾選的影片"""
         if video:
             videos = [video]
+        elif files is not None:
+            videos = [f for f in dict.fromkeys(files) if f and os.path.isfile(f)]
         else:
             videos = []
             for iid in self.htree.selection():
@@ -5382,6 +5522,7 @@ class App:
             self.sub_win.lift()
             return
         w = self.sub_win = tk.Toplevel(self.root)
+        self.float_dialog(w)
         w.title("📝 AI 字幕")
         w.resizable(False, False)
         f = ttk.Frame(w, padding=14)
@@ -6042,6 +6183,7 @@ def selftest(out_path):
         ok = False
     try:                                            # v1.36.0 新介面：網頁檔、CHANGELOG、pywebview（含 WinForms 那一層）有打包進來
         import webui
+        import webui.thumbs  # noqa: F401
         import webview  # noqa: F401
         import webview.platforms.winforms  # noqa: F401
         r["webui"] = {"html": len(webui.page_html()), "news": len(webui.load_news()), "webview2": webui.webview2_version()}
