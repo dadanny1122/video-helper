@@ -373,6 +373,7 @@ function renderDl(s) {
 
 function render(s) {
   S = s;
+  if (s.start_page && !render.started) { render.started = true; go(s.start_page); }   // 第一次打開：先帶去裝擋廣告
   document.body.className = s.theme === 'light' ? 'light' : 'dark';
   $('#ver').textContent = 'v' + s.version;
   const br = $('#bridge'); br.textContent = s.bridge ? '● 瀏覽器已連動' : '瀏覽器未連動'; br.classList.toggle('ok', !!s.bridge);
@@ -404,7 +405,7 @@ function wire() {
     const p = a.dataset.page;
     if (PAGES.includes(p)) { go(p); lastSig = ''; if (S) render(S); return; }
     if (p === 'about') {
-      modal('關於 Video Helper', `版本 v${S ? S.version : ''}（新介面預覽）\n\n全部在你自己的電腦上跑，沒有伺服器。新介面只讀電腦版裡的資料、不連任何網站。\n🔒 安全中心、統計還沒搬過來，按了會打開原本的小視窗。`,
+      modal('關於 Video Helper', `版本 v${S ? S.version : ''}\n\n全部在你自己的電腦上跑，沒有伺服器。新介面只讀電腦版裡的資料、不連任何網站。\n🔒 安全中心、統計還沒搬過來，按了會打開原本的小視窗。`,
         [['說明書', 'manual', 'accent'], ['GitHub 發布頁', 'releases'], ['關閉', null]]).then((v) => v && act('link', v));
       return;
     }
@@ -420,7 +421,7 @@ function wire() {
     if (b) {
       const [name, arg] = b.dataset.act.split(':');
       if (name === 'set_ui_classic') {
-        if (await modal('切回舊介面', '馬上換成原本的視窗；之後打開電腦版也是舊介面。\n想再用新介面：③ 設定 勾「使用新介面」。', [['切回舊介面', 1, 'accent'], ['取消', 0]])) act('set_ui', 'classic');
+        if (await modal('切回原本的視窗', '馬上換成原本的視窗；之後打開電腦版也是原本的視窗。\n想再用新介面：原本視窗的 ③ 設定 勾「使用新介面」。', [['切回原本的視窗', 1, 'accent'], ['取消', 0]])) act('set_ui', 'classic');
         return;
       }
       act(name, arg);

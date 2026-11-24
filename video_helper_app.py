@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.39.0"
+VERSION = "1.40.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -177,7 +177,9 @@ DEFAULT_SETTINGS = {
     "ai_usage": {},                   # 月份 → {"classify"/"translate": {"calls", "in", "out"}}（只記次數和字數，不記內容）
     "log_keep_days": 14,              # 錯誤日誌超過幾天自動刪掉（0＝不刪）
     "drag_snapshot": True,
-    "ui": "classic",                  # v1.36.0：介面 classic＝原本的視窗／web＝新介面（WebView2，預覽）
+    "ui": "web",                      # 介面：web＝新介面（v1.40.0 起預設）／classic＝原本的視窗
+    "ui_chosen": False,               # v1.40.0：使用者自己選過介面（沒選過的人，舊版存的 classic 會換成新介面一次）
+    "ui_fail_shown": False,           # 新介面打不開的提示只講一次
     "tray_always": True,              # v1.35.0：系統匣小圖示一直都在（不只縮小時）            # v1.34.0：拖動主視窗時先蓋一張畫面照片（Windows 上比較順）
     "mbps": 0,                   # 上次量到的網速
     "setup_seen": False,         # 看過「安裝擋廣告」了（第一次打開才自動切過去）
@@ -3354,7 +3356,7 @@ class App:
         self.build_history(tabs["hist"])
         self.build_settings(tabs["set"])
         self.build_advanced()                 # 進階設定（另一個視窗，平常藏起來）
-        first_run = not self.settings["setup_seen"]
+        first_run = self._first_run = not self.settings["setup_seen"]
         if not self.settings["setup_seen"]:   # 第一次打開：先帶去裝擋廣告
             self.nb.select(self.tab_setup)
             self.settings["setup_seen"] = True
@@ -3387,8 +3389,10 @@ class App:
         self.refresh_header()
         self.poll()
         threading.Thread(target=check_update, args=(self.q,), daemon=True).start()
-        if WEB_UNAVAILABLE and not self.web and self.settings["ui"] == "web":
-            root.after(1500, lambda: messagebox.showinfo("新介面", f"新介面這次不能用：\n{WEB_UNAVAILABLE}\n\n先用原本的視窗。"))
+        if WEB_UNAVAILABLE and not self.web and self.settings["ui"] == "web" and not self.settings["ui_fail_shown"]:
+            self.settings["ui_fail_shown"] = True                 # 只講一次（沒有 WebView2 的電腦每次都會退回原本的視窗）
+            self.settings.save()
+            root.after(1500, lambda: messagebox.showinfo("新介面", f"新介面不能用：\n{WEB_UNAVAILABLE}\n\n會一直用原本的視窗。"))
         log.info("啟動 v%s", VERSION)
 
     # 讓背景工作把結果丟回主畫面
@@ -4714,6 +4718,7 @@ class App:
             "qualities": QUALITY_CHOICES, "default_quality": self.settings["default_quality"],
             "rate_limit": self.settings["rate_limit_mbps"] or 0,
             "settings": self._web_settings(), "setup": self._web_setup_state(),
+            "start_page": "setup" if getattr(self, "_first_run", False) else "",
         }
         # Nexus 管理頁開著（網頁 5 秒內問過）才讀資料庫，2 秒一次；在 Tk 執行緒做（資料庫連線不跨執行緒）
         if now - self.web.want_nexus < 5 and now - getattr(self, "_web_nx_full_t", 0) >= 2:
@@ -5443,6 +5448,7 @@ class App:
         if v != "classic":
             return {"ok": False, "msg": "參數不對"}
         self.settings["ui"] = "classic"
+        self.settings["ui_chosen"] = True
         self.settings.save()
         if hasattr(self, "webui_var"):
             self.webui_var.set(False)
@@ -6261,11 +6267,11 @@ class App:
 
         def on_webui_opt():
             self.settings["ui"] = "web" if self.webui_var.get() else "classic"
+            self.settings["ui_chosen"] = True
             self.settings.save()
             if self.webui_var.get() and not self.web:
-                messagebox.showinfo("新介面（預覽）", "重新打開電腦版後就會是新介面。\n"
-                                    "目前做好首頁，其他頁面先用原本的視窗；新介面左下角可以隨時切回來。")
-        ttk.Checkbutton(f, text="使用新介面（預覽版：左側選單、數據卡；重新打開電腦版後生效）", variable=self.webui_var,
+                messagebox.showinfo("新介面", "重新打開電腦版後就會是新介面。\n新介面左下角「切回原本的視窗」可以隨時換回來。")
+        ttk.Checkbutton(f, text="使用新介面（左側選單、數據卡；重新打開電腦版後生效）", variable=self.webui_var,
                         command=on_webui_opt).grid(row=10, column=0, columnspan=3, sticky="w")
         self.snap_var = tk.BooleanVar(value=bool(self.settings["drag_snapshot"]))
         ttk.Checkbutton(f, text="拖動視窗時比較順（拖動時先顯示一張畫面照片，放開就恢復）", variable=self.snap_var,
@@ -6653,6 +6659,16 @@ class App:
         self.speed_lbl.config(text="網速：尚未量測")
 
 
+def prefer_web_ui(st):
+    """v1.40.0 新介面改成預設：舊版會把 ui＝classic 存進設定檔，沒自己選過介面的人換成新介面一次；
+    自己在 ③ 設定 或新介面按過「切回原本的視窗」的（ui_chosen）就照他選的"""
+    if not st["ui_chosen"] and st["ui"] != "web":
+        st["ui"] = "web"
+        st.save()
+        return True
+    return False
+
+
 def selftest(out_path):
     """
     VideoHelper.exe --selftest 結果.json
@@ -6716,7 +6732,9 @@ if __name__ == "__main__":
         enable_dpi_awareness()
         sys.exit(worker_main([a for a in sys.argv[1:] if a != "--worker"]))
     enable_dpi_awareness()
-    if "--classic" not in sys.argv and ("--webui" in sys.argv or Settings()["ui"] == "web"):
+    _st = Settings()
+    prefer_web_ui(_st)
+    if "--classic" not in sys.argv and ("--webui" in sys.argv or _st["ui"] == "web"):
         # v1.36.0 新介面：主執行緒開網頁視窗（pywebview 規定），App／Tk 在另一個執行緒；不能用就照舊開原本的視窗
         try:
             import webui

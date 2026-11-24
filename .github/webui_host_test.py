@@ -81,6 +81,7 @@ def fake_mode():
     app = a.App(root, web=host)
     drain(app, root)
     ok(host.app is app and root.state() == "withdrawn", "原本的視窗藏起來、網頁接上 App")
+    ok(host.state.get("start_page") == "setup", "第一次打開：新介面先帶去「安裝擋廣告」")
     st = host.state
     ok(st.get("version") == a.VERSION and len(st["kpis"]) == 4 and st["theme"] in ("dark", "light"), "狀態有版本、4 張數據卡、主題")
     json.dumps(st)                                                  # 一定要能轉成 JSON（pywebview 會轉）
@@ -294,6 +295,12 @@ def fake_mode():
     drain(app, root)
     ok(app.web_fallback and app.settings["ui"] == "classic" and root.state() == "normal" and "hide" in host.window.calls,
        "切回舊介面：網頁藏起來、原本的視窗出來、設定記住")
+    ok(app.settings["ui_chosen"] is True, "切回原本的視窗會記住是自己選的（下次不會被換回新介面）")
+    st2 = a.Settings(os.path.join(tempfile.mkdtemp(), "s.json"))
+    st2["ui"] = "classic"
+    ok(a.prefer_web_ui(st2) and st2["ui"] == "web", "v1.40.0：舊版存的 classic、沒自己選過 → 換成新介面")
+    st2["ui"], st2["ui_chosen"] = "classic", True
+    ok(not a.prefer_web_ui(st2) and st2["ui"] == "classic", "自己選過原本的視窗 → 照他選的")
     app.web_fallback = False
     # 沒在下載 → 按 X 直接結束
     app.downloads_active = lambda: False
