@@ -175,6 +175,14 @@ def run_window() -> int:
         cfg.save()
     conc.bind("<<ComboboxSelected>>", on_conc)
     conc.grid(row=12, column=1, sticky="w", pady=2)
+    # V4：傳回 Master 後這份要不要留（D3：預設刪，驗證成功才刪）
+    keep = tk.BooleanVar(value=bool(cfg.get("keep_after_return", False)))
+
+    def on_keep():
+        cfg["keep_after_return"] = bool(keep.get())
+        cfg.save()
+    ttk.Checkbutton(f, text="傳回 Master 之後，這台也留一份（不勾＝Master 確認收到才刪）", variable=keep,
+                    command=on_keep).grid(row=12, column=2, sticky="w", padx=(10, 0), pady=2)
     sb = sandbox_status()
     iso_text = ("沙箱：基本（程序限制＋只准連支援的網站，不是完全隔離）" if sb.get("isolation") == "basic"
                 else "沙箱：不能用（" + "；".join(sb.get("reasons") or ["原因不明"]) + "）→ 不會接下載任務")
@@ -193,10 +201,14 @@ def run_window() -> int:
         mfp = s["master_ca_fingerprint"] or s["master_server_fingerprint"] or "—"
         exp = f"\n憑證到期：{s['credential_expires_at'][:10]}" if s["credential_expires_at"] else ""
         fps.config(text=f"我的指紋：{s['my_fingerprint']}　Master 指紋：{mfp}{exp}")
-        names = {"test.echo": "回聲", "test.sleep": "等待", "test.fail": "故意失敗", "video.download": "下載影片"}
+        names = {"test.echo": "回聲", "test.sleep": "等待", "test.fail": "故意失敗", "test.file": "測試檔",
+                 "video.download": "下載影片", "upload": "傳回 Master"}
         run = agent.executor.summary()
-        tasks_lbl.config(text="目前任務：" + ("、".join(f"{names.get(r['type'], r['type'])} {int(r['progress'] * 100)}%" for r in run)
-                                             if run else "沒有"))
+
+        def one(r):
+            extra = {"disk_full": "（Master 空間不夠，等一下）", "retrying": "（連不上，重試中）"}.get(r.get("status", ""), "")
+            return f"{names.get(r['type'], r['type'])} {int(r['progress'] * 100)}%{extra}"
+        tasks_lbl.config(text="目前任務：" + ("、".join(one(r) for r in run) if run else "沒有"))
 
     def do_pair():
         if agent.store.state["status"] in ("ACTIVE", "PENDING") and agent.store.state["device_id"] and not messagebox.askyesno(

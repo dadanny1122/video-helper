@@ -40,5 +40,10 @@ DEFAULT_RULES = {
     "inbox": (60, 60),                 # long-poll 25 秒一次；同一台開兩個 profile 也夠
     "task_ack": (120, 60),
     "task_event": (600, 60),           # test.sleep 每秒回報進度
+    # V4 傳回：一段 8 MB，每分鐘 600 段 ≈ 80 MB/s（家裡網路內夠用）
+    "upload_open": (30, 60),
+    "upload_chunk": (600, 60),
+    "upload_status": (60, 60),
+    "upload_complete": (30, 60),
     "other": (30, 60),
 }

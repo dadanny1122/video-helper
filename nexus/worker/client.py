@@ -71,13 +71,18 @@ class NexusClient:
             self._conn = None
 
     # ---- 請求 ----
-    def _request(self, method: str, path: str, body: dict | None = None, headers: dict | None = None) -> dict:
+    def _request(self, method: str, path: str, body: dict | None = None, headers: dict | None = None,
+                 raw: bytes | None = None) -> dict:
         hdrs = {"Content-Type": "application/json", "User-Agent": "VideoHelperNexusWorker"}
         if headers:
             hdrs.update(headers)
         data = None
         if method == "POST":
             data = json.dumps(envelope(self.sender_id, **(body or {})), ensure_ascii=False).encode()
+        elif method == "PUT":                      # V4：body 是檔案內容；外框（含 nonce）放標頭
+            hdrs["Content-Type"] = "application/octet-stream"
+            hdrs["X-VH-Envelope"] = json.dumps(envelope(self.sender_id))
+            data = raw or b""
         else:
             env = envelope(self.sender_id)
             env.pop("nonce", None)
@@ -138,6 +143,21 @@ class NexusClient:
         import uuid
         return self._request("POST", f"/tasks/{task_id}/events", dict(event_id=event_id or str(uuid.uuid4()), attempt_id=attempt_id,
                                                                       seq=seq, type=etype, data=data or {}))
+
+    # ---- V4 傳回檔案 ----
+    def upload_open(self, task_id: str, attempt_id: str, file_index: int) -> dict:
+        return self._request("POST", f"/tasks/{task_id}/uploads", dict(attempt_id=attempt_id, file_index=int(file_index)))
+
+    def upload_chunk(self, upload_id: str, n: int, data: bytes) -> dict:
+        import hashlib
+        return self._request("PUT", f"/uploads/{upload_id}/chunks/{int(n)}", raw=data,
+                             headers={"X-VH-Chunk-SHA256": hashlib.sha256(data).hexdigest()})
+
+    def upload_status(self, upload_id: str) -> dict:
+        return self._request("GET", f"/uploads/{upload_id}")
+
+    def upload_complete(self, upload_id: str) -> dict:
+        return self._request("POST", f"/uploads/{upload_id}/complete", {})
 
     def info(self) -> dict:
         return self._request("GET", "/system/info")

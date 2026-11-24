@@ -87,3 +87,18 @@ V2 的測試 Adapter 不開子程序、不碰檔案、不連網，所以**還不
 
 **V3 接受的殘餘風險**：同一個 Windows 帳號下的惡意程式不受沙箱限制；工作資料夾權限用 Windows 預設（沒另設 ACL）；網路限制在 Python 層，不是防火牆；yt-dlp 本身有漏洞時，影響範圍被上面幾層限制，但不是零。
 
+
+## 7. V4（節點把影片傳回 Master，電腦版 v1.33.0）新增的威脅
+
+| # | 威脅 | 對策（程式位置） | 驗證 |
+|---|---|---|---|
+| T38 | 別台節點（或被撤銷的節點）冒充上傳、塞檔案進 Master | 傳檔四個端點都要 mTLS＋sender_id 跟憑證一致；`upload_id` 綁「裝置＋任務」，任務一定要派給你、狀態 UPLOADING；撤銷 → 憑證失效，連線當場切斷 | `test_at034_other_device_cannot_upload`、AT-034 |
+| T39 | 節點送惡意檔名（`..\`、`CON`、`C:x`、`.exe`）跳出下載資料夾或放執行檔 | 檔名只認 UPLOADING 時驗過的那份；搬檔前 `sanitize_filename`＋副檔名白名單（mp4/mkv/webm/m4a）＋`is_inside`＋`unique_target` 不覆蓋 | `test_incoming.py::test_malicious_names_stay_inside`、`test_extension_not_allowed`、`test_no_overwrite`、AT-035 |
+| T40 | 塞超大資料吃光 Master 磁碟／記憶體 | 只有 `PUT .../chunks/{n}` 放寬到 8 MB，其他端點仍 64 KB；每段長度一定要等於依宣告大小算出的長度；宣告大小 ≤ `max_output_bytes`（8 GB）；body 串流寫檔（1 MB 一次讀）；開始前檢查空間（要多留 1 GB），不夠 → `MASTER_DISK_FULL` 不收 | `test_put_limits_and_replay`、`test_wrong_length_and_bad_index`、`test_disk_full_then_ok`、AT-036 |
+| T41 | 傳輸中資料被改、或節點檔案壞掉卻被當成成功 | 每段 SHA-256（不對不算收到）；收齊後算整檔 SHA-256 跟 UPLOADING 時登記的比，不對就清掉重傳一次、再錯就放棄；半成品放 `incoming\`，驗證前不進下載資料夾 | `test_bad_chunk_hash_not_counted`、`test_whole_file_hash_mismatch_retry_then_give_up`、AT-033 |
+| T42 | 重放舊的傳檔請求 | PUT 也帶 nonce＋時間，跟 POST 一樣 10 分鐘防重放 | `test_put_limits_and_replay` |
+| T43 | Master（或被冒用的 Master）利用「接著傳」叫節點傳別的檔案（偷檔案） | 節點 `check_files`：只傳自己下載資料夾裡、不是連結、大小相符的檔案；Master 給別的路徑就回報 TRANSFER_FAILED，不傳 | `uploader.check_files`、程式碼審查 |
+| T44 | 半成品或節點那份沒清掉、或節點太早刪掉 | 取消／失敗／24 小時沒進展 → 刪半成品（清查每秒補刪）；節點只在 Master 回 SUCCEEDED 之後才刪自己那份 | `test_at037_cancel_while_uploading`、`test_at030_return_ok_and_node_copy_deleted` |
+| T45 | 節點關機就把傳回中的任務判成「狀態不明」、或節點關閉時偷偷再開傳回 | UPLOADING 離線不判 UNKNOWN（撤銷才判）；節點關閉後路上回來的 inbox 訊息不處理 | `test_at031_worker_restart_resumes`、`test_d7_expire_then_retry_return` |
+
+**V4 接受的殘餘風險**：SHA-256 只保證「收到的跟節點送的一樣」，不保證影片內容安全（來源仍只限 `sites.json`）；檔案傳回時在兩台各存一份一段時間；同一台電腦測試測不出真實網路斷線（用程式模擬）。

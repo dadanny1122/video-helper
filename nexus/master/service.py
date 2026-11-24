@@ -59,6 +59,10 @@ class MasterService:
         self.host = self.port = None
         self.error = ""
         self.lock = threading.Lock()
+        # V4：電腦版接上（下載資料夾、下載限速、收完通知）；沒接的話用 nexus\master\received、不限速
+        self.dest_dir = None
+        self.rate_limit_mbps = None
+        self.on_returned = None
 
     # ---- 狀態 ----
     @property
@@ -92,6 +96,11 @@ class MasterService:
                 self.registry = DeviceRegistry(self.db, self.repo, self.ca, self.conns, self.cfg)
                 self.tasks = TaskService(self.db, self.repo)
                 self.dispatcher = Dispatcher(self.tasks, self.registry)
+                if self.dest_dir:
+                    self.dispatcher.incoming.dest_dir = self.dest_dir
+                if self.rate_limit_mbps:
+                    self.dispatcher.rate_limit_mbps = self.rate_limit_mbps
+                self.dispatcher.on_returned = lambda t, r: self.on_returned and self.on_returned(t, r)
                 self.server = MasterServer(self.registry, self.cfg, self.repo, rules=self.rules, dispatcher=self.dispatcher)
                 self.host, self.port = self.server.start()
                 self.dispatcher.start()
@@ -161,6 +170,24 @@ class MasterService:
             return self.tasks
         repo = self._any_repo()
         return TaskService(self._ro_db, repo) if repo and self._ro_db else None
+
+    # ---- V4 傳回 ----
+    def upload_progress(self, task_id: str) -> dict | None:
+        """傳回進度（收到多少、是否在等空間）；Master 沒開也能看紀錄"""
+        if self.dispatcher:
+            return self.dispatcher.upload_progress(task_id)
+        if self._any_repo() and self._ro_db:
+            from nexus.master.incoming import Incoming
+            try:
+                return Incoming(self._ro_db, os.path.join(self.dir, "incoming")).progress(task_id)
+            except Exception:
+                return None
+        return None
+
+    def retry_return(self, task_id: str) -> dict:
+        if not self.dispatcher:
+            raise RuntimeError("Master 沒開")
+        return self.dispatcher.retry_return(task_id)
 
     def devices(self) -> list:
         repo = self._any_repo()

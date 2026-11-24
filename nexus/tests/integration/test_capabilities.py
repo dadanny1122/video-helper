@@ -38,10 +38,11 @@ def test_agent_heartbeat_reports_capabilities(master, tmp_path):
         assert cap["max_concurrency"] == 2 and cap["accepting"] is True
         # V3：有沙箱（Windows）的節點多宣稱 video.download；沒有的不宣稱
         from nexus.worker.executor import sandbox_status
-        want = {"test.echo", "test.sleep", "test.fail"} | ({"video.download"} if sandbox_status()["isolation"] == "basic" else set())
+        want = {"test.echo", "test.sleep", "test.fail", "test.file"}
+        want |= {"video.download"} if sandbox_status()["isolation"] == "basic" else set()
         assert set(cap["adapters"]) == want
         assert cap["resources"]["cpu_count"] >= 1 and cap["resources"]["memory_total_mb"] > 0
-        assert master.repo.get_device(did)["protocol_version"] == "1.2"
+        assert master.repo.get_device(did)["protocol_version"] == "1.3"
         # V3：沙箱等級也回報（Windows＝basic；其他平台＝none＋原因）
         iso = cap["resources"]["isolation"]
         assert iso == sandbox_status()["isolation"] and (iso == "basic" or cap["resources"]["isolation_reason"])

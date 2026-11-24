@@ -105,3 +105,30 @@ token 不對或註冊 1 小時沒核准 → `404 REGISTRATION_NOT_FOUND`。
 - 節點回報的新錯誤碼：可重試 `NETWORK`、`RATE_LIMITED`；不重試 `NET_BLOCKED`、`NOT_FOUND`、`DISK_FULL`、`SANDBOX_UNAVAILABLE`、`OUTPUT_REJECTED`、`TOO_BIG`、`CLEANUP_FAILED`、`LEFTOVER_PROCESSES`、`PROTOCOL_UNSUPPORTED`。
 - 仍然沒有建立／取消任務的網路端點。
 
+
+# 協定 1.3（V4：節點把檔案傳回 Master，電腦版 v1.33.0 起）
+
+- `video.download`、`test.file` 的 `params` 可多 `return_to_master: true`。協定 < 1.3 的節點不會被派這種任務（排除原因 `no_return`）。
+- 新任務類型 `test.file`（1.0）：`size_mb`（1～2048）＋`return_to_master`；節點在自己的下載資料夾寫固定內容的檔案（不連網、不需要沙箱）。
+- 新事件 `UPLOADING`（`data.result` 同成功結果）：RUNNING → UPLOADING，Master 先驗結果格式、存下每個檔案的名稱／大小／SHA-256（之後只認這份）。全部收齊後節點送 `SUCCEEDED` → Master 檢查每個檔案都驗證通過 → VERIFYING → SUCCEEDED，結果改成 `{"files":[{"name","size","sha256","path"（Master 上）,"node_path"}], "returned": true, …}`。
+- UPLOADING 時節點離線**不判 UNKNOWN**；24 小時沒進展 → FAILED `TRANSFER_EXPIRED`（檔案留在節點）。`FAILED → UPLOADING`（「重新傳回」，只限 `TRANSFER_FAILED`／`TRANSFER_EXPIRED`）。UPLOADING 可以取消。
+- inbox 多一種訊息：`{"kind":"upload", task_id, attempt_id, next_seq, files:[{index,name,size,sha256,path}]}`——傳回中卻 60 秒沒動靜時提醒節點接著傳（節點重開、斷線回來、重新傳回）；節點只會傳自己下載資料夾裡、大小相符的檔案。
+
+## `POST /tasks/{task_id}/uploads`　身分：mTLS（sender_id）　限制 30/分
+請求：`attempt_id`、`file_index`。只有任務派給你、狀態 UPLOADING、attempt 是目前那次才行。
+回應：`upload_id`、`chunk_size`（8 MB）、`chunks_total`、`size`、`have`（已收到的段號）、`done`、`rate_limit_mbps`（0＝不限）。
+Master 空間不夠 → `507 MASTER_DISK_FULL`＋`Retry-After: 300`。
+
+## `PUT /uploads/{upload_id}/chunks/{n}`　身分：mTLS（sender_id）　限制 600/分
+body＝檔案內容（`application/octet-stream`），**≤ 8 MB**（只有這個端點放寬）；外框（含 nonce）放 `X-VH-Envelope`；`X-VH-Chunk-SHA256`＝這段的雜湊。
+長度一定要等於依宣告大小算出的長度（`SIZE_MISMATCH`）、雜湊不對 → `CHUNK_MISMATCH`（不算收到，重傳這段）。出錯時 Master 一律 `Connection: close`。
+
+## `GET /uploads/{upload_id}`　限制 60/分
+回應：`have`、`chunks_total`、`status`（`open`／`done`／`failed`／`cancelled`）。
+
+## `POST /uploads/{upload_id}/complete`　限制 30/分
+Master 算整檔 SHA-256：對 → 搬進下載資料夾（檔名重新清理、副檔名白名單、不覆蓋）→ `{"ok": true, "master_path", "all_done"}`；重送回同樣結果。
+還有缺 → `UPLOAD_INCOMPLETE`（`details.missing`）；整檔不對 → `HASH_MISMATCH`（第一次清掉重傳，`details.final=false`；第二次 `final=true`、放棄）。
+
+## 新錯誤碼
+`UPLOAD_NOT_ALLOWED`（403）、`UPLOAD_INCOMPLETE`（409）、`UPLOAD_EXPIRED`（410）、`CHUNK_MISMATCH`（400）、`SIZE_MISMATCH`（400）、`HASH_MISMATCH`（409）、`MASTER_DISK_FULL`（507）、`OUTPUT_REJECTED`（400）；節點回報 `TRANSFER_FAILED`（不重試，可重新傳回）。

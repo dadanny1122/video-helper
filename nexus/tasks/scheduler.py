@@ -10,7 +10,7 @@ import json
 import logging
 import uuid
 
-from nexus import TASKS_MIN_PROTOCOL, version_tuple
+from nexus import RETURN_MIN_PROTOCOL, TASKS_MIN_PROTOCOL, version_tuple
 from nexus.core.enums import STALE_AFTER_SECONDS
 from nexus.core.errors import NexusError
 from nexus.core.models import parse_utc, utcnow
@@ -25,7 +25,8 @@ WEIGHTS = {"w1": {"cpu": 0.25, "memory": 0.25, "disk": 0.10, "queue": 0.25, "rel
 CURRENT_WEIGHTS = "w1"
 MEMORY_REF_MB, DISK_REF_MB = 4096, 10240
 # 佔用節點名額的狀態（UNKNOWN 也算：可能還在跑，保守一點）
-BUSY = (S.SCHEDULED, S.DISPATCHED, S.ACCEPTED, S.PREPARING, S.RUNNING, S.UPLOADING, S.CANCELLING, S.UNKNOWN)
+# V4：UPLOADING 不算（傳回可能要等很久，不佔下載名額；節點那邊傳回也不算在同時下載數裡）
+BUSY = (S.SCHEDULED, S.DISPATCHED, S.ACCEPTED, S.PREPARING, S.RUNNING, S.CANCELLING, S.UNKNOWN)
 
 REASONS = {
     "not_active": "節點不是「已核准」狀態（暫停／撤銷／等待核准）",
@@ -41,6 +42,7 @@ REASONS = {
     "full": "節點同時任務數已滿",
     "declined": "這台之前拒收過這個任務",
     "no_sandbox": "節點的沙箱不能用（下載影片一定要在沙箱裡跑）",
+    "no_return": "節點版本太舊，不能把檔案傳回這台（請更新節點）",
 }
 
 
@@ -70,6 +72,12 @@ def evaluate(task: dict, manifest: dict, devices: list[dict], caps: dict, busy: 
                 reasons.append("old_protocol")
         except ValueError:
             reasons.append("old_protocol")
+        if (manifest.get("params") or {}).get("return_to_master"):
+            try:
+                if version_tuple(d.get("protocol_version") or "0") < version_tuple(RETURN_MIN_PROTOCOL):
+                    reasons.append("no_return")
+            except ValueError:
+                reasons.append("no_return")
         if cap is None:
             reasons.append("no_capabilities")
         else:

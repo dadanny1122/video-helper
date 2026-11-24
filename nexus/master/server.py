@@ -21,6 +21,7 @@ from nexus.core.masking import mask
 from nexus.core.models import AuditEvent, parse_utc
 from nexus.core.tls import stdlib_ssl_context
 from nexus.identity import certs
+from nexus.master import incoming as _incoming
 from nexus.master.connections import ConnectionRegistry
 from nexus.master.ratelimit import DEFAULT_RULES, RateLimiter
 from nexus.protocol.messages import check_envelope, reply
@@ -43,6 +44,8 @@ S_ACK = {"task_id": (str, True, 36), "attempt_id": (str, True, 36), "lease_id": 
 S_EVENT = {"event_id": (str, True, 36), "attempt_id": (str, True, 36), "seq": (int, True, 1_000_000), "type": (str, True, 16),
            "data": (dict, False, None)}
 S_EMPTY = {}
+# V4 傳回（協定 1.3）
+S_UPLOAD_OPEN = {"attempt_id": (str, True, 36), "file_index": (int, True, 100)}
 
 
 class BindPolicy:
@@ -162,6 +165,9 @@ class MasterServer:
             def do_POST(self):
                 self._handle("POST")
 
+            def do_PUT(self):                         # V4：傳檔的一段（body 是檔案本身，不是 JSON）
+                self._handle("PUT")
+
             def _send(self, status: int, payload: dict, extra_headers: dict | None = None):
                 body = json.dumps(payload, ensure_ascii=False).encode()
                 self.send_response(status)
@@ -186,11 +192,13 @@ class MasterServer:
                     corr, payload = server._dispatch(self, method)
                     self._send(200, payload)
                 except NexusError as e:
-                    self._fail(e, corr, close=e.code in ("CREDENTIAL_REVOKED", "CREDENTIAL_EXPIRED", "CREDENTIAL_MISMATCH",
-                                                        "DEVICE_NOT_ACTIVE", "DEVICE_SUSPENDED"))
+                    # PUT 出錯時 body 可能還沒讀完 → 一定要斷線，不然下一個請求會讀到殘留的檔案內容
+                    self._fail(e, corr, close=method == "PUT" or e.code in ("CREDENTIAL_REVOKED", "CREDENTIAL_EXPIRED",
+                                                                            "CREDENTIAL_MISMATCH", "DEVICE_NOT_ACTIVE",
+                                                                            "DEVICE_SUSPENDED"))
                 except Exception as e:                # 絕不把堆疊丟給對方
                     log.exception("內部錯誤 %s", mask(str(e)))
-                    self._fail(NexusError("INTERNAL_ERROR"), corr)
+                    self._fail(NexusError("INTERNAL_ERROR"), corr, close=method == "PUT")
 
         self.httpd = ThreadingHTTPServer((host, port), Handler)
         self.httpd.daemon_threads = True
@@ -243,13 +251,21 @@ class MasterServer:
         ("GET", re.compile(rf"^{API}/workers/([0-9a-f-]{{36}})/inbox$"), "inbox", "inbox", True),
         ("POST", re.compile(rf"^{API}/workers/([0-9a-f-]{{36}})/task-ack$"), "task_ack", "task_ack", True),
         ("POST", re.compile(rf"^{API}/tasks/([0-9a-f-]{{36}})/events$"), "task_event", "task_event", True),
+        # V4：節點把檔案傳回來（Master 一樣不連 Worker）
+        ("POST", re.compile(rf"^{API}/tasks/([0-9a-f-]{{36}})/uploads$"), "upload_open", "upload_open", True),
+        ("PUT", re.compile(rf"^{API}/uploads/([0-9a-f-]{{36}})/chunks/([0-9]{{1,6}})$"), "upload_chunk", "upload_chunk", True),
+        ("GET", re.compile(rf"^{API}/uploads/([0-9a-f-]{{36}})$"), "upload_status", "upload_status", True),
+        ("POST", re.compile(rf"^{API}/uploads/([0-9a-f-]{{36}})/complete$"), "upload_complete", "upload_complete", True),
     ]
-    _TASK_PATH = {"task_event"}                 # 路徑上的 id 是任務，不是裝置 → 裝置身分從 sender_id 拿
+    # 路徑上的 id 是任務／上傳，不是裝置 → 裝置身分從 sender_id 拿
+    _TASK_PATH = {"task_event", "upload_open", "upload_chunk", "upload_status", "upload_complete"}
+    _UPLOADS = {"upload_open", "upload_chunk", "upload_status", "upload_complete"}
 
     def _dispatch(self, h, method):
         source = h.client_address[0]
         path = h.path.split("?")[0]
         name = kind = needs_auth = path_id = None
+        chunk_no = None
         known = False
         for m, pat, n, k, auth in self._routes:
             mm = pat.match(path)
@@ -259,6 +275,8 @@ class MasterServer:
             if m == method:
                 name, kind, needs_auth = n, k, auth
                 path_id = mm.group(1) if mm.groups() else None
+                if len(mm.groups()) > 1:
+                    chunk_no = int(mm.group(2))
                 break
         if name is None:
             raise NexusError("METHOD_NOT_ALLOWED" if known else "NOT_FOUND")
@@ -267,11 +285,16 @@ class MasterServer:
             self.repo.audit(AuditEvent("ratelimit", "system", "source", source, "denied", kind))
             raise NexusError("RATE_LIMITED", retry_after=wait)
         # 內容
-        length = int(h.headers.get("Content-Length") or 0)
-        if length > self.max_payload:
-            raise NexusError("PAYLOAD_TOO_LARGE", details={"max_bytes": self.max_payload})
-        raw = h.rfile.read(length) if length else b""
-        if method == "GET":
+        try:
+            length = int(h.headers.get("Content-Length") or 0)
+        except ValueError as e:
+            raise NexusError("SCHEMA_INVALID", details={"where": "Content-Length"}) from e
+        # 只有傳檔那一段可以到 8 MB；其他端點還是 64 KB（V1 的上限不變）
+        limit = _incoming.CHUNK_SIZE if name == "upload_chunk" else self.max_payload
+        if length < 0 or length > limit:
+            raise NexusError("PAYLOAD_TOO_LARGE", details={"max_bytes": limit})
+        raw = h.rfile.read(length) if length and method != "PUT" else b""     # PUT 的 body 驗完身分才串流讀
+        if method in ("GET", "PUT"):
             # GET 的外框放在標頭（X-VH-Envelope＝JSON）；輪詢用 token 放 Authorization: Registration <token>
             try:
                 data = json.loads(h.headers.get("X-VH-Envelope") or "{}")
@@ -282,15 +305,17 @@ class MasterServer:
                 data = json.loads(raw.decode("utf-8")) if raw else {}
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 raise NexusError("SCHEMA_INVALID", details={"where": "body"}) from e
-        if name in ("inbox", "task_ack", "task_event") and self.dispatcher is None:
+        if (name in ("inbox", "task_ack", "task_event") or name in self._UPLOADS) and self.dispatcher is None:
             raise NexusError("NOT_FOUND")
         schema = {"register": S_REGISTER, "registration": S_EMPTY, "heartbeat": S_HEARTBEAT, "renew": S_RENEW,
-                  "disconnect": S_EMPTY, "info": S_EMPTY, "inbox": S_EMPTY, "task_ack": S_ACK, "task_event": S_EVENT}[name]
-        body = check_envelope(data, schema, require_nonce=(method == "POST"))
+                  "disconnect": S_EMPTY, "info": S_EMPTY, "inbox": S_EMPTY, "task_ack": S_ACK, "task_event": S_EVENT,
+                  "upload_open": S_UPLOAD_OPEN, "upload_chunk": S_EMPTY, "upload_status": S_EMPTY,
+                  "upload_complete": S_EMPTY}[name]
+        body = check_envelope(data, schema, require_nonce=(method in ("POST", "PUT")))
         corr = data["correlation_id"]
         sender = data["sender_id"]
-        # 重放／時鐘（POST 才有 nonce）
-        if method == "POST":
+        # 重放／時鐘（POST、PUT 才有 nonce）
+        if method in ("POST", "PUT"):
             self._replay_check(sender, data["nonce"], data["sent_at"])
         # 身分
         dev = None
@@ -332,6 +357,14 @@ class MasterServer:
             out = self.dispatcher.ack(dev, body)
         elif name == "task_event":
             out = self.dispatcher.event(dev, path_id, body)
+        elif name == "upload_open":
+            out = self.dispatcher.upload_open(dev, path_id, body)
+        elif name == "upload_chunk":
+            out = self.dispatcher.upload_chunk(dev, path_id, chunk_no, length, h.headers.get("X-VH-Chunk-SHA256") or "", h.rfile)
+        elif name == "upload_status":
+            out = self.dispatcher.upload_status(dev, path_id)
+        elif name == "upload_complete":
+            out = self.dispatcher.upload_complete(dev, path_id)
         elif name == "disconnect":
             self.registry.disconnect(dev)
             out = {"status": "ok"}

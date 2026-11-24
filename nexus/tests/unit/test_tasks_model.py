@@ -56,10 +56,12 @@ def test_on_worker_states_can_go_unknown_and_cancellable_ok():
 # ---------- Adapter ----------
 def test_only_known_adapters_and_no_shell():
     # V3 起多一個 video.download（有副作用：連網＋寫檔，只在沙箱跑）；永遠不會有 shell／python 類
-    assert set(adapters.ADAPTERS) == {"test.echo", "test.sleep", "test.fail", "video.download"}
+    assert set(adapters.ADAPTERS) == {"test.echo", "test.sleep", "test.fail", "test.file", "video.download"}
     for name, spec in adapters.ADAPTERS.items():
-        assert spec.side_effects == ("network,files" if name == "video.download" else "none")
+        want = {"video.download": "network,files", "test.file": "test-file"}.get(name, "none")   # V4 test.file：只寫測試檔
+        assert spec.side_effects == want
         assert not any(w in name for w in ("shell", "python", "powershell", "cmd", "exec"))
+    assert adapters.needs_sandbox("video.download") and not adapters.needs_sandbox("test.file")
 
 
 def test_video_download_params_checked_on_master():
@@ -147,10 +149,10 @@ def test_migration_v1_to_v2_keeps_v1_data(tmp_path, monkeypatch):
     monkeypatch.setattr(dbmod, "LATEST", migrations.LATEST)
     db = Database(p)
     r = db.migrate()
-    assert r["from"] == 1 and r["to"] == 2 and r["backup"]                  # 有備份
+    assert r["from"] == 1 and r["to"] == migrations.LATEST and r["backup"]                  # 有備份
     assert Repo(db).get_device("d1")["name"] == "pc"
     tables = {x[0] for x in db.conn().execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"tasks", "task_attempts", "task_events", "schedule_decisions", "device_capabilities"} <= tables
+    assert {"tasks", "task_attempts", "task_events", "schedule_decisions", "device_capabilities", "uploads"} <= tables
 
 
 # ---------- TaskRepo ----------

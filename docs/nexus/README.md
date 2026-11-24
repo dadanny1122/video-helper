@@ -15,6 +15,6 @@
 | V2 任務管理與排程 | [06-V2技術規格.md](06-V2技術規格.md)、`nexus/tasks/`、API 1.1（[api-v1.md](api-v1.md) 下半）、威脅模型 §5 | PR1～8 完成（電腦版 v1.30.0）；2026-11-23 同機兩個 profile 實機驗收通過，v1.30.1 修驗收找到的問題 |
 | V3 沙箱＋節點下載影片 | [07-V3技術規格.md](07-V3技術規格.md)、[08-V3交付報告.md](08-V3交付報告.md)、`nexus/net/`、`nexus/sandbox/`、API 1.2、威脅模型 §6 | PR1～8 完成（電腦版 v1.31.0）；2026-11-24 實機驗收 T-06、T-07 通過 |
 | V3.1 瀏覽器「交給節點下載」 | [09-V3.1交給節點規格.md](09-V3.1交給節點規格.md)、`.github/node_site_test.py` | 完成（電腦版 v1.32.0～v1.32.2、腳本 v3.22.0）；Pornhub 實機 U-01 通過 |
-| V4 節點把影片傳回 Master | [10-V4傳回Master規格.md](10-V4傳回Master規格.md) | 規格草稿，等使用者確認 D1～D7 |
+| V4 節點把影片傳回 Master | [10-V4傳回Master規格.md](10-V4傳回Master規格.md)、[11-V4交付報告.md](11-V4交付報告.md)、`nexus/master/incoming.py`、`nexus/worker/uploader.py`、API 1.3、威脅模型 §7 | 完成（電腦版 v1.33.0、Nexus 0.4.0）；D1～D7 照建議；實機 T-08／T-09 待使用者測 |
 
 規格書的禁止事項摘要（每次動工前看）：不重寫整個專案、不用 TODO／mock 冒充完成、不做任意遠端執行、沙箱不足不靜默降級、沒跑過的測試不說通過、SHA-256／TLS／Job Object 不單獨宣稱為完整安全。

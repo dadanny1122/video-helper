@@ -149,5 +149,29 @@ MIGRATIONS = {
         observed_at TEXT NOT NULL
     );
     """,
+    # V4：節點把影片傳回 Master（10-V4 §6）；一個檔案一筆，收到哪幾段記在 have（位元圖）
+    3: """
+    CREATE TABLE uploads (
+        upload_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES tasks(task_id),
+        file_index INTEGER NOT NULL,
+        device_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        node_path TEXT NOT NULL DEFAULT '',
+        chunk_size INTEGER NOT NULL,
+        chunks_total INTEGER NOT NULL,
+        have BLOB NOT NULL,
+        status TEXT NOT NULL,
+        hash_failures INTEGER NOT NULL DEFAULT 0,
+        master_path TEXT NOT NULL DEFAULT '',
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(task_id, file_index)
+    );
+    CREATE INDEX idx_uploads_task ON uploads(task_id);
+    """,
 }
 LATEST = max(MIGRATIONS)

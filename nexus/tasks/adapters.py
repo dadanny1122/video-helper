@@ -87,18 +87,29 @@ ADAPTERS: dict[str, AdapterSpec] = {
          "quality": Param(str, required=False, enum=VIDEO_QUALITIES),
          # V3.1：瀏覽器已經拿到的影片真正位址（網站擋程式開網頁時用，例如 Pornhub 410）
          "media_url": Param(str, required=False, max_len=4096, check=_media_url_problem),
-         "title": Param(str, required=False, max_len=200)},
+         "title": Param(str, required=False, max_len=200),
+         # V4（協定 1.3）：下載完把檔案傳回 Master（D2；舊節點不認得這個參數 → 排程不會派給它）
+         "return_to_master": Param(bool, required=False)},
         validate=_video_cross_check,
         retry_safe=True, idempotent=False, side_effects="network,files",
         default_runtime_seconds=7200, max_runtime_seconds=7200,
-        description="在節點的沙箱裡下載影片，存在節點那台電腦"),
+        description="在節點的沙箱裡下載影片，存在節點那台電腦（可勾選傳回這台）"),
+    # V4：測「傳回」用。節點在自己的下載資料夾寫一個固定內容的假影片檔（不連網、不開子程序），可以傳回 Master
+    "test.file": AdapterSpec(
+        "test.file", "1.0",
+        {"size_mb": Param(int, min=1, max=2048), "return_to_master": Param(bool, required=False)},
+        retry_safe=True, idempotent=False, side_effects="test-file",
+        default_runtime_seconds=300, max_runtime_seconds=3600,
+        description="在節點寫一個 N MB 的測試檔（測傳回、續傳；不連網）"),
 }
+# 這些副作用不需要沙箱（只在節點自己的下載資料夾寫固定內容的檔案）
+NO_SANDBOX_EFFECTS = ("none", "test-file")
 
 
 def needs_sandbox(name: str) -> bool:
     """有副作用（連網、寫檔）的任務一定要在沙箱裡跑（V3 D6）"""
     spec = ADAPTERS.get(name)
-    return bool(spec and spec.side_effects != "none")
+    return bool(spec and spec.side_effects not in NO_SANDBOX_EFFECTS)
 
 
 def get(name: str) -> AdapterSpec | None:

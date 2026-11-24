@@ -17,7 +17,7 @@ MAX_OUTPUT_BYTES = 8 << 30          # V3 D4：單部影片最大 8 GB
 # 可有可無的欄位（舊版節點不認得也沒關係：只有 video.download 會帶，舊節點本來就不接這種任務）
 OPTIONAL = {("limits", "max_output_bytes")}
 # 這些任務類型一定要帶的選用欄位
-REQUIRED_FOR = {"video.download": {("limits", "max_output_bytes")}}
+REQUIRED_FOR = {"video.download": {("limits", "max_output_bytes")}, "test.file": {("limits", "max_output_bytes")}}
 DEFAULT_TTL_SECONDS = 3600
 MEDIA_URL_TTL_SECONDS = 1800        # V3.1：瀏覽器交來的影片位址 30 分鐘內要派出去
 PLATFORMS = ("windows", "any")

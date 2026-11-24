@@ -35,6 +35,15 @@ ERROR_CODES = {
     "MANIFEST_INVALID": (400, False, "任務內容不合格"),
     "ADAPTER_UNSUPPORTED": (422, False, "不支援這個任務類型或版本"),
     "EVENT_OUT_OF_ORDER": (409, False, "事件順序不對"),
+    # V4 傳回檔案
+    "UPLOAD_NOT_ALLOWED": (403, False, "這個檔案不是你可以傳的（不是派給你的任務，或現在不收）"),
+    "UPLOAD_INCOMPLETE": (409, True, "還有段沒收到"),
+    "UPLOAD_EXPIRED": (410, False, "這次傳回已經放棄（逾時或連續驗證失敗），檔案留在節點"),
+    "CHUNK_MISMATCH": (400, True, "這段資料不對，請重傳這段"),
+    "SIZE_MISMATCH": (400, True, "大小跟宣告的不一樣"),
+    "HASH_MISMATCH": (409, True, "整個檔案的 SHA-256 不對"),
+    "MASTER_DISK_FULL": (507, True, "Master 的空間不夠，晚點再傳"),
+    "OUTPUT_REJECTED": (400, False, "檔名或副檔名不允許"),
 }
 
 

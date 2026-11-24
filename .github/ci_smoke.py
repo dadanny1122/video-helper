@@ -406,6 +406,20 @@ if sys.platform == "win32":
     _sbx = os.path.join(os.path.dirname(_wcfg.path), "sandbox", "work")
     assert not os.path.isdir(_sbx) or not os.listdir(_sbx), f"工作資料夾沒清掉：{os.listdir(_sbx)}"
     print("::notice title=節點下載::Master 檢查網址→派給有沙箱的節點→沙箱裡連到網站→照實回報失敗原因、資料夾清乾淨 OK")
+# 7b5. V4 傳回：節點寫一個 3 MB 測試檔 → 分段傳回這台 → 比對 SHA-256 → 放進 ① 的下載資料夾、出現在 ② 下載紀錄、節點那份刪掉
+import hashlib as _hl5
+_wcfg["download_dir"] = os.path.join(os.environ["VIDEO_HELPER_HOME"], "節點下載")
+_tr = _tt.submit("test.file", {"size_mb": 3, "return_to_master": True})
+wait(lambda: app.nexus.tasks.get(_tr["task_id"])["status"] in ("SUCCEEDED", "FAILED", "RESULT_REJECTED"), 60)
+_tr = app.nexus.tasks.get(_tr["task_id"])
+assert _tr["status"] == "SUCCEEDED", f"傳回失敗：{_tr['status']} {_tr['error_code']} {_tr['error_message']}"
+_rf = json.loads(_tr["result_json"])["files"][0]
+assert os.path.dirname(os.path.realpath(_rf["path"])) == os.path.realpath(app.settings.download_dir), _rf
+assert _hl5.sha256(open(_rf["path"], "rb").read()).hexdigest() == _rf["sha256"], "傳回的檔案雜湊不對"
+wait(lambda: any(h.get("node") and h.get("file") == _rf["path"] for h in app.history.items), 10)
+wait(lambda: not os.path.exists(_rf["node_path"]), 10)
+os.remove(_rf["path"])
+print("::notice title=節點傳回::節點寫 3 MB→分段傳回→SHA-256 相同→進下載資料夾、② 下載紀錄、節點那份已刪 OK")
 _nt.tree.selection_set(_nt.tree.get_children()[0]); _nt._update_buttons(); _nt.act("revoke"); r.update()
 wait(lambda: _agent.state == "REVOKED", 10)
 _acts = [e["action"] for e in app.nexus.audit(50)]

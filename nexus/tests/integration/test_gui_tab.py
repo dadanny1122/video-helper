@@ -233,7 +233,7 @@ def test_new_download_task_dialog_and_result_text(svc, monkeypatch):
         t = svc.tasks.list()[0]
         m = json.loads(t["manifest_json"])
         assert t["type"] == "video.download" and m["params"] == {"url": "https://www.xvideos.com/video.abc123/some_title",
-                                                                    "quality": "720"}
+                                                                    "quality": "720", "return_to_master": True}   # V4 D2：預設傳回
         assert m["limits"]["max_output_bytes"] == 8 << 30
         assert tt.summary_of(t).startswith("xvideos.com／some_title") and "720p" in tt.summary_of(t)
         # 只擋廣告的網站 → 建立就被拒（REJECTED），不會派出去
@@ -245,6 +245,23 @@ def test_new_download_task_dialog_and_result_text(svc, monkeypatch):
         files = [{"name": "Clip [abc].mp4", "size": 3 << 20, "sha256": "0" * 64, "path": path}]
         txt = tt.DetailWindow._download_result(json.dumps({"site": "XVideos", "title": "Clip", "files": files}), "pc-a")
         assert "Clip [abc].mp4" in txt and "3.0 MB" in txt and "pc-a" in txt and "VideoHelper 節點" in txt
+        # V4：傳回成功寫「已傳回這台」；不勾傳回 → 參數裡沒有 return_to_master
+        back = [{**files[0], "path": "D:\\下載\\Clip [abc].mp4"}]
+        txt = tt.DetailWindow._download_result(json.dumps({"files": back, "returned": True}), "pc-a")
+        assert "已傳回這台" in txt and "D:\\下載" in txt
+        dlg = tt.NewTaskDialog(page, tab, lambda n: n)
+        dlg.pv.insert(0, "https://www.xvideos.com/video.abc124/x")
+        dlg.ret.set(False)
+        dlg.ok()
+        assert "return_to_master" not in json.loads(svc.tasks.list()[0]["manifest_json"])["params"]
+        # 測試檔（測傳回）
+        dlg = tt.NewTaskDialog(page, tab, lambda n: n)
+        dlg.type.set(next(k for k, v in dlg.types.items() if v == "test.file"))
+        dlg._switch()
+        dlg.ok()
+        t = svc.tasks.list()[0]
+        assert t["type"] == "test.file" and json.loads(t["manifest_json"])["params"] == {"size_mb": 20, "return_to_master": True}
+        assert "retry_return" in tab.b and str(tab.b["retry_return"].cget("text")).startswith("↩")
     finally:
         root.destroy()
 

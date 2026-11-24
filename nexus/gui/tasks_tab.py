@@ -2,6 +2,7 @@
 「⚙ 進階設定 → 📋 節點任務」分頁（06-V2 §7）：任務只能在這裡建立（決策 D2：沒有網路端點）。
 只呼叫 TaskService（不碰資料庫）。
     任務列表（進行中／全部）、新增任務（V3：下載影片；以及測試任務）、任務詳情（時間軸、結果、排程理由）、取消（要理由）、狀態不明時人工標記失敗
+    V4：「下載完傳回這台」、傳回進度、傳回失敗時「重新傳回」
 """
 import json
 import tkinter as tk
@@ -12,10 +13,13 @@ from nexus.core.models import parse_utc
 from nexus.tasks import adapters
 from nexus.tasks.scheduler import REASONS, WEIGHTS
 
-TYPE_NAME = {"test.echo": "回聲", "test.sleep": "等待", "test.fail": "故意失敗", "video.download": "下載影片（節點）"}
+TYPE_NAME = {"test.echo": "回聲", "test.sleep": "等待", "test.fail": "故意失敗", "test.file": "測試檔（測傳回）",
+             "video.download": "下載影片（節點）"}
+FILE_TYPES = ("video.download", "test.file")
+RETURN_ERRORS = ("TRANSFER_FAILED", "TRANSFER_EXPIRED")
 STATE_NAME = {
     "CREATED": "已建立", "VALIDATING": "檢查中", "QUEUED": "排隊中", "SCHEDULED": "已選節點", "DISPATCHED": "已派出（等確認）",
-    "ACCEPTED": "節點已接受", "PREPARING": "準備中", "RUNNING": "執行中", "UPLOADING": "回傳中", "VERIFYING": "驗證結果",
+    "ACCEPTED": "節點已接受", "PREPARING": "準備中", "RUNNING": "執行中", "UPLOADING": "傳回中", "VERIFYING": "驗證結果",
     "CANCELLING": "取消中…", "SUCCEEDED": "成功", "FAILED": "失敗", "REJECTED": "不合格（已拒絕）", "RESULT_REJECTED": "結果不通過",
     "CANCELLED": "已取消", "TIMED_OUT": "逾時", "UNKNOWN": "狀態不明（節點失聯）", "RECONCILING": "核對中"}
 TAG = {"SUCCEEDED": "ok", "FAILED": "bad", "REJECTED": "bad", "RESULT_REJECTED": "bad", "TIMED_OUT": "bad", "UNKNOWN": "warn",
@@ -44,13 +48,16 @@ def summary_of(task: dict) -> str:
         return f"{p['seconds']} 秒"
     if "code" in p:
         return str(p["code"])
+    if "size_mb" in p:
+        return f"{p['size_mb']} MB" + ("，傳回" if p.get("return_to_master") else "")
     if "url" in p:                                    # 下載影片：只顯示網站和最後一段，不顯示完整網址
         try:
             import urllib.parse
             u = urllib.parse.urlsplit(str(p["url"]))
             tail = u.path.rstrip("/").rsplit("/", 1)[-1] or u.query
             q = p.get("quality", "best")
-            return f"{(u.hostname or '').removeprefix('www.')}／{tail[:14]}（{'最高' if q == 'best' else q + 'p'}）"
+            back = "，傳回" if p.get("return_to_master") else ""
+            return f"{(u.hostname or '').removeprefix('www.')}／{tail[:14]}（{'最高' if q == 'best' else q + 'p'}{back}）"
         except Exception:
             return "影片"
     return ""
@@ -82,9 +89,10 @@ class TasksTab:
     def _build(self):
         C, px, p = self.C, self.px, self.page
         ttk.Label(p, foreground=C["muted"], wraplength=px(720), justify="left",
-                  text="派任務給已核准的節點：「下載影片」會在節點的沙箱裡下載、檔案存在節點那台"
-                       "（Pornhub 目前不行，網站會擋程式）；"
-                       "另外有三種測試任務（回聲、等待、故意失敗）用來確認派送、取消、重試。").pack(anchor="w")
+                  text="派任務給已核准的節點：「下載影片」會在節點的沙箱裡下載；勾「下載完傳回這台」，"
+                       "節點會把影片分段傳回來、比對 SHA-256 後放進這台的下載資料夾（斷線會接著傳）。"
+                       "Pornhub 請從瀏覽器「🖧 交給節點」（網站會擋程式直接開網頁）。"
+                       "另外有測試任務（回聲、等待、故意失敗、測試檔）用來確認派送、取消、重試、傳回。").pack(anchor="w")
         bar = ttk.Frame(p)
         bar.pack(fill="x", pady=(8, 4))
         self.new_btn = ttk.Button(bar, text="＋ 新增任務", style="Accent.TButton", command=self.new_task)
@@ -117,7 +125,8 @@ class TasksTab:
         btns.pack(fill="x", pady=(6, 0))
         self.b = {}
         for key, text, cmd in (("detail", "🔍 詳情與排程理由", self.show_detail), ("cancel", "⏹ 取消", self.cancel),
-                               ("fail", "✘ 標記失敗（狀態不明時）", self.mark_failed), ("refresh", "↻ 重新整理", self.refresh)):
+                               ("fail", "✘ 標記失敗（狀態不明時）", self.mark_failed),
+                               ("retry_return", "↩ 重新傳回", self.retry_return), ("refresh", "↻ 重新整理", self.refresh)):
             self.b[key] = ttk.Button(btns, text=text, command=cmd)
             self.b[key].pack(side="left", padx=(0, 6))
 
@@ -138,7 +147,9 @@ class TasksTab:
         st = t["status"] if t else None
         self.b["detail"].state(["!disabled"] if t else ["disabled"])
         self.b["cancel"].state(["!disabled"] if on and st in ("CREATED", "QUEUED", "SCHEDULED", "DISPATCHED", "ACCEPTED",
-                                                                    "PREPARING", "RUNNING") else ["disabled"])
+                                                                    "PREPARING", "RUNNING", "UPLOADING") else ["disabled"])
+        self.b["retry_return"].state(["!disabled"] if on and st == "FAILED" and t.get("error_code") in RETURN_ERRORS
+                                     else ["disabled"])
         self.b["fail"].state(["!disabled"] if on and st == "UNKNOWN" else ["disabled"])
         self.new_btn.state(["!disabled"] if on else ["disabled"])
 
@@ -153,7 +164,7 @@ class TasksTab:
             names = self._names()
             for t in ts.list(active_only=self.active_only.get()):
                 iid = self.tree.insert("", "end", tags=(TAG.get(t["status"], ""),), values=(
-                    TYPE_NAME.get(t["type"], t["type"]), summary_of(t), STATE_NAME.get(t["status"], t["status"]),
+                    TYPE_NAME.get(t["type"], t["type"]), summary_of(t), self._state_text(t),
                     names.get(t["assigned_device_id"], "—") if t["assigned_device_id"] else "—",
                     f"{t['attempt_count']}/{t['max_attempts']}", local(t["created_at"])))
                 self._rows[iid] = t
@@ -161,7 +172,30 @@ class TasksTab:
                     self.tree.selection_set(iid)
         self._update_buttons()
 
+    def _state_text(self, t: dict) -> str:
+        st = STATE_NAME.get(t["status"], t["status"])
+        if t["status"] == "UPLOADING":
+            prog = self.svc.upload_progress(t["task_id"]) if hasattr(self.svc, "upload_progress") else None
+            if prog and prog.get("disk_full"):
+                return "傳回中（這台空間不夠，清出空間後自動繼續）"
+            if prog:
+                return f"傳回中 {int(prog['ratio'] * 100)}%（{fmt_size(prog['received'])}／{fmt_size(prog['size'])}）"
+        if t["status"] == "FAILED" and t.get("error_code") in RETURN_ERRORS:
+            return "傳回失敗（檔案留在節點）"
+        return st
+
     # ---------- 操作 ----------
+    def retry_return(self):
+        t = self._selected()
+        if not t:
+            return
+        try:
+            self.svc.retry_return(t["task_id"])
+            messagebox.showinfo("重新傳回", "好了。節點上線時會自動接著傳（已經收到的部分不用重傳）。", parent=self.page)
+        except Exception as e:
+            messagebox.showerror("重新傳回", getattr(e, "message", None) or str(e), parent=self.page)
+        self.refresh()
+
     def new_task(self):
         if not self.svc.running:
             return
@@ -282,6 +316,15 @@ class NewTaskDialog:
         for c in self.pframe.winfo_children():
             c.destroy()
         self.quality = None
+        self.ret = tk.BooleanVar(value=True)               # D2：預設傳回
+        if n == "test.file":
+            self.plabel.config(text="檔案大小（MB）")
+            self.pv = ttk.Spinbox(self.pframe, from_=1, to=2048, width=8)
+            self.pv.set(20)
+            self.pv.pack(anchor="w")
+            ttk.Checkbutton(self.pframe, text="寫完傳回這台", variable=self.ret).pack(anchor="w", pady=(4, 0))
+            self.runtime.set(spec.default_runtime_seconds)
+            return
         if n == "video.download":
             self.plabel.config(text="影片網址")
             self.pv = ttk.Entry(self.pframe, width=48)
@@ -291,10 +334,11 @@ class NewTaskDialog:
                                         values=["最高", "1080p", "720p", "480p"])
             self.quality.current(0)
             self.quality.pack(side="left", padx=(6, 0))
-            ttk.Label(row, text="　只支援能下載的 9 個網站；檔案存在節點那台電腦",
+            ttk.Label(row, text="　只支援能下載的 9 個網站",
                       foreground=self.tab.C["muted"]).pack(side="left")
             self.pv.pack(fill="x")
             row.pack(fill="x", pady=(4, 0))
+            ttk.Checkbutton(self.pframe, text="下載完傳回這台（不勾＝檔案留在節點那台）", variable=self.ret).pack(anchor="w", pady=(4, 0))
             self.runtime.set(spec.default_runtime_seconds)
             return
         if n == "test.echo":
@@ -317,7 +361,9 @@ class NewTaskDialog:
         v = self.pv.get()
         if n == "video.download":
             q = {"最高": "best", "1080p": "1080", "720p": "720", "480p": "480"}[self.quality.get()]
-            return n, {"url": v.strip(), "quality": q}
+            return n, {"url": v.strip(), "quality": q, **({"return_to_master": True} if self.ret.get() else {})}
+        if n == "test.file":
+            return n, {"size_mb": int(v), **({"return_to_master": True} if self.ret.get() else {})}
         if n == "test.echo":
             return n, {"text": v}
         if n == "test.sleep":
@@ -359,8 +405,11 @@ class DetailWindow:
         f = ttk.Frame(w, padding=12)
         f.pack(fill="both", expand=True)
         res = ""
-        if t["result_json"] and t["type"] == "video.download":
-            res = self._download_result(t["result_json"], names.get(t["assigned_device_id"], "節點"))
+        node = names.get(t["assigned_device_id"], "節點")
+        if t["result_json"] and t["type"] in FILE_TYPES:
+            res = self._download_result(t["result_json"], node, t["status"])
+            if t["error_message"]:
+                res = f"錯誤：{t['error_code']}　{t['error_message'][:200]}\n" + res
         elif t["result_json"]:
             res = "結果：" + t["result_json"][:200]
         elif t["error_message"]:
@@ -369,7 +418,8 @@ class DetailWindow:
                           f"嘗試：{t['attempt_count']}/{t['max_attempts']}　內容：{summary_of(t)}",
                   font=("", 10, "bold")).pack(anchor="w")
         if res:
-            ttk.Label(f, text=res, foreground=C["ok"] if t["result_json"] else C["bad"], wraplength=px(820)).pack(anchor="w", pady=(2, 0))
+            good = t["result_json"] and t["status"] in ("SUCCEEDED", "UPLOADING", "VERIFYING")
+            ttk.Label(f, text=res, foreground=C["ok"] if good else C["bad"], wraplength=px(820)).pack(anchor="w", pady=(2, 0))
         nb = ttk.Notebook(f)
         nb.pack(fill="both", expand=True, pady=(8, 0))
         self.why = self._why_tab(nb, d, names, C, px)
@@ -378,15 +428,19 @@ class DetailWindow:
         nb.add(self.timeline, text="  時間軸  ")
 
     @staticmethod
-    def _download_result(raw: str, node: str) -> str:
-        """下載結果：檔名、大小、存在哪台的哪裡（檔案留在節點，V4 才會傳回 Master）"""
+    def _download_result(raw: str, node: str, status: str = "SUCCEEDED") -> str:
+        """下載結果：檔名、大小、存在哪台的哪裡（V4：傳回成功就寫這台的路徑；還沒傳完／失敗就寫留在節點）"""
         try:
             r = json.loads(raw)
         except Exception:
             return "結果：" + raw[:200]
-        lines = [f"下載完成：{r.get('site', '')}　{str(r.get('title', ''))[:60]}"]
+        lines = [f"下載完成：{r.get('site', '')}　{str(r.get('title', ''))[:60]}".rstrip()]
         for f in r.get("files", [])[:5]:
-            lines.append(f"・{f.get('name')}（{fmt_size(f.get('size'))}）存在「{node}」：{f.get('path', '')}")
+            if r.get("returned"):
+                lines.append(f"・{f.get('name')}（{fmt_size(f.get('size'))}）已傳回這台：{f.get('path', '')}")
+            else:
+                where = "還在傳回中，目前在" if status == "UPLOADING" else "存在"
+                lines.append(f"・{f.get('name')}（{fmt_size(f.get('size'))}）{where}「{node}」：{f.get('path', '')}")
         return "\n".join(lines)
 
     @staticmethod

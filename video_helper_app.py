@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.32.2"
+VERSION = "1.33.0"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -3999,7 +3999,7 @@ class App:
         svc = getattr(self, "nexus", None)
         if not svc or not svc.running or not svc.tasks:
             raise RuntimeError("電腦版的 Master 沒開：到「⚙ 進階設定 → 🖧 節點」勾「啟用 Master」，並至少核准一台節點")
-        params = {"url": url, "media_url": media}
+        params = {"url": url, "media_url": media, "return_to_master": True}     # V4 D2：瀏覽器交的也預設傳回
         if title.strip():
             params["title"] = title.strip()
         t = svc.tasks.create("video.download", params, actor="browser")
@@ -4387,8 +4387,9 @@ class App:
         self.htree.delete(*self.htree.get_children())
         icon = {"完成": "✅ 完成", "失敗": "❌ 失敗", "取消": "■ 取消"}
         for i, r in enumerate(self.history.items):
+            title = ("🖧 " if r.get("node") else "") + r.get("title", "")          # V4：節點傳回來的標一下
             self.htree.insert("", "end", iid=str(i), tags=({"失敗": "bad"}.get(r.get("status"), ""), "odd" if i % 2 else "even"), values=(
-                r.get("time", ""), r.get("title", ""), quality_label(r.get("height")), icon.get(r.get("status"), r.get("status", ""))))
+                r.get("time", ""), title, quality_label(r.get("height")), icon.get(r.get("status"), r.get("status", ""))))
         if not self.history.items:
             self.hdetail.config(text="還沒有紀錄。" if self.settings["keep_history"] else "已關閉下載紀錄（可在「③ 設定」→ 進階設定打開）。")
 
@@ -4405,6 +4406,8 @@ class App:
             lines.append(f"檔案：{r['file']}" + ("" if os.path.exists(r["file"]) else "（已不存在）"))
         if r.get("error"):
             lines.append(f"失敗原因：{r['error']}")
+        if r.get("node"):
+            lines.append(f"來自節點：{r['node']}（已比對 SHA-256）")
         self.hdetail.config(text="\n".join(lines))
 
     def history_redownload(self):
@@ -4494,6 +4497,10 @@ class App:
             from nexus.gui.devices_tab import DevicesTab
             from nexus.master.service import MasterService
             self.nexus = MasterService()
+            # V4：節點傳回的影片放進 ① 下載影片 同一個資料夾、上傳照 ③ 的下載限速、收完寫進 ② 下載紀錄（D4、D5）
+            self.nexus.dest_dir = lambda: self.settings.download_dir
+            self.nexus.rate_limit_mbps = lambda: self.settings["rate_limit_mbps"] or 0
+            self.nexus.on_returned = lambda t, r: self.q.put(("node_returned", (t, r)))
             if self.nexus.cfg["enabled"]:
                 try:
                     self.nexus.start()
@@ -4504,6 +4511,26 @@ class App:
             log.warning("節點分頁無法載入：%r", e)
             ttk.Label(page, text=f"節點功能無法載入：{type(e).__name__}\n（這版打包可能少了 cryptography 套件）",
                       foreground=C["bad"], justify="left").pack(anchor="w")
+
+    def on_node_returned(self, data):
+        """V4：節點把影片傳回來了（Master 已驗證大小和 SHA-256）→ 寫進 ② 下載紀錄"""
+        t, r = data
+        if not self.settings["keep_history"]:
+            return
+        try:
+            params = json.loads(t["manifest_json"]).get("params", {})
+        except Exception:
+            params = {}
+        node = ""
+        try:
+            node = next((d["name"] for d in self.nexus.devices() if d["device_id"] == t["assigned_device_id"]), "")
+        except Exception:
+            pass
+        for f in r.get("files", []):
+            title = r.get("title") or params.get("title") or os.path.splitext(f.get("name", ""))[0]
+            self.history.add(title=title, url=params.get("url", ""), height=r.get("height"), status=DONE,
+                             file=f.get("path", ""), size=f.get("size") or 0, error="", node=node or "節點")
+        self.refresh_history()
 
     def build_tasks_tab(self, page):
         """📋 節點任務（Nexus V2）：畫面在 nexus/gui/tasks_tab.py；用 build_nodes_tab 建好的 self.nexus"""
