@@ -28,7 +28,7 @@ ACTIONS = {
     "nx_enable": 3, "nx_bind": "dict", "nx_pair": None, "nx_device": "dict", "nx_task_new": "dict",
     "nx_cancel": "dict", "nx_fail": "dict", "nx_retry_return": 100, "nx_detail": 100, "nx_audit": None,
     # v1.41.0 安全與統計
-    "sec_view": None, "sec_unpair": 16, "clear_logs": None, "clear_stats": None,
+    "sec_view": None, "sec_unpair": 16, "clear_logs": None, "clear_stats": None, "verify_self": None,
 }
 SETTING_KEYS = ("default_quality", "rate_limit", "skip_downloaded", "tray_always", "keep_history", "keep_stats",
                 "smart_segments", "filename_template", "close_action", "theme", "log_keep_days")

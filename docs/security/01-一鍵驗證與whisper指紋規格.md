@@ -1,7 +1,7 @@
 # 一鍵檢查 EXE、whisper.cpp 寫死指紋 — 規格草稿
 
 > 2026-11-24｜來源：使用者轉來的供應鏈安全評論（建議「把 attestation 驗證做成電腦版內建的一鍵檢查」）。
-> 狀態：**草稿，等使用者確認 S1～S5**。程式碼簽章（不開放台灣個人）、可重現建置（效益低）先不做。
+> 狀態：**S1～S5 照建議（2026-11-24 確認），電腦版 v1.43.0 完成**：`verify_self()`／`--verify-self`／`web_verify_self`、`WHISPER_PIN`（用 `whisper-pin.yml` 取得，執行時不再問 GitHub API）、build.yml「Self-verify」步驟。程式碼簽章（不開放台灣個人）、可重現建置（效益低）先不做。
 
 ## 1. 決策（請確認）
 

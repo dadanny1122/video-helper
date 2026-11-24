@@ -226,6 +226,21 @@ jobs:
           subject-path: dist/VideoHelper.exe
           sbom-path: sbom.cdx.json
 
+      # v1.43.0：用剛打包、剛簽好的 EXE 跑一次「🔍 檢查這個 EXE」，GitHub 要查得到簽章紀錄（發布頁這時還沒有，所以只看簽章）
+      - name: Self-verify (attestation lookup)
+        if: steps.chk.outputs.exists != '1'
+        shell: bash
+        env:
+          VH_GITHUB_TOKEN: ${{ github.token }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          for i in 1 2 3 4 5 6; do
+            ./dist/VideoHelper.exe --verify-self verify.json && break
+            python -c "import json;r=json.load(open('verify.json',encoding='utf-8'));print(r.get('state'),r.get('attestations'),r.get('text'))"
+            sleep 10
+          done
+          python -c "import json,sys;r=json.load(open('verify.json',encoding='utf-8'));print('::notice title=EXE 自我檢查::'+r['text']+' | 簽章紀錄 '+str(r.get('attestations')));sys.exit(0 if r.get('attestations') else 1)"
+
       - name: Release notes from CHANGELOG.md
         if: steps.chk.outputs.exists != '1'
         shell: bash

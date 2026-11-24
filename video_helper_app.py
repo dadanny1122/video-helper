@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.42.0"
+VERSION = "1.43.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -1303,6 +1303,65 @@ def check_update(q, manual=False):
     except Exception as e:
         if manual:
             q.put(("update_failed", str(e)))
+
+
+def _gh_json(url, timeout=20):
+    """問 GitHub API（只有 api.github.com）；回 (狀態碼, 資料)。CI 可以用 VH_GITHUB_TOKEN 避免共用 IP 被限流"""
+    h = {"User-Agent": f"VideoHelper/{VERSION}", "Accept": "application/vnd.github+json"}
+    if os.environ.get("VH_GITHUB_TOKEN"):
+        h["Authorization"] = "Bearer " + os.environ["VH_GITHUB_TOKEN"]
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=timeout) as r:
+            return r.status, json.load(r)
+    except urllib.error.HTTPError as e:
+        return e.code, None
+
+
+def _attest_info(att):
+    """從簽章紀錄裡讀出是哪個流程、哪次打包（讀不到就算了，只是顯示用）"""
+    try:
+        import base64
+        env = (att.get("bundle") or {}).get("dsseEnvelope") or {}
+        st = json.loads(base64.b64decode(env.get("payload") or ""))
+        pred = st.get("predicate") or {}
+        wf = ((pred.get("buildDefinition") or {}).get("externalParameters") or {}).get("workflow") or {}
+        run = ((pred.get("runDetails") or {}).get("metadata") or {}).get("invocationId") or ""
+        return {"type": st.get("predicateType", ""), "workflow": wf.get("path", ""), "repo": wf.get("repository", ""), "run": run}
+    except Exception:
+        return {}
+
+
+def verify_self(exe=None, gh=None):
+    """v1.43.0「🔍 檢查這個 EXE 是不是官方打包的」（docs/security/01-一鍵驗證與whisper指紋規格.md）：
+    ① 算自己的 SHA-256 → ② GitHub 有沒有本專案對這個指紋的打包簽章紀錄（attestation）→ ③ 跟這一版發布頁的指紋比對。
+    只送出 SHA-256（公開資訊），不是完整的密碼學驗證（那要用 gh attestation verify）"""
+    gh = gh or _gh_json
+    exe = exe or (sys.executable if getattr(sys, "frozen", False) else None)
+    if not exe:
+        return {"state": "not_exe", "text": "這個功能只檢查打包好的 VideoHelper.exe（現在是直接跑 Python 原始碼）"}
+    sha = file_sha256(exe)
+    r = {"sha256": sha, "version": VERSION}
+    code, data = gh(f"https://api.github.com/repos/{REPO}/attestations/sha256:{sha}")
+    if code in (403, 429):
+        return dict(r, state="error", text="GitHub 暫時限制查詢次數，請過一陣子再試")
+    if code not in (200, 404) or (code == 200 and not isinstance(data, dict)):
+        return dict(r, state="error", text=f"連不到 GitHub（{code}），請稍後再試")
+    atts = (data or {}).get("attestations") or []
+    infos = [_attest_info(a) for a in atts]
+    prov = [i for i in infos if "provenance" in i.get("type", "") or "slsa" in i.get("type", "")]
+    r["attestations"] = len(atts)
+    if prov:
+        r["run"] = prov[0].get("run", "")
+        r["workflow"] = prov[0].get("workflow", "")
+    code2, rel = gh(f"https://api.github.com/repos/{REPO}/releases/tags/v{VERSION}")
+    asset = next((a for a in (rel or {}).get("assets", []) if a.get("name") == "VideoHelper.exe"), None) if code2 == 200 else None
+    r["release_sha256"] = ((asset or {}).get("digest") or "").removeprefix("sha256:")
+    if not atts:
+        return dict(r, state="bad", text="❌ GitHub 查不到這個 EXE 的打包紀錄：可能被改過，或不是從官方發布頁下載的。建議重新從發布頁下載。")
+    if r["release_sha256"] and r["release_sha256"] != sha:
+        return dict(r, state="warn", text=f"⚠ 有打包紀錄，但跟 v{VERSION} 發布頁上的指紋不一樣（可能是同版本重新打包、或發布頁被動過）")
+    return dict(r, state="ok", text="✅ 這個 EXE 是 GitHub Actions 從 dadanny1122/video-helper 原始碼打包的（GitHub 有簽章紀錄"
+                + ("，也跟發布頁的指紋一樣" if r["release_sha256"] else "；這一版的發布頁還查不到") + "）")
 
 
 # ======================================================================
@@ -2800,8 +2859,11 @@ class Ticker(tk.Canvas):
 # 第一次用才下載：whisper.cpp 程式（約 5 MB，GitHub 官方發布）＋ 模型（190～550 MB，Hugging Face）
 # ======================================================================
 
-WHISPER_API = "https://api.github.com/repos/ggml-org/whisper.cpp/releases?per_page=15"
 WHISPER_ASSET = "whisper-bin-x64.zip"           # 一般電腦（CPU）版
+# v1.43.0 寫死版本和指紋（跟 AI 模型一樣）：2026-11-24 用 .github/workflows/whisper-pin.yml 實際下載、核對過 GitHub 的指紋。
+# 要換版本：手動跑那個 workflow，把印出來的 JSON 貼到這裡（不再每次問 GitHub「最新版是哪個」）
+WHISPER_PIN = {"tag": "b4938", "url": "https://github.com/ggml-org/whisper.cpp/releases/download/b4938/whisper-bin-x64.zip",
+               "sha256": "c2a4b60edb11f7e11a9191ffb50929535527d4d91c9903dbe3e554583bbbc63d", "size": 8361840}
 SUB_MODELS = {"快（small，約 190 MB）": "small-q5_1", "準（large-v3-turbo，約 550 MB）": "large-v3-turbo-q5_0"}
 MODEL_URLS = ("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin",
               "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin")
@@ -2871,27 +2933,6 @@ def fetch_file(url, dest, on_progress=None, cancel_event=None, headers=None):
     return dest
 
 
-def pick_whisper_asset():
-    """從最近幾次發布裡，找一般電腦（CPU）用的 Windows 64 位元壓縮檔；檔名偶爾會變，用規則找"""
-    import re
-    with urllib.request.urlopen(urllib.request.Request(WHISPER_API, headers={"User-Agent": "VideoHelper"}), timeout=30) as r:
-        rels = json.loads(r.read().decode("utf-8"))
-    seen = []
-    for rel in rels:
-        if rel.get("draft") or rel.get("prerelease"):
-            continue
-        names = {a.get("name", ""): a for a in rel.get("assets", [])}
-        seen += list(names)
-        if WHISPER_ASSET in names:
-            return names[WHISPER_ASSET], rel, seen
-        for n, a in names.items():
-            low = n.lower()
-            if (low.endswith(".zip") and "x64" in low and ("win" in low or "bin" in low)
-                    and not re.search(r"cuda|cublas|vulkan|blas|arm|sycl|opencl|xcframework|java|jni", low)):
-                return a, rel, seen
-    return None, None, seen
-
-
 def install_whisper(on_stage=None, on_progress=None, cancel_event=None):
     exe = find_whisper()
     if exe:
@@ -2900,21 +2941,15 @@ def install_whisper(on_stage=None, on_progress=None, cancel_event=None):
         raise RuntimeError("找不到 whisper-cli。Windows 會自動下載；其他系統請先自己安裝 whisper.cpp。")
     if on_stage:
         on_stage("第一次使用：下載 whisper.cpp 聽寫程式…")
-    asset, rel, seen = pick_whisper_asset()
-    if not asset:
-        raise RuntimeError("找不到 whisper.cpp 的 Windows 版下載檔，請回報作者（看到的檔名：" + ", ".join(seen[:12]) + "）")
-    z = fetch_file(asset["browser_download_url"], os.path.join(whisper_dir(), WHISPER_ASSET), on_progress, cancel_event)
-    want = (asset.get("digest") or "").lower()         # GitHub 幫每個發布檔算好的指紋（sha256）
-    if not want.startswith("sha256:"):
-        os.remove(z)
-        raise RuntimeError("GitHub 沒有提供聽寫程式的指紋，為了安全不使用，請回報作者")
-    if file_sha256(z) != want[7:]:
+    pin = WHISPER_PIN
+    z = fetch_file(pin["url"], os.path.join(whisper_dir(), WHISPER_ASSET), on_progress, cancel_event)
+    if os.path.getsize(z) != pin["size"] or file_sha256(z) != pin["sha256"]:
         os.remove(z)
         raise RuntimeError("下載的聽寫程式指紋對不上（可能被竄改或下載壞掉），已刪除，請再試一次")
-    log.info("whisper.cpp 指紋相符：%s", want)
+    log.info("whisper.cpp %s 指紋相符（寫死的）：%s", pin["tag"], pin["sha256"][:16])
     import zipfile
     with zipfile.ZipFile(z) as zf:
-        zf.extractall(os.path.join(whisper_dir(), rel.get("tag_name", "bin")))
+        zf.extractall(os.path.join(whisper_dir(), pin["tag"]))
     os.remove(z)
     exe = find_whisper()
     if not exe:
@@ -5461,10 +5496,27 @@ class App:
             "paired": paired, "bridge": f"開著（127.0.0.1:{self.bridge.port}，只有這台電腦連得到）" if self.bridge.server else "關閉",
             "ai": ai, "ai_key": bool((self.settings["ai_key"] or "").strip()), "net": net,
             "log_size": fmt_size(size), "log_keep": self.settings["log_keep_days"], "components": self._web_comp,
+            "verify": getattr(self, "_web_verify", None),
             "stats": [[r["site"], r["count"], fmt_size(r["bytes"]), f"{r['mbps']:.1f} Mbps" if r["mbps"] else "—",
                        pct(r["time_err"]), pct(r["size_err"])] for r in rows],
             "stats_sum": (f"共下載 {n} 部｜總量 {fmt_size(total)}｜" + (f"整體來說實際時間是預估的 {tf:.2f} 倍（依最近 {tn} 次）"
                                                                     if tf else "累積 3 次以上就會開始校正預估")) if n else "還沒有統計。下載完成後會自動記錄。"}}
+
+    def web_verify_self(self, _):
+        if getattr(self, "_web_verify", None) and self._web_verify.get("state") == "running":
+            return {"ok": False, "msg": "檢查中，等一下"}
+        self._web_verify = {"state": "running", "text": "檢查中…（算指紋、問 GitHub）"}
+
+        def work():
+            try:
+                res = verify_self()
+            except Exception as e:
+                log.exception("檢查 EXE")
+                res = {"state": "error", "text": f"檢查失敗：{type(e).__name__}"}
+            self._web_verify = res
+            log.info("檢查 EXE：%s %s", res.get("state"), res.get("sha256", "")[:16])
+        threading.Thread(target=work, daemon=True).start()
+        return {"ok": True, "msg": "檢查中…"}
 
     def web_sec_unpair(self, hid):
         h = next((x for x in (self.settings["bridge_tokens"] or []) if x[:16] == hid), None)
@@ -6758,6 +6810,12 @@ def selftest(out_path):
 
 
 if __name__ == "__main__":
+    if "--verify-self" in sys.argv:                  # v1.43.0：CI 在簽章後用真的 EXE 跑一次（不開視窗）
+        i = sys.argv.index("--verify-self")
+        _res = verify_self()
+        with open(sys.argv[i + 1] if len(sys.argv) > i + 1 else "verify.json", "w", encoding="utf-8") as _f:
+            json.dump(_res, _f, ensure_ascii=False, indent=1)
+        sys.exit(0 if _res.get("state") == "ok" else 1)
     if "--selftest" in sys.argv:
         i = sys.argv.index("--selftest")
         sys.exit(selftest(sys.argv[i + 1] if len(sys.argv) > i + 1 else "selftest.json"))

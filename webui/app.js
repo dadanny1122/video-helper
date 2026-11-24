@@ -343,6 +343,14 @@ async function loadSec() {
   $('#sec-statsum').textContent = c.stats_sum;
   $('#sec-stats').innerHTML = c.stats.length ? `<table class="tbl"><tr><th>網站</th><th>次數</th><th>總量</th><th>平均速度</th><th>時間誤差</th><th>大小誤差</th></tr>${c.stats.map((r) => `<tr>${r.map((x) => `<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</table>` : '';
   $('#sec-comp').textContent = c.components;
+  const v = c.verify, vr = $('#sec-vres');
+  vr.hidden = !v;
+  if (v) {
+    vr.className = 'res ' + ({ ok: 'good', bad: 'bad', warn: 'bad' }[v.state] || '');
+    vr.textContent = v.text + (v.sha256 ? `\n這個 EXE：${v.sha256}` : '') + (v.release_sha256 && v.release_sha256 !== v.sha256 ? `\n發布頁：${v.release_sha256}` : '')
+      + (v.run ? `\n打包紀錄：${v.run}` : '');
+  }
+  $('#sec-verify').disabled = !!(v && v.state === 'running');
 }
 
 // ---------- 右鍵選單 ----------
@@ -568,6 +576,10 @@ function wire() {
   });
   // 安全與統計
   $('#sec-refresh').addEventListener('click', () => { secSig = ''; loadSec(); });
+  $('#sec-verify').addEventListener('click', async () => {
+    await act('verify_self'); secSig = ''; loadSec();
+    const poll = setInterval(async () => { secSig = ''; await loadSec(); if (!S || page !== 'sec' || !$('#sec-verify').disabled) clearInterval(poll); }, 1000);
+  });
   $('#sec-paired').addEventListener('click', async (e) => {
     const b = e.target.closest('[data-unpair]'); if (!b) return;
     if (await modal('取消配對', '這個瀏覽器之後就不能再送影片過來，要用得重新配對。', [['取消配對', 1, 'accent'], ['不要', 0]])) { await act('sec_unpair', b.dataset.unpair); secSig = ''; loadSec(); }

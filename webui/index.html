@@ -267,6 +267,11 @@
       <section class="card">
         <div class="card-h"><h3>🧩 用到的元件和指紋（SHA-256）</h3></div>
         <p class="muted small">可以跟 GitHub 發布頁、SECURITY.md 對照。EXE 另外有 GitHub 簽章：<code>gh attestation verify VideoHelper.exe -R dadanny1122/video-helper</code></p>
+        <div class="verify">
+          <button class="accent small" id="sec-verify">🔍 檢查這個 EXE 是不是官方打包的</button>
+          <div id="sec-vres" class="res" hidden></div>
+          <p class="muted small">會算出這個 EXE 的指紋，去 GitHub 查本專案有沒有它的打包簽章紀錄、再跟發布頁的指紋比對（只送出指紋，按了才連網）。這是查紀錄，不是在你電腦上做完整的密碼學驗證；要完整驗證請用上面的 gh 指令。</p>
+        </div>
         <pre class="report" id="sec-comp"></pre>
         <button class="ghost small" data-act="link:attest">打開 GitHub 簽章紀錄</button>
       </section>

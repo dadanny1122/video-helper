@@ -240,3 +240,4 @@ button.small { font-size: 12px; }
 .tblwrap { max-height: 34vh; overflow: auto; }
 .res { white-space: pre-line; padding: 8px 10px; border-radius: 10px; background: var(--card2); margin: 8px 0; font-size: 13px; }
 .res.good { color: var(--ok); } .res.bad { color: var(--bad); }
+.verify { margin: 8px 0 12px; } .verify .res { word-break: break-all; }

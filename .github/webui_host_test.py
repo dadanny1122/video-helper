@@ -50,6 +50,35 @@ ok([n["ver"] for n in news] == ["1.2.0", "1.1.0", "1.0.0"] and news[0]["items"] 
 ok(webui.load_news() and webui.load_news()[0]["ver"] == a.VERSION, "CHANGELOG 最上面就是這一版")
 
 
+# ---- v1.43.0 一鍵檢查 EXE（假的 GitHub 回應）----
+_exe = os.path.join(os.environ["VIDEO_HELPER_HOME"], "VideoHelper.exe")
+open(_exe, "wb").write(b"fake exe")
+_sha = a.file_sha256(_exe)
+
+
+def _fake_gh(att_code, atts, rel_digest):
+    def gh(url):
+        if "/attestations/" in url:
+            assert url.endswith("sha256:" + _sha), url
+            return att_code, ({"attestations": atts} if att_code == 200 else None)
+        return (200, {"assets": [{"name": "VideoHelper.exe", "digest": "sha256:" + rel_digest}]}) if rel_digest else (404, None)
+    return gh
+
+
+_att = {"bundle": {"dsseEnvelope": {"payload": __import__("base64").b64encode(json.dumps({
+    "predicateType": "https://slsa.dev/provenance/v1", "predicate": {"runDetails": {"metadata": {"invocationId": "https://github.com/x/runs/1"}}}}).encode()).decode()}}}
+ok(a.verify_self(exe=None)["state"] == "not_exe", "一鍵檢查：不是 EXE 就說明")
+r = a.verify_self(_exe, _fake_gh(200, [_att], _sha))
+ok(r["state"] == "ok" and r["run"].endswith("/runs/1"), "有簽章紀錄＋發布頁指紋一樣 → ✅（附打包紀錄）")
+ok(a.verify_self(_exe, _fake_gh(200, [_att], ""))["state"] == "ok", "有簽章、發布頁還查不到 → ✅（註明）")
+ok(a.verify_self(_exe, _fake_gh(404, [], _sha))["state"] == "bad", "查不到簽章紀錄 → ❌")
+ok(a.verify_self(_exe, _fake_gh(200, [], _sha))["state"] == "bad", "簽章紀錄是空的 → ❌")
+ok(a.verify_self(_exe, _fake_gh(200, [_att], "0" * 64))["state"] == "warn", "跟發布頁指紋不同 → ⚠")
+ok(a.verify_self(_exe, _fake_gh(403, [], _sha))["state"] == "error", "被限流 → 請稍後再試")
+ok(a.WHISPER_PIN["url"].startswith("https://github.com/ggml-org/whisper.cpp/releases/download/") and len(a.WHISPER_PIN["sha256"]) == 64,
+   "whisper.cpp 寫死版本和指紋")
+
+
 class FakeWindow:
     def __init__(self):
         self.calls = []

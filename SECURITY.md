@@ -94,7 +94,7 @@
 |---|---|---|
 | `VideoHelper.exe` | GitHub Actions 從**這個 repo 的公開原始碼**自動打包 | 每個 Release 附 **SHA-256 指紋**；Windows 可以用 `certutil -hashfile VideoHelper.exe SHA256` 自己算來比 |
 | ffmpeg | GitHub Actions 從 **FFmpeg 官方原始碼**自己編（`.github/ffmpeg/build.sh`），包在 EXE 裡 | 不從網路下載執行檔 |
-| whisper.cpp（AI 字幕） | GitHub 官方發布頁（ggml-org/whisper.cpp 最新正式版） | 比對 GitHub 提供的 SHA-256；**沒提供或對不上就刪除、不執行**。限制：指紋也是 GitHub 給的，所以擋得住下載壞掉或中途被換，擋不住「官方發布本身有問題」 |
+| whisper.cpp（AI 字幕） | GitHub 官方發布頁（ggml-org/whisper.cpp，v1.43.0 起固定版本） | 版本、網址、SHA-256、大小**寫死在程式裡**（`WHISPER_PIN`，用 `.github/workflows/whisper-pin.yml` 實際下載並核對 GitHub 指紋後才寫進去）；對不上就刪除、不執行。限制：寫死的那一刻還是相信 GitHub 給的檔案；換版本要作者手動跑一次再更新 |
 | AI 模型 | Hugging Face | **SHA-256 寫死在程式裡**（`MODEL_SHA256`），下載後核對；之後檔案只要有變動（大小或修改時間）就重新核對，對不上就刪除 |
 | mux.js（瀏覽器腳本） | jsDelivr，固定版本 6.3.0 | `@require` 附 SHA-256（支援的腳本管理器會自動核對）；自動測試核對它跟 npm 官方檔案一樣 |
 | 檢查更新 | GitHub | **只通知有新版，不會自動下載或執行** |
@@ -106,7 +106,7 @@
 | 套件版本＋指紋寫死（`requirements.txt`，`pip install --require-hashes`） | 打包時裝到被換掉的套件 | 看 `requirements.txt` |
 | 每次發布先跑 `pip-audit` 掃已知漏洞（CVE），有就不發布 | 用到有已知漏洞的版本 | 發布頁附的 `audit.md` |
 | SBOM（`sbom.cdx.json`，CycloneDX 格式） | 不知道用了什麼 | 發布頁附件 |
-| **GitHub 發布簽章**（artifact attestation，Sigstore） | 有人換掉發布頁的 EXE 和指紋：簽章是 GitHub 用「這個 repo 的這次打包」身分簽的，不在發布頁上，偽造不了 | `gh attestation verify VideoHelper.exe -R dadanny1122/video-helper`，或看 https://github.com/dadanny1122/video-helper/attestations |
+| **GitHub 發布簽章**（artifact attestation，Sigstore） | 有人換掉發布頁的 EXE 和指紋：簽章是 GitHub 用「這個 repo 的這次打包」身分簽的，不在發布頁上，偽造不了 | `gh attestation verify VideoHelper.exe -R dadanny1122/video-helper`，或看 https://github.com/dadanny1122/video-helper/attestations；v1.43.0 起電腦版「🔒 安全與統計」有「🔍 檢查這個 EXE」：算指紋 → 查 GitHub 的簽章紀錄 → 比對發布頁指紋（只送出指紋；是查紀錄，不是完整的密碼學驗證）。每次打包後 CI 也用真的 EXE 跑一次 |
 | Dependabot | 套件出新版或修漏洞時沒跟上 | 自動開 PR |
 
 沒做的：Windows 程式碼簽章（Authenticode，讓 Windows 不跳「不明發行者」），要付費憑證。
