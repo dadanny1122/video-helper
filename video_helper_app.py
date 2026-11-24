@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.33.2"
+VERSION = "1.33.3"
 REPO = "dadanny1122/video-helper"
 
 # 安裝精靈用到的網址
@@ -2284,6 +2284,11 @@ def ui_busy() -> bool:
 
 def mark_ui_busy(e=None):
     if e is None or isinstance(getattr(e, "widget", None), (tk.Tk, tk.Toplevel)):
+        if not ui_busy() and UI_BUSY.get("on_start"):
+            try:
+                UI_BUSY["on_start"](getattr(e, "widget", None))
+            except Exception:
+                pass
         UI_BUSY["until"] = time.time() + 0.35
 
 
@@ -3274,6 +3279,8 @@ class App:
         root.bind("<FocusIn>", lambda e: self.check_clipboard() if e.widget is root else None)
 
         self.home = Home(root, self.pick_home, self.home_status, top=self.header, below=self.ticker, kpis=self.home_kpis)
+        UI_BUSY["on_start"] = self._drag_start             # v1.33.3 拖動測試
+        root.bind_all("<Expose>", self._count_expose, add="+")
         self.header.on_nav = self.nav
         self.header.active = self.nb.index("current")
         self.header.draw()
@@ -3290,6 +3297,47 @@ class App:
         log.info("啟動 v%s", VERSION)
 
     # 讓背景工作把結果丟回主畫面
+    # ---- v1.33.3 拖動測試：拖動／改大小時記下重畫了哪些元件、程式有沒有被卡住，放開後寫一行到日誌 ----
+    def _drag_start(self, win):
+        if getattr(self, "_drag", None):
+            return
+        cur = self.nb.index("current")
+        page = "首頁" if self.home.visible() else next((n for n, i in NAV_ITEMS if i == cur), str(cur))
+        now = time.time()
+        self._drag = {"t0": now, "last": now, "beats": 0, "maxgap": 0.0, "expose": {},
+                      "page": page, "win": "主視窗" if win is self.root else "小視窗"}
+        self.root.after(15, self._drag_beat)
+
+    def _drag_beat(self):
+        d = self._drag
+        if not d:
+            return
+        now = time.time()
+        d["maxgap"] = max(d["maxgap"], now - d["last"])
+        d["last"] = now
+        d["beats"] += 1
+        if ui_busy():
+            self.root.after(15, self._drag_beat)
+            return
+        self._drag = None
+        dur = now - d["t0"] - 0.35                           # 扣掉放開後等的 0.35 秒
+        if dur < 0.3:
+            return
+        ex = sorted(d["expose"].items(), key=lambda x: -x[1])
+        total = sum(d["expose"].values())
+        log.info("拖動測試：%s／%s，%.1f 秒｜重畫 %d 次（%s）｜程式每秒能處理 %.0f 次、最久卡 %d ms",
+                 d["win"], d["page"], dur, total, "、".join(f"{k} {v}" for k, v in ex[:6]) or "沒有",
+                 d["beats"] / max(now - d["t0"], 0.01), d["maxgap"] * 1000)
+
+    def _count_expose(self, e):
+        d = getattr(self, "_drag", None)
+        if d is not None:
+            try:
+                k = e.widget.winfo_class()
+            except Exception:
+                k = "?"
+            d["expose"][k] = d["expose"].get(k, 0) + 1
+
     def poll(self):
         now = time.time()
         gap = now - getattr(self, "_last_poll", now)
