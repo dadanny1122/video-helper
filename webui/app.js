@@ -446,10 +446,6 @@ function wire() {
     const b = e.target.closest('[data-act]');
     if (b) {
       const [name, arg] = b.dataset.act.split(':');
-      if (name === 'set_ui_classic') {
-        if (await modal('切回原本的視窗', '馬上換成原本的視窗；之後打開電腦版也是原本的視窗。\n想再用新介面：原本視窗的 ③ 設定 勾「使用新介面」。', [['切回原本的視窗', 1, 'accent'], ['取消', 0]])) act('set_ui', 'classic');
-        return;
-      }
       act(name, arg);
       return;
     }

@@ -301,17 +301,14 @@ def fake_mode():
     ok(ask and "還在下載" in ask["title"] and ask["buttons"][-1] == "回到視窗", "還在下載 → 網頁跳出問題")
     call("answer", {"id": ask["id"], "choice": len(ask["buttons"]) - 1})
     ok(host.state["ask"] is None and not app.quitting, "選「回到視窗」就不關")
-    # 切回舊介面
-    call("set_ui", "classic")
+    # v1.42.0 只用新介面：不能從網頁切回原本的視窗；新介面打不開時才自動退回
+    ok(call("set_ui", "classic")["ok"] is False, "網頁不能切回原本的視窗")
+    app.web_use_classic()
     drain(app, root)
-    ok(app.web_fallback and app.settings["ui"] == "classic" and root.state() == "normal" and "hide" in host.window.calls,
-       "切回舊介面：網頁藏起來、原本的視窗出來、設定記住")
-    ok(app.settings["ui_chosen"] is True, "切回原本的視窗會記住是自己選的（下次不會被換回新介面）")
+    ok(app.web_fallback and root.state() == "normal" and "hide" in host.window.calls, "新介面打不開時：退回原本的視窗")
     st2 = a.Settings(os.path.join(tempfile.mkdtemp(), "s.json"))
-    st2["ui"] = "classic"
-    ok(a.prefer_web_ui(st2) and st2["ui"] == "web", "v1.40.0：舊版存的 classic、沒自己選過 → 換成新介面")
     st2["ui"], st2["ui_chosen"] = "classic", True
-    ok(not a.prefer_web_ui(st2) and st2["ui"] == "classic", "自己選過原本的視窗 → 照他選的")
+    ok(a.prefer_web_ui(st2) and st2["ui"] == "web", "v1.42.0：以前選過原本的視窗也換成新介面")
     app.web_fallback = False
     # 沒在下載 → 按 X 直接結束
     app.downloads_active = lambda: False

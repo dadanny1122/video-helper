@@ -16,7 +16,7 @@ ACTIONS = {
     "add": 20000, "paste": None, "toggle_pause": None, "retry_failed": None,
     "cancel": 100, "remove": 300, "play": 300, "reveal": 300,
     "open_folder": None, "old": 20, "pair": None, "check_update": None, "link": 20,
-    "set_ui": 20, "answer": "dict", "clear_notices": None,
+    "answer": "dict", "clear_notices": None,
     # v1.37.0 下載管理頁
     "add_batch": "dict", "analyze": 2000, "enqueue_fmt": "dict", "clear_analysis": None, "clear_finished": None,
     "redownload": 300, "copy_url": 300, "subtitles": "keys", "delete_hist": "keys",
