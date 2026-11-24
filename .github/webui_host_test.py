@@ -333,6 +333,9 @@ def real_mode():
             def probe():
                 try:
                     time.sleep(1.5)                     # 讓第一次狀態畫上去
+                    result["first"] = host.window.evaluate_js("!document.getElementById('page-setup').hidden")   # 第一次打開先到安裝擋廣告
+                    host.window.evaluate_js("document.querySelector('#nav a[data-page=\"home\"]').click()")
+                    time.sleep(1.0)
                     result["kpis"] = host.window.evaluate_js("document.querySelectorAll('.kpi').length")
                     result["ver"] = host.window.evaluate_js("document.getElementById('ver').textContent")
                     host.window.evaluate_js("document.querySelector('#nav a[data-page=\"dl\"]').click()")
@@ -362,6 +365,7 @@ def real_mode():
     webui.run(start_app, "Video Helper 測試")
     print("結果：", result, flush=True)
     ok(result.get("load_s") is not None, f"網頁 30 秒內載入（{result.get('load_s')} 秒）")
+    ok(result.get("first") is True, "第一次打開先到「安裝擋廣告」")
     ok(result.get("kpis") == 4, "WebView2 裡畫出 4 張數據卡")
     ok(result.get("ver") == "v" + a.VERSION, "版本號從電腦版傳到網頁")
     ok(result.get("dl") == 7, "下載管理頁打得開、畫質選單有 7 個")
