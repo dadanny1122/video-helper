@@ -1,0 +1,35 @@
+name: whisper.cpp pin
+
+# 要換 whisper.cpp 版本時手動跑：找出最新的 Windows CPU 版、真的下載核對 GitHub 指紋，印出要貼進 whisper_pin.json 的內容
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find newest whisper-bin-x64.zip and verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, re, urllib.request
+          H = {"User-Agent": "VideoHelper-pin", "Authorization": "Bearer " + os.environ["GH_TOKEN"]}
+          rels = json.load(urllib.request.urlopen(urllib.request.Request(
+              "https://api.github.com/repos/ggml-org/whisper.cpp/releases?per_page=15", headers=H), timeout=30))
+          for rel in rels:
+              if rel.get("draft") or rel.get("prerelease"):
+                  continue
+              a = next((x for x in rel.get("assets", []) if x["name"] == "whisper-bin-x64.zip"), None)
+              if a:
+                  break
+          data = urllib.request.urlopen(urllib.request.Request(a["browser_download_url"], headers={"User-Agent": "VideoHelper-pin"}), timeout=120).read()
+          sha = hashlib.sha256(data).hexdigest()
+          assert a.get("digest") == "sha256:" + sha, (a.get("digest"), sha)
+          pin = {"tag": rel["tag_name"], "url": a["browser_download_url"], "sha256": sha, "size": len(data)}
+          print("::notice title=whisper pin::" + json.dumps(pin))
+          PY
