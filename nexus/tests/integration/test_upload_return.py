@@ -245,8 +245,12 @@ def test_put_limits_and_replay(m, agents):
     t = m.tasks.create("test.file", {"size_mb": 3, "return_to_master": True})
     assert wait_for(lambda: st(m, t["task_id"]) == "UPLOADING", 30)
     uid = m.dispatcher.incoming.of_task(t["task_id"])[0]["upload_id"]
-    (s, body, conn), _ = _raw_put(m, a, f"/uploads/{uid}/chunks/0", b"x" * ((1 << 20) + 1))     # 超過一段的大小
-    assert s == 413 and conn == "close"
+    # 超過一段的大小：Master 不讀內容就回 413 並斷線；Windows 上客戶端還在送就被切斷（SSLEOFError／連線重設）也算擋下
+    try:
+        (s, body, conn), _ = _raw_put(m, a, f"/uploads/{uid}/chunks/0", b"x" * ((1 << 20) + 1))
+        assert s == 413 and conn == "close"
+    except (ssl.SSLError, ConnectionError):
+        pass
     data = b"y" * 100
     (s, body, _), env = _raw_put(m, a, f"/uploads/{uid}/chunks/2", data, sha=hashlib.sha256(data).hexdigest())
     assert body["error"]["code"] == "SIZE_MISMATCH"                                           # 長度跟宣告的對不上
