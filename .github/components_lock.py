@@ -95,7 +95,7 @@ def make(args):
         "note": "版本和指紋清單；不含任何金鑰、憑證或使用者資料。/ Versions and SHA-256 only — no keys, certificates or user data.",
         "desktop": {"version": app["VERSION"], **({"exe": fileinfo(args.exe, os.path.basename(args.exe))} if args.exe else {}),
                     "bridge_api": app["BRIDGE_API"]},
-        "browser": {"version": us_ver, **repoinfo("video-helper.user.js"), "bridge_api": us_api,
+        "browser": {"version": us_ver, "tag": f"userscript-v{us_ver}", **repoinfo("video-helper.user.js"), "bridge_api": us_api,
                     "install_url": f"https://raw.githubusercontent.com/{app['REPO']}/{commit or 'main'}/video-helper.user.js",
                     "requires": us_reqs},
         "nexus": {"version": nx["NEXUS_VERSION"], "protocol": nx["PROTOCOL_VERSION"], "db_schema": max(migs["MIGRATIONS"])},

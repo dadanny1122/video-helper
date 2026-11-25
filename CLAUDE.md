@@ -54,7 +54,7 @@
 - **commit 訊息用中文白話寫**（會直接貼到 Discord #進度 給朋友看）
 - 說明書裡的分頁名稱要跟電腦版一致：① 下載影片 ② 下載紀錄 ③ 設定 ④ 安裝擋廣告；其他設定在「⚙ 進階設定…」
 - 推之前先 `git pull --rebase`（GitHub 機器人會自己 commit 狀態檔）
-- **發布與 workflow 規則（S0，`docs/infra/00-架構稽核與改善計畫.md`）**：Actions 一律用 commit SHA 鎖版本（後面註解版本號）；每個 workflow 寫最小 `permissions`；build.yml 的測試每次都跑，只有簽章／發布看版號，發布 tag 用 `target_commitish: ${{ github.sha }}` 並在發布後核對；S1（v1.46.0）每次發布附 `components.lock.json`（`.github/components_lock.py` make＋verify，跟 EXE 一起 attest；只放版本／指紋，掃描到金鑰或個人路徑就失敗）
+- **發布與 workflow 規則（S0，`docs/infra/00-架構稽核與改善計畫.md`）**：Actions 一律用 commit SHA 鎖版本（後面註解版本號）；每個 workflow 寫最小 `permissions`；build.yml 的測試每次都跑，只有簽章／發布看版號，發布 tag 用 `target_commitish: ${{ github.sha }}` 並在發布後核對；S1（v1.46.0）每次發布附 `components.lock.json`（`.github/components_lock.py` make＋verify，跟 EXE 一起 attest；只放版本／指紋，掃描到金鑰或個人路徑就失敗）；S2 腳本 `@version` 改了 → `userscript.yml` 自動建附註 tag `userscript-vX.Y.Z`（`.github/userscript_tag.py`；指紋寫在 tag 說明、不開 Release、不 force；沒升版就改腳本內容會讓 workflow 失敗、Discord 不貼）
 - 改了新介面或電腦版會顯示的中文字：跑 `python3 -I .github/i18n_check.py`，漏翻的加進 `webui/en.json`（腳本的加進腳本裡的 `I18N_EN`；用詞照 `docs/i18n/00-英文版規格.md` 附錄）
 
 ## 自動化（GitHub Actions → Discord）

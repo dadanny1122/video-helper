@@ -1,18 +1,75 @@
 name: Userscript update notice
 
-# 腳本的 @version 改了並上傳 → 把這次的更新內容貼到 Discord
+# 腳本的 @version 改了並上傳 → ① 建版本 tag（S2）＋簽章 ② 把這次的更新內容貼到 Discord
+# 安裝來源、Greasy Fork 同步、電腦版 URL_SCRIPT、自動更新都不變（還是 raw main）
 on:
   push:
     branches: [main]
     paths:
       - 'video-helper.user.js'
+      - '.github/userscript_tag.py'
+      - '.github/workflows/userscript.yml'
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: '幫歷史上每個版本補 tag（只要做一次；已有的 tag 不會動）'
+        type: boolean
+        default: false
+
+concurrency:
+  group: userscript-tag
+  cancel-in-progress: false
 
 # S0：只讀程式碼、往 Discord 貼訊息，不需要寫入 repo
 permissions:
   contents: read
 
 jobs:
+  # S2（docs/infra/00-架構稽核與改善計畫.md）：每個 @version 一個附註 tag userscript-vX.Y.Z（說明裡寫 SHA-256），
+  # 腳本檔用 S1 同一套 GitHub 簽章（attest-build-provenance）；不另開 Release（電腦版「檢查更新」看的是最新 Release）
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write          # 推 tag（沒有 --force，已存在就失敗，不會覆蓋）
+      id-token: write          # 簽章
+      attestations: write
+    outputs:
+      action: ${{ steps.plan.outputs.action }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0       # 要看歷史和所有 tag
+
+      - name: Self-test (rules on a scratch repo)
+        run: python3 -I .github/userscript_tag.py selftest
+
+      - name: Backfill old versions (manual, one time)
+        if: github.event_name == 'workflow_dispatch' && inputs.backfill
+        run: python3 -I .github/userscript_tag.py backfill --push
+
+      - name: Plan (version conflict stops here)
+        id: plan
+        run: python3 -I .github/userscript_tag.py plan "${{ github.sha }}"
+
+      - name: Create tag
+        if: steps.plan.outputs.action == 'create'
+        run: python3 -I .github/userscript_tag.py create "${{ github.sha }}"
+
+      - name: Sign the script (same as S1)
+        if: steps.plan.outputs.action == 'create' || (github.event_name == 'workflow_dispatch' && inputs.backfill)
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2.4.0
+        with:
+          subject-path: video-helper.user.js
+
+      - name: Verify every version tag (and download old versions from raw)
+        run: |
+          git fetch -q --tags --force origin
+          python3 -I .github/userscript_tag.py verify "${{ steps.plan.outputs.tag }}" --download
+          python3 -I .github/userscript_tag.py verify-all --download
+
   notify:
+    needs: tag                 # 版本衝突（tag 那步失敗）就不貼 Discord
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
