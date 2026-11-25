@@ -13,6 +13,9 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import vh_updater as U  # noqa: E402
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")     # python -I 不看 PYTHONIOENCODING（Windows 主控台是 cp1252）
+
 REPO = "dadanny1122/video-helper"
 fails = 0
 
