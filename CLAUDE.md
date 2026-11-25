@@ -111,6 +111,7 @@ body `{"ref":"main","inputs":{"wait":"true"}}`，Header 帶使用者的 fine-gra
 
 ## 還沒做的事
 
+- **電腦版一鍵自動更新**（使用者 2026-11-25：排到最後、整個完成時再做；目前只提醒要手動下載）
 - xHamster：v3.12.0 真網站確認可選畫質（瀏覽器自己解密）；「交給電腦版」也可下載
 - xHamster 影片前廣告會閃約 0.7 秒才被跳過（使用者說先不處理；要擋再請他貼 Console 紀錄）
 - XNXX 首頁 2026-10 改成分類頁（沒影片連結），site_check 改去 /best、/hits 找；site-check.yml 可用 probe=xnxx 診斷；probe=tube8 會看 Tube8／SpankBang／YouJizz 影片頁結構
