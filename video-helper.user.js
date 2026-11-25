@@ -3,7 +3,7 @@
 // @name:en      Video Helper
 // @name:zh-TW   Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.23.1
+// @version      3.23.2
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @description:zh-TW 安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @description:en Blocks pop-ups, forced redirects and dangerous downloads; stops ad networks from loading (saves bandwidth); hides and skips video ads; shows playback status and load-time estimates; one-click download with quality picker on supported sites. English and Traditional Chinese interface (follows your browser language; switch with the 🌐 button in the shield panel).
@@ -2290,7 +2290,7 @@
     return false;
   };
   // 1.23.0 以前的電腦版不會回 features／sites → 照版本推算
-  const LEGACY_FEATURES = { enqueue: '1.0.0', status: '1.0.0', media: '1.16.0', classify: '1.13.0' };
+  const LEGACY_FEATURES = { enqueue: '1.0.0', status: '1.0.0', media: '1.10.0', classify: '1.13.0' };   // S3 測試對照過歷史版本
   const LEGACY_SITES = { 'tube8.com': '1.17.0', 'youjizz.com': '1.17.0', 'spankbang.com': '1.17.0' };
   function desktopLacks(feature, host) {
     const c = desktopCaps;
@@ -2298,8 +2298,9 @@
     const old = `電腦版 v${c.version || '?'} 太舊，`;
     const fix = `\n請到這裡下載最新的 VideoHelper.exe：${DESKTOP_DL}`;
     if (c.api > BRIDGE_API) return `腳本比電腦版舊，請在暴力猴按「檢查更新」`;
+    // 沒有 features 的舊電腦版：表上沒有的功能（例如 node）一律當作沒有
     if (feature && (c.features ? !c.features.includes(feature)
-                              : LEGACY_FEATURES[feature] && verLt(c.version, LEGACY_FEATURES[feature])))
+                              : !LEGACY_FEATURES[feature] || verLt(c.version, LEGACY_FEATURES[feature])))
       return old + '還不支援這個功能。' + fix;
     if (host) {
       const ok = c.sites ? c.sites.some(d => host === d || host.endsWith('.' + d))

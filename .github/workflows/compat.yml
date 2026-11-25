@@ -1,0 +1,47 @@
+name: Compatibility matrix (S3)
+
+# S3（docs/infra/01-S3相容性矩陣規格.md）：一邊更新、另一邊還沒更新時會不會壞
+#   C1 新電腦版×上一版腳本  C2 上一版電腦版×新腳本  C3 新 Master×上一版 Worker  C4 舊電腦版功能對照表
+# build.yml（電腦版發布）和 userscript.yml（腳本 tag／通知）都會叫這個；失敗就不發布
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      desktop:
+        description: '指定舊電腦版 tag（例如 v1.40.0；空白＝上一版）'
+        required: false
+      script:
+        description: '指定舊腳本 tag（例如 userscript-v3.20.0；空白＝上一版）'
+        required: false
+  push:
+    branches: [main]
+    paths:
+      - '.github/compat_*'
+      - '.github/workflows/compat.yml'
+      - 'nexus/**'
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          fetch-depth: 0       # 要拿上一版的 tag
+      - name: Install
+        run: |
+          sudo apt-get install -y -q python3-tk >/dev/null
+          pip install -q yt-dlp truststore cryptography
+          npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+      - name: Run C1-C4
+        env:
+          PYTHON: python3
+          DESKTOP: ${{ inputs.desktop }}
+          SCRIPT: ${{ inputs.script }}
+        run: |
+          args=()
+          [ -n "$DESKTOP" ] && args+=(--desktop "$DESKTOP")
+          [ -n "$SCRIPT" ] && args+=(--script "$SCRIPT")
+          python3 -I .github/compat_test.py "${args[@]}"

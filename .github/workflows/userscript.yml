@@ -20,9 +20,14 @@ permissions:
   contents: read
 
 jobs:
+  # S3：新腳本 × 上一版電腦版 等相容性測試；沒過就不建 tag、不貼 Discord
+  compat:
+    uses: ./.github/workflows/compat.yml
+
   # S2（docs/infra/00-架構稽核與改善計畫.md）：每個 @version 一個附註 tag userscript-vX.Y.Z（說明裡寫 SHA-256），
   # 腳本檔用 S1 同一套 GitHub 簽章（attest-build-provenance）；不另開 Release（電腦版「檢查更新」看的是最新 Release）
   tag:
+    needs: compat
     runs-on: ubuntu-latest
     permissions:
       contents: write          # 推 tag（沒有 --force，已存在就失敗，不會覆蓋）
