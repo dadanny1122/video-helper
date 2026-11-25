@@ -99,7 +99,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.47.0"
+VERSION = "1.47.1"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -3473,6 +3473,7 @@ class App:
         self.build_download(tabs["dl"])
         self.build_history(tabs["hist"])
         self.build_settings(tabs["set"])
+        self.init_nexus()                     # S5：Nexus Master 由 App 建（新介面、原本視窗共用）
         self.build_advanced()                 # 進階設定（另一個視窗，平常藏起來）
         first_run = self._first_run = not self.settings["setup_seen"]
         if not self.settings["setup_seen"]:   # 第一次打開：先帶去裝擋廣告
@@ -5457,8 +5458,7 @@ class App:
         svc = getattr(self, "nexus", None)
         if not svc:
             return {"ok": False, "err": "節點功能沒有載入（這版打包可能少了 cryptography 套件）"}
-        from nexus.gui import devices_tab as dt
-        from nexus.gui import tasks_tab as tt
+        from nexus import display as nd                 # S5：新介面不再借用原本視窗的節點分頁
         from nexus.master.server import BindPolicy
         on, cfg = svc.running, svc.cfg
         try:
@@ -5482,10 +5482,10 @@ class App:
                 res = ((svc.capabilities(d["device_id"]) or {}).get("resources") or {})
                 iso = ("基本（可下載）" if res.get("isolation") == "basic" else
                        "不能用：" + (res.get("isolation_reason") or "原因不明")[:40] if "isolation" in res else "—")
-            drows.append({"id": d["device_id"], "name": d["name"], "status": st, "status_name": dt.STATE_NAME.get(st, st),
-                          "conn": dt.CONN_NAME.get(d["connection_state"], d["connection_state"]) if act else "—",
+            drows.append({"id": d["device_id"], "name": d["name"], "status": st, "status_name": nd.DEVICE_STATE_NAME.get(st, st),
+                          "conn": nd.CONN_NAME.get(d["connection_state"], d["connection_state"]) if act else "—",
                           "online": act and d["connection_state"] == "CONNECTED",
-                          "seen": dt._ago(d["last_seen_at"]) if act else "—", "iso": iso, "created": dt._local(d["created_at"]),
+                          "seen": nd.ago(d["last_seen_at"]) if act else "—", "iso": iso, "created": nd.local_min(d["created_at"]),
                           "ip": d["source_ip_first"] or "—", "fp": d["public_key_fingerprint"][:16],
                           "ops": [o for o, ok in (("approve", st == "PENDING"), ("reject", st == "PENDING"), ("suspend", act),
                                                   ("resume", st == "SUSPENDED"), ("revoke", st in ("ACTIVE", "SUSPENDED"))) if ok and on]})
@@ -5494,7 +5494,7 @@ class App:
         if ts:
             for t in ts.list(active_only=False, limit=100):
                 st = t["status"]
-                text = tt.STATE_NAME.get(st, st)
+                text = nd.TASK_STATE_NAME.get(st, st)
                 prog = None
                 if st == "UPLOADING":
                     pr = svc.upload_progress(t["task_id"])
@@ -5502,26 +5502,26 @@ class App:
                         text = "傳回中（這台空間不夠，清出空間後自動繼續）"
                     elif pr:
                         prog = int(pr["ratio"] * 100)
-                        text = f"傳回中 {prog}%（{tt.fmt_size(pr['received'])}／{tt.fmt_size(pr['size'])}）"
-                if st == "FAILED" and t.get("error_code") in tt.RETURN_ERRORS:
+                        text = f"傳回中 {prog}%（{nd.fmt_size(pr['received'])}／{nd.fmt_size(pr['size'])}）"
+                if st == "FAILED" and t.get("error_code") in nd.RETURN_ERRORS:
                     text = "傳回失敗（檔案留在節點）"
-                trows.append({"id": t["task_id"], "type": tt.TYPE_NAME.get(t["type"], t["type"]), "what": tt.summary_of(t),
-                              "status": st, "text": text, "tag": tt.TAG.get(st, ""), "progress": prog,
+                trows.append({"id": t["task_id"], "type": nd.TYPE_NAME.get(t["type"], t["type"]), "what": nd.summary_of(t),
+                              "status": st, "text": text, "tag": nd.TAG.get(st, ""), "progress": prog,
                               "node": names.get(t["assigned_device_id"], "—") if t["assigned_device_id"] else "—",
-                              "tries": f"{t['attempt_count']}/{t['max_attempts']}", "created": tt.local(t["created_at"]),
+                              "tries": f"{t['attempt_count']}/{t['max_attempts']}", "created": nd.local(t["created_at"]),
                               "cancel": on and st in self.NX_CANCELLABLE, "fail": on and st == "UNKNOWN",
-                              "retry_return": on and st == "FAILED" and t.get("error_code") in tt.RETURN_ERRORS})
+                              "retry_return": on and st == "FAILED" and t.get("error_code") in nd.RETURN_ERRORS})
         from nexus.tasks import adapters
         types = sorted(adapters.ADAPTERS, key=lambda n: (not n.startswith("video."), n))
         from nexus.net import sites as nsites
         browser_only = sorted(h for h in nsites.page_hosts() if nsites.needs_browser(h))
         return {"ok": True, "running": on, "error": svc.error or "", "host": str(svc.host or ""), "port": svc.port,
                 "cfg_host": cur, "cfg_port": int(cfg["port"]), "enabled": bool(cfg["enabled"]),
-                "addrs": [[a, f"{a}（{dt.KIND_NAME.get(BindPolicy.classify(a), BindPolicy.classify(a))}）"] for a in addrs],
+                "addrs": [[a, f"{a}（{nd.KIND_NAME.get(BindPolicy.classify(a), BindPolicy.classify(a))}）"] for a in addrs],
                 "lan": BindPolicy.classify(cur) == "lan", "fp": fp,
                 "pair": getattr(self, "_web_pair_code", "") if rem else "", "pair_left": rem,
                 "devices": drows, "tasks": trows, "browser_only": browser_only,
-                "types": [[n, tt.TYPE_NAME.get(n, n), adapters.get(n).description, adapters.get(n).default_runtime_seconds] for n in types]}
+                "types": [[n, nd.TYPE_NAME.get(n, n), adapters.get(n).description, adapters.get(n).default_runtime_seconds] for n in types]}
 
     def _nx(self):
         svc = getattr(self, "nexus", None)
@@ -5663,7 +5663,7 @@ class App:
 
     def web_nx_detail(self, tid):
         """任務詳情：結果、為什麼選這台、時間軸"""
-        from nexus.gui import tasks_tab as tt
+        from nexus import display as nd
         from nexus.tasks.scheduler import REASONS, WEIGHTS
         svc = self._nx()
         ts = svc.task_view()
@@ -5677,8 +5677,8 @@ class App:
         names = {x["device_id"]: x["name"] for x in svc.devices()}
         node = names.get(t["assigned_device_id"], "節點")
         res = ""
-        if t["result_json"] and t["type"] in tt.FILE_TYPES:
-            res = tt.DetailWindow._download_result(t["result_json"], node, t["status"])
+        if t["result_json"] and t["type"] in nd.FILE_TYPES:
+            res = nd.download_result(t["result_json"], node, t["status"])
             if t["error_message"]:
                 res = f"錯誤：{t['error_code']}　{t['error_message'][:200]}\n" + res
         elif t["result_json"]:
@@ -5690,19 +5690,19 @@ class App:
         if d["decisions"]:
             last = d["decisions"][-1]
             w = WEIGHTS.get(last["weights_version"], {})
-            note = (f"最近一次排程：{tt.local(last['decided_at'])}（" + "、".join(f"{tt.SCORE_NAME[k]} {int(v * 100)}%" for k, v in w.items())
+            note = (f"最近一次排程：{nd.local(last['decided_at'])}（" + "、".join(f"{nd.SCORE_NAME[k]} {int(v * 100)}%" for k, v in w.items())
                     + "）。先排除不合格的節點，再替合格的打 0～100 分，最高分的拿到。"
                     + (f"這個任務一共排程過 {len(d['decisions'])} 次。" if len(d["decisions"]) > 1 else ""))
             for c in last["candidates"]:
                 if c["eligible"]:
                     why.append([names.get(c["device_id"], c["name"]), "✔ 選中" if c["device_id"] == last["chosen_device_id"] else "合格",
-                                f"{c['total']:.1f}", "　".join(f"{tt.SCORE_NAME[k]} {v:.2f}" for k, v in c["scores"].items())])
+                                f"{c['total']:.1f}", "　".join(f"{nd.SCORE_NAME[k]} {v:.2f}" for k, v in c["scores"].items())])
                 else:
                     why.append([names.get(c["device_id"], c["name"]), "排除", "—", "；".join(REASONS.get(r, r) for r in c["reasons"])])
         rows = []
         for a in d["audit"]:
             st = a["action"].split(".", 1)[-1].upper()
-            rows.append((a["ts"], tt._who(a["actor"], names), tt.STATE_NAME.get(st, a["action"]), a["reason"] or ""))
+            rows.append((a["ts"], nd.who(a["actor"], names), nd.TASK_STATE_NAME.get(st, a["action"]), a["reason"] or ""))
         for e in d["events"]:
             if e["type"] == "PROGRESS":
                 try:
@@ -5710,11 +5710,12 @@ class App:
                 except Exception:
                     pct = 0
                 rows.append((e["received_at"], names.get(e["device_id"], "節點"), "進度", f"{pct}%"))
-        rows = [[tt.local(r[0]), *r[1:]] for r in sorted(rows, key=lambda x: x[0])][-200:]
+        rows = [[nd.local(r[0]), *r[1:]] for r in sorted(rows, key=lambda x: x[0])][-200:]
         good = bool(t["result_json"]) and t["status"] in ("SUCCEEDED", "UPLOADING", "VERIFYING")
         return {"ok": True, "detail": {
-            "head": f"{tt.TYPE_NAME.get(t['type'], t['type'])}｜{tt.STATE_NAME.get(t['status'], t['status'])}｜節點：{names.get(t['assigned_device_id'], '—')}"
-                    f"｜嘗試 {t['attempt_count']}/{t['max_attempts']}｜{tt.summary_of(t)}",
+            "head": f"{nd.TYPE_NAME.get(t['type'], t['type'])}｜{nd.TASK_STATE_NAME.get(t['status'], t['status'])}"
+                    f"｜節點：{names.get(t['assigned_device_id'], '—')}"
+                    f"｜嘗試 {t['attempt_count']}/{t['max_attempts']}｜{nd.summary_of(t)}",
             "result": res, "good": good, "note": note, "why": why, "timeline": rows}}
 
     def web_nx_audit(self, _):
@@ -6182,20 +6183,14 @@ class App:
         self.settings["ai_usage"] = dict(sorted(u.items())[-12:])     # 只留 12 個月
         self.settings.save()
 
-    def build_nodes_tab(self, page):
-        """🖧 節點（Nexus Master）：畫面在 nexus/gui/devices_tab.py；這裡只負責建 MasterService、程式結束時關掉。
-        `master.enabled` 預設 false → 平常不開任何埠；只有使用者在這頁勾了才啟動（啟動時勾著就自動開）"""
+    def init_nexus(self):
+        """S5：Nexus Master（MasterService）由 App 直接建，不靠原本視窗的節點分頁（新介面也不用借它）。
+        `master.enabled` 預設 false → 平常不開任何埠；只有使用者勾了才啟動（啟動時勾著就自動開）"""
         self.nexus = None
-        self.nodes_tab = None
+        self.nexus_error = ""
         try:
-            from nexus.gui.devices_tab import DevicesTab
             from nexus.master.service import MasterService
             self.nexus = MasterService()
-            try:                                           # v1.33.2：拖動視窗時節點分頁先不重整
-                from nexus.gui import devices_tab as _dt, tasks_tab as _tt
-                _dt.UI_BUSY = _tt.UI_BUSY = ui_busy
-            except Exception:
-                pass
             # V4：節點傳回的影片放進 ① 下載影片 同一個資料夾、上傳照 ③ 的下載限速、收完寫進 ② 下載紀錄（D4、D5）
             self.nexus.dest_dir = lambda: self.settings.download_dir
             self.nexus.rate_limit_mbps = lambda: self.settings["rate_limit_mbps"] or 0
@@ -6205,11 +6200,32 @@ class App:
                     self.nexus.start()
                 except Exception as e:
                     log.warning("Nexus Master 自動啟動失敗：%s", e)
+        except Exception as e:
+            self.nexus = None
+            self.nexus_error = f"{type(e).__name__}"
+            log.warning("Nexus 無法載入：%r", e)
+
+    def build_nodes_tab(self, page):
+        """🖧 節點：原本視窗的畫面（nexus/gui/devices_tab.py）；MasterService 在 init_nexus 已經建好"""
+        self.nodes_tab = None
+        if not hasattr(self, "nexus"):
+            self.init_nexus()
+        if not self.nexus:
+            ttk.Label(page, text=f"節點功能無法載入：{self.nexus_error}\n（這版打包可能少了 cryptography 套件）",
+                      foreground=C["bad"], justify="left").pack(anchor="w")
+            return
+        try:
+            from nexus.gui.devices_tab import DevicesTab
+            try:                                           # v1.33.2：拖動視窗時節點分頁先不重整
+                from nexus.gui import devices_tab as _dt
+                from nexus.gui import tasks_tab as _tt
+                _dt.UI_BUSY = _tt.UI_BUSY = ui_busy
+            except Exception:
+                pass
             self.nodes_tab = DevicesTab(page, self.nexus, self.settings, C, px)
         except Exception as e:
             log.warning("節點分頁無法載入：%r", e)
-            ttk.Label(page, text=f"節點功能無法載入：{type(e).__name__}\n（這版打包可能少了 cryptography 套件）",
-                      foreground=C["bad"], justify="left").pack(anchor="w")
+            ttk.Label(page, text=f"節點分頁無法載入：{type(e).__name__}", foreground=C["bad"]).pack(anchor="w")
 
     def on_node_returned(self, data):
         """V4：節點把影片傳回來了（Master 已驗證大小和 SHA-256）→ 寫進 ② 下載紀錄"""
@@ -6234,7 +6250,7 @@ class App:
         self.refresh_history()
 
     def build_tasks_tab(self, page):
-        """📋 節點任務（Nexus V2）：畫面在 nexus/gui/tasks_tab.py；用 build_nodes_tab 建好的 self.nexus"""
+        """📋 節點任務（Nexus V2）：畫面在 nexus/gui/tasks_tab.py；用 init_nexus 建好的 self.nexus"""
         self.tasks_tab = None
         if not getattr(self, "nexus", None):
             ttk.Label(page, text="節點功能沒有載入，這頁不能用。", foreground=C["bad"]).pack(anchor="w")

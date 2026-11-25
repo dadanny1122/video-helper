@@ -52,6 +52,7 @@
 - 新聞、排行榜只貼**標題／名稱和連結**，不轉貼全文
 - 改了腳本：`@version` 一定要 +1（暴力猴、Greasy Fork、Discord 通知都看它）
 - 改了電腦版：`VERSION` +1，並在 `CHANGELOG.md` 最上面寫一段（GitHub 會自動打包發布）
+- **S5（v1.47.1）**：Nexus 的中文名稱／時間／大小格式在 `nexus/display.py`（不碰 tkinter；`nexus/gui/*` 舊名字是別名），新介面（`_web_nexus_full`、`web_nx_*`）只用它；`MasterService` 由 `App.init_nexus()`（`__init__` 裡、`build_advanced` 之前）建；測試 `nexus/tests/unit/test_display.py`
 - **v1.47.0 一鍵更新**（`docs/infra/03-電腦版一鍵更新規格.md`、`vh_updater.py`）：首頁更新卡「⬆ 更新到」→ 下載 `VideoHelper.exe.new` → 三關（發布頁 digest、attestation 要是本 repo `build.yml`、`components.lock.json`）→ `.exe`→`.old`、`.new`→`.exe` → `.old --update-watchdog` 等舊版關掉再開新版 `--after-update`，新版介面打開後 `mark_ok`（`update_ok.json`），60 秒沒回報／閃退就換回並開 `--update-failed`；發布一定要附 `components.lock.json` 和 digest，不然舊版會拒絕更新。測試 `.github/updater_test.py`、`.github/update_e2e.py`（build.yml Windows）
 - **commit 訊息用中文白話寫**（會直接貼到 Discord #進度 給朋友看）
 - 說明書裡的分頁名稱要跟電腦版一致：① 下載影片 ② 下載紀錄 ③ 設定 ④ 安裝擋廣告；其他設定在「⚙ 進階設定…」

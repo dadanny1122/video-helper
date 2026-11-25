@@ -9,76 +9,19 @@ import tkinter as tk
 import uuid
 from tkinter import messagebox, simpledialog, ttk
 
-from nexus.core.models import parse_utc
+from nexus.display import FILE_TYPES, RETURN_ERRORS, SCORE_NAME, TAG, TYPE_NAME, download_result, fmt_size, local, summary_of
+from nexus.display import TASK_STATE_NAME as STATE_NAME
+from nexus.display import who as _who
 from nexus.tasks import adapters
 from nexus.tasks.scheduler import REASONS, WEIGHTS
 
-TYPE_NAME = {"test.echo": "回聲", "test.sleep": "等待", "test.fail": "故意失敗", "test.file": "測試檔（測傳回）",
-             "video.download": "下載影片（節點）"}
-FILE_TYPES = ("video.download", "test.file")
-RETURN_ERRORS = ("TRANSFER_FAILED", "TRANSFER_EXPIRED")
-STATE_NAME = {
-    "CREATED": "已建立", "VALIDATING": "檢查中", "QUEUED": "排隊中", "SCHEDULED": "已選節點", "DISPATCHED": "已派出（等確認）",
-    "ACCEPTED": "節點已接受", "PREPARING": "準備中", "RUNNING": "執行中", "UPLOADING": "傳回中", "VERIFYING": "驗證結果",
-    "CANCELLING": "取消中…", "SUCCEEDED": "成功", "FAILED": "失敗", "REJECTED": "不合格（已拒絕）", "RESULT_REJECTED": "結果不通過",
-    "CANCELLED": "已取消", "TIMED_OUT": "逾時", "UNKNOWN": "狀態不明（節點失聯）", "RECONCILING": "核對中"}
-TAG = {"SUCCEEDED": "ok", "FAILED": "bad", "REJECTED": "bad", "RESULT_REJECTED": "bad", "TIMED_OUT": "bad", "UNKNOWN": "warn",
-       "CANCELLED": "muted", "CANCELLING": "warn", "QUEUED": "muted"}
-SCORE_NAME = {"cpu": "CPU", "memory": "記憶體", "disk": "磁碟", "queue": "空閒", "reliability": "可靠度"}
-
-
-def local(ts):
-    if not ts:
-        return "—"
-    try:
-        return parse_utc(ts).astimezone().strftime("%m-%d %H:%M:%S")
-    except Exception:
-        return ts
-
-
-def summary_of(task: dict) -> str:
-    try:
-        p = json.loads(task["manifest_json"]).get("params", {})
-    except Exception:
-        return ""
-    if "text" in p:
-        t = str(p["text"])
-        return t if len(t) <= 24 else t[:23] + "…"
-    if "seconds" in p:
-        return f"{p['seconds']} 秒"
-    if "code" in p:
-        return str(p["code"])
-    if "size_mb" in p:
-        return f"{p['size_mb']} MB" + ("，傳回" if p.get("return_to_master") else "")
-    if "url" in p:                                    # 下載影片：只顯示網站和最後一段，不顯示完整網址
-        try:
-            import urllib.parse
-            u = urllib.parse.urlsplit(str(p["url"]))
-            tail = u.path.rstrip("/").rsplit("/", 1)[-1] or u.query
-            q = p.get("quality", "best")
-            back = "，傳回" if p.get("return_to_master") else ""
-            return f"{(u.hostname or '').removeprefix('www.')}／{tail[:14]}（{'最高' if q == 'best' else q + 'p'}{back}）"
-        except Exception:
-            return "影片"
-    return ""
-
-
-def fmt_size(n) -> str:
-    try:
-        n = float(n)
-    except (TypeError, ValueError):
-        return "?"
-    for unit in ("B", "KB", "MB", "GB"):
-        if n < 1024 or unit == "GB":
-            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
-        n /= 1024
-    return f"{n:.1f} GB"
-
-
+__all__ = ["TasksTab", "NewTaskDialog", "DetailWindow", "TYPE_NAME", "FILE_TYPES", "RETURN_ERRORS", "STATE_NAME", "TAG",
+           "SCORE_NAME", "local", "summary_of", "fmt_size", "_who"]   # 舊名字照舊可用（S5 搬到 nexus/display.py）
 
 def UI_BUSY():
     """電腦版會換成 video_helper_app.ui_busy（視窗正在被拖動／改大小）"""
     return False
+
 
 class TasksTab:
     def __init__(self, page, service, colors, px=lambda n: n):
@@ -432,21 +375,7 @@ class DetailWindow:
         nb.add(self.why, text="  為什麼選這台  ")
         nb.add(self.timeline, text="  時間軸  ")
 
-    @staticmethod
-    def _download_result(raw: str, node: str, status: str = "SUCCEEDED") -> str:
-        """下載結果：檔名、大小、存在哪台的哪裡（V4：傳回成功就寫這台的路徑；還沒傳完／失敗就寫留在節點）"""
-        try:
-            r = json.loads(raw)
-        except Exception:
-            return "結果：" + raw[:200]
-        lines = [f"下載完成：{r.get('site', '')}　{str(r.get('title', ''))[:60]}".rstrip()]
-        for f in r.get("files", [])[:5]:
-            if r.get("returned"):
-                lines.append(f"・{f.get('name')}（{fmt_size(f.get('size'))}）已傳回這台：{f.get('path', '')}")
-            else:
-                where = "還在傳回中，目前在" if status == "UPLOADING" else "存在"
-                lines.append(f"・{f.get('name')}（{fmt_size(f.get('size'))}）{where}「{node}」：{f.get('path', '')}")
-        return "\n".join(lines)
+    _download_result = staticmethod(download_result)
 
     @staticmethod
     def _why_tab(nb, d, names, C, px):
@@ -512,10 +441,3 @@ class DetailWindow:
         for r in sorted(rows, key=lambda x: x[0]):
             tv.insert("", "end", values=(local(r[0]), *r[1:]))
         return page
-
-
-def _who(actor: str, names: dict) -> str:
-    if actor.startswith("worker:"):
-        return "節點 " + names.get(actor[7:], actor[7:15])
-    names = {"owner": "你", "browser": "瀏覽器（交給節點）", "scheduler": "排程器", "dispatcher": "派送", "master": "Master 驗證"}
-    return names.get(actor, actor)

@@ -7,36 +7,19 @@
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
-from nexus.core.models import parse_utc, utcnow
+from nexus.display import CONN_NAME, KIND_NAME
+from nexus.display import DEVICE_STATE_NAME as STATE_NAME
+from nexus.display import ago as _ago
+from nexus.display import local_min as _local
 from nexus.master.server import BindPolicy
 
-KIND_NAME = {"loopback": "只有這台電腦", "lan": "區域網路", "vpn": "VPN（Tailscale）", "all": "所有網卡（不建議）"}
-STATE_NAME = {"PENDING": "等待核准", "ACTIVE": "已核准", "SUSPENDED": "已暫停", "REVOKED": "已撤銷", "EXPIRED": "憑證過期",
-              "REJECTED": "已拒絕"}
-CONN_NAME = {"CONNECTED": "連線中", "STALE": "心跳延遲", "OFFLINE": "離線", "DISCONNECTED": "已斷線", "UNKNOWN": "—"}
-
-
-def _ago(ts):
-    if not ts:
-        return "—"
-    s = int((parse_utc(utcnow()) - parse_utc(ts)).total_seconds())
-    return f"{s} 秒前" if s < 90 else f"{s // 60} 分前" if s < 5400 else f"{s // 3600} 小時前"
-
-
-def _local(ts):
-    """UTC → 本機時間 MM-DD HH:MM"""
-    if not ts:
-        return "—"
-    try:
-        return parse_utc(ts).astimezone().strftime("%m-%d %H:%M")
-    except Exception:
-        return ts[5:16]
-
+__all__ = ["DevicesTab", "KIND_NAME", "STATE_NAME", "CONN_NAME", "_ago", "_local"]   # 舊名字照舊可用（S5 搬到 nexus/display.py）
 
 
 def UI_BUSY():
     """電腦版會換成 video_helper_app.ui_busy（視窗正在被拖動／改大小）"""
     return False
+
 
 class DevicesTab:
     def __init__(self, page, service, settings, colors, px=lambda n: n, log_path=""):
