@@ -252,6 +252,11 @@ def selftest():
 
 
 def main():
+    for st in (sys.stdout, sys.stderr):                # python -I 會忽略 PYTHONIOENCODING；Windows 預設 cp1252 印不出中文
+        try:
+            st.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     m = sub.add_parser("make")
