@@ -17,7 +17,6 @@ import re
 import subprocess
 import sys
 import tempfile
-import urllib.error
 import urllib.request
 
 FILE = "video-helper.user.js"
@@ -115,28 +114,32 @@ def create(commit, push=True):
         return ver
     tag = PREFIX + ver
     data = blob(commit)
-    commit = introduced(commit, data)          # 指向「這份腳本第一次出現」的 commit（機器人 commit 再多也一樣）
-    msgfile = os.path.join(tempfile.mkdtemp(), "msg.txt")
-    with open(msgfile, "w", encoding="utf-8") as f:
-        f.write(message(ver, data, commit))
-    git("-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
-        "tag", "-a", tag, commit, "-F", msgfile)
+    first = introduced(commit, data)           # 先試「這份腳本第一次出現」的 commit（機器人 commit 再多也一樣）
+
+    def make(target, extra=""):
+        msgfile = os.path.join(tempfile.mkdtemp(), "msg.txt")
+        with open(msgfile, "w", encoding="utf-8") as f:
+            f.write(message(ver, data, target) + extra)
+        git("-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
+            "tag", "-a", tag, target, "-F", msgfile)
+    make(first)
     if push:
-        push_tag(tag)
+        try:
+            push_tag(tag)
+        except WorkflowRefused:
+            # GitHub 不准 workflow 的權限把 tag 放在「workflow 檔跟現在不一樣」的舊 commit → 改放這次 push 的 commit
+            # （腳本內容完全一樣，說明另外記第一次出現的 commit）
+            git("tag", "-d", tag)
+            make(commit, f"introduced: {first}\n")
+            push_tag(tag)
+            print(f"（{first[:7]} 被 GitHub 擋，tag 改放在 {commit[:7]}；腳本內容一樣）")
     if not verify(tag):
         raise SystemExit(f"{tag} 建好之後驗證失敗")
     return ver
 
 
-def api(method, path, body=None):
-    import json
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    req = urllib.request.Request(f"https://api.github.com/repos/{REPO}{path}", method=method,
-                                 data=json.dumps(body).encode() if body is not None else None,
-                                 headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
-                                          "User-Agent": "VideoHelper-CI", "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read() or b"{}")
+class WorkflowRefused(Exception):
+    pass
 
 
 def push_tag(tag):
@@ -145,17 +148,9 @@ def push_tag(tag):
     r = subprocess.run(["git", "-C", GIT_DIR[0], "push", "origin", f"refs/tags/{tag}"], capture_output=True, text=True)
     if r.returncode == 0:
         return
-    if "workflow" not in (r.stderr or "") or not (os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")):
-        raise SystemExit(f"推 {tag} 失敗：{r.stderr.strip()}")
-    commit, msg = tag_commit(tag), tag_message(tag)
-    obj = api("POST", "/git/tags", {"tag": tag, "message": msg, "object": commit, "type": "commit",
-                                   "tagger": {"name": "github-actions[bot]", "email": "41898282+github-actions[bot]@users.noreply.github.com"}})
-    try:
-        api("POST", "/git/refs", {"ref": f"refs/tags/{tag}", "sha": obj["sha"]})
-    except urllib.error.HTTPError as e:
-        raise SystemExit(f"用 API 建 {tag} 失敗（{e.code}：{e.read()[:200]!r}）；已經有同名 tag 的話不會覆蓋")
-    git("fetch", "-q", "--force", "origin", f"refs/tags/{tag}:refs/tags/{tag}")     # 換成遠端那個（說明一樣，tagger 時間不同）
-    print(f"（git push 被 GitHub 擋 workflow 檔，改用 API 建 {tag}）")
+    if "without `workflows` permission" in (r.stderr or ""):
+        raise WorkflowRefused(r.stderr.strip())
+    raise SystemExit(f"推 {tag} 失敗（已經有同名 tag 的話不會覆蓋）：{r.stderr.strip()}")
 
 
 def verify(tag, download=False):
@@ -294,7 +289,19 @@ def selftest():
         git("push", "-q", "origin", f"refs/tags/{PREFIX}1.2.0")
         git("tag", "-d", PREFIX + "1.2.0")
         assert fails(create, c5), "遠端已經有同名 tag 就失敗（不覆蓋）"
-        assert c1b and True
+        # GitHub 擋「舊 commit 上的 tag」→ tag 改放這次 push 的 commit，說明記第一次出現的 commit
+        c6 = commit_script("1.3.0")
+        hook = os.path.join(remote, "hooks", "pre-receive")
+        with open(hook, "w", encoding="utf-8", newline="\n") as f:
+            f.write(f"#!/bin/sh\nwhile read old new ref; do\n"
+                    f"  if [ \"$(git rev-parse \"$new^{{commit}}\" 2>/dev/null)\" = \"{c6}\" ]; then\n"
+                    f"    echo 'refusing to allow a GitHub App to create or update workflow without `workflows` permission' >&2; exit 1; fi\n"
+                    f"done\n")
+        os.chmod(hook, 0o755)
+        bot3 = other_commit()
+        assert create(bot3) == "1.3.0", "被擋要改放這次的 commit"
+        assert tag_commit(PREFIX + "1.3.0") == bot3 and fields(tag_message(PREFIX + "1.3.0")).get("introduced") == c6
+        assert c1b
         print("selftest OK：新建、重跑不動、機器人 commit 不建、沒升版／版本往下會停、指紋被改抓得到、不覆蓋遠端 tag、補歷史")
         return True
     finally:
