@@ -22,8 +22,10 @@ assert F.fb_mask("看 https://x.com/a?b=1 和 www.y.com/z 這裡") == "看 [網�
 
 # 回饋代碼：真的 Ed25519 簽、改一個字就不過、同一個 id 只算一次
 import base64  # noqa: E402
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
+
 from cryptography.hazmat.primitives import serialization  # noqa: E402
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
+
 k = Ed25519PrivateKey.generate()
 pub = base64.urlsafe_b64encode(k.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)).decode().rstrip("=")
 
@@ -42,8 +44,10 @@ checks = [
     (F.verify_token("VH1.abc", pub) is None and F.verify_token("", pub) is None, "亂打 → 不通過"),
     (F.verify_token(t1, "") is None, "還沒有公鑰 → 不通過"),
     (F.rewards([], pub)["count"] == 0 and F.rewards([], pub)["themes"] == [], "沒回饋 → 沒好處"),
-    (F.rewards([t1, t1], pub)["count"] == 1 and F.rewards([t1], pub)["level"] == "bronze" and F.rewards([t1], pub)["themes"] == ["aurora", "dusk"], "1 則 → 銅＋限定配色"),
-    (F.rewards([tok(i) for i in range(3)], pub)["level"] == "silver" and F.rewards([tok(i) for i in range(3)], pub)["beta"], "3 則 → 銀＋搶先試用"),
+    (F.rewards([t1, t1], pub)["count"] == 1 and F.rewards([t1], pub)["level"] == "bronze"
+     and F.rewards([t1], pub)["themes"] == ["aurora", "dusk"], "1 則 → 銅＋限定配色"),
+    (F.rewards([tok(i) for i in range(3)], pub)["level"] == "silver"
+     and F.rewards([tok(i) for i in range(3)], pub)["beta"], "3 則 → 銀＋搶先試用"),
     (not F.rewards([tok(i) for i in range(2)], pub)["beta"], "2 則 → 還沒有搶先試用"),
     (F.rewards([tok(i) for i in range(10)], pub)["level"] == "gold", "10 則 → 金"),
     (F.send("suggest", "太短", "desktop", "1", "zh", url="https://x.workers.dev")["ok"] is False, "字數不夠 → 不送"),
