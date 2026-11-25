@@ -32,7 +32,9 @@ APP_FUNCS = re.compile(r"^(_?web_|on_web|_web|notify$|start_tray|update_tray|hid
 APP_SKIP_CONST = {"TIPS", "HOME_CARDS", "NAV_ITEMS",             # 只有舊視窗用
                   "HALLU_PHRASES", "HALLU_EXACT"}                # AI 字幕要刪掉的雜訊字，不是畫面上的字
 NEXUS_ALL = ["nexus/tasks/scheduler.py", "nexus/tasks/states.py", "nexus/core/errors.py", "nexus/tasks/adapters.py",
-             "nexus/worker/tray.py", "nexus/worker/agent.py"]
+             "nexus/worker/tray.py", "nexus/worker/agent.py",
+             "nexus/display.py",            # S5：節點畫面的名稱、時間、大小（新介面和舊視窗共用）
+             "vh_updater.py"]               # v1.47.0 一鍵更新的錯誤原因（會顯示在首頁更新卡）
 NEXUS_GUI_EXTRA = {"nexus/worker/executor.py": r"^(sandbox_status)$", "nexus/sandbox/jobs.py": r"^(probe)$"}   # 沙箱不能用的原因          # 節點小視窗（--worker）也翻
 NEXUS_GUI = {"nexus/gui/devices_tab.py": re.compile(r"^(_ago|_local|_isolation)$"),
              "nexus/gui/tasks_tab.py": re.compile(r"^(summary_of|fmt_size|local|_who|_download_result|_result_text|_why)$")}
