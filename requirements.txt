@@ -342,9 +342,9 @@ typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
     # via pywebview
-yt-dlp==2026.10.26 \
-    --hash=sha256:a05c5b5d8562f7e8a62f5334348b406af4930d56d3a65f8021d14af0e22339ae \
-    --hash=sha256:abe5c6b94c3b2f0560500add1c42e0a97641752743a5b65588ac2007a6e23eb6
+yt-dlp==2026.11.23 \
+    --hash=sha256:1db83772a8de7855a2dab551a94d7f617c88629dfdf506531c06b369b47f88a4 \
+    --hash=sha256:e9188e0c559905f7ee05acc1ba0b6fb3f310e7565bf6dea5f62b5300e0775e35
     # via -r requirements.in
 
 # The following packages are considered to be unsafe in a requirements file:
