@@ -1,15 +1,15 @@
 {
  "Pornhub": {
+  "status": "blocked",
+  "why": "網站回應 403"
+ },
+ "XVideos": {
   "status": "ok",
   "why": ""
  },
- "XVideos": {
-  "status": "blocked",
-  "why": "3 部影片頁都找不到 setVideoHLS（腳本靠它找影片）"
- },
  "XNXX": {
-  "status": "blocked",
-  "why": "影片頁找不到 setVideoHLS"
+  "status": "ok",
+  "why": "伺服器：xnxx-cdn.com"
  },
  "YouPorn": {
   "status": "blocked",
