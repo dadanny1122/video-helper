@@ -209,6 +209,8 @@ def selftest():
     try:
         subprocess.run(["git", "init", "-q", "--bare", remote], check=True)
         git("init", "-q")
+        git("config", "user.name", "selftest")             # CI 的機器沒設 git 身分
+        git("config", "user.email", "selftest@example.invalid")
         git("remote", "add", "origin", remote)
 
         def commit_script(ver, extra=""):
