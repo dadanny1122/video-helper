@@ -19,7 +19,7 @@ from html.parser import HTMLParser
 MANUAL = os.path.join(os.path.dirname(__file__), "..", "docs", "manual", "index.html")
 WEB = "https://dadanny1122.github.io/video-helper/manual/"
 COLOR = 0xC62828
-DESC_MAX = 4000                     # Discord 一則說明最多 4096 字
+DESC_MAX = 3000                     # Discord 一則說明最多 4096 字（2026-11-25 4000 字那則被拒 413，留餘裕）
 
 
 class Manual(HTMLParser):
@@ -172,13 +172,14 @@ def build():
     embeds = [head]
     for title, lines in m.sections:
         text = "\n".join(lines).strip()
+        first = True
         while text:                                         # 太長就拆成好幾則
             part = text[:DESC_MAX]
             if len(text) > DESC_MAX:
                 cut = part.rfind("\n")
                 part = part[:cut if cut > 1000 else DESC_MAX]
-            embeds.append({"title": title if part is text[:len(part)] and embeds[-1].get("title") != title
-                           else f"{title}（續）", "description": part.strip(), "color": COLOR})
+            embeds.append({"title": title if first else f"{title}（續）", "description": part.strip(), "color": COLOR})
+            first = False
             text = text[len(part):].strip()
     return embeds
 
