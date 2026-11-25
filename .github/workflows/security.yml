@@ -18,6 +18,8 @@ on:
       - '.github/webui_fake.js'
       - '.github/i18n_check.py'
       - '.github/userscript_i18n_test.js'
+      - '.github/userscript_report_test.js'
+      - '.github/ISSUE_TEMPLATE/**'
       - 'nexus/**'
       - '.github/workflows/security.yml'
   workflow_dispatch:
@@ -52,6 +54,8 @@ jobs:
           python3 -I .github/i18n_check.py
           node .github/webui_i18n_test.js webui-shots/en
           node .github/userscript_i18n_test.js video-helper.user.js webui-shots/userscript-en
+      - name: Report button test (no video URL leaks)
+        run: node .github/userscript_report_test.js video-helper.user.js
       - name: Upload new UI screenshots
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2

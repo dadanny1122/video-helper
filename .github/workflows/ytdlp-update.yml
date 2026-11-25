@@ -1,0 +1,75 @@
+name: yt-dlp update (one-click)
+
+# 維護風險 #3：yt-dlp 出新版就準備好更新（分支＋PR），你按「合併」才會發布新的電腦版。
+# 機器人推不進 main（S4 規則），所以不會自己發布；合併後 build.yml 照常跑全部測試，過了才發布。
+on:
+  schedule:
+    - cron: '37 1 * * *'      # 台灣 09:37（遲到沒關係）
+  workflow_dispatch:
+
+permissions:
+  contents: write        # 推 bot/ytdlp-* 分支（main 有規則擋住）
+  pull-requests: write   # 開 PR
+
+concurrency:
+  group: ytdlp-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          ref: main
+      - name: Self-test
+        run: python3 -I .github/ytdlp_update.py selftest
+      - name: Check PyPI
+        id: chk
+        run: python3 -I .github/ytdlp_update.py check
+      - name: Already prepared?
+        id: br
+        if: steps.chk.outputs.newer == '1'
+        run: |
+          b="bot/ytdlp-${{ steps.chk.outputs.latest }}"
+          echo "branch=$b" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code origin "refs/heads/$b" >/dev/null; then
+            echo "exists=1" >> "$GITHUB_OUTPUT"; echo "::notice title=yt-dlp::$b 已經準備好了，等你合併"
+          fi
+      - name: Prepare update branch
+        id: prep
+        if: steps.chk.outputs.newer == '1' && steps.br.outputs.exists != '1'
+        run: |
+          python3 -I .github/ytdlp_update.py apply
+          b="${{ steps.br.outputs.branch }}"
+          git checkout -q -b "$b"
+          git -c user.name="github-actions[bot]" -c user.email="41898+github-actions[bot]@users.noreply.github.com" \
+            commit -q -am "下載核心 yt-dlp 更新到 ${{ steps.chk.outputs.latest }}（網站改版的修正會跟著進來）"
+          git push -q origin "HEAD:refs/heads/$b"
+      - name: Open PR (or give a link)
+        id: pr
+        if: steps.prep.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          b="${{ steps.br.outputs.branch }}"
+          body="yt-dlp ${{ steps.chk.outputs.current }} → ${{ steps.chk.outputs.latest }}（指紋已用 pip --require-hashes 核對）。合併後 build.yml 會跑全部測試，過了才發布新 EXE。"
+          if url=$(gh api repos/${{ github.repository }}/pulls -f title="下載核心 yt-dlp 更新到 ${{ steps.chk.outputs.latest }}" \
+                -f head="$b" -f base=main -f body="$body" -q .html_url 2>err.txt); then
+            echo "url=$url" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=開不了 PR::$(head -c 200 err.txt)（改給建立 PR 的連結）"
+            echo "url=https://github.com/${{ github.repository }}/compare/main...$b?expand=1" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Tell Discord
+        if: steps.pr.outcome == 'success'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          {
+            echo "yt-dlp ${{ steps.chk.outputs.current }} → **${{ steps.chk.outputs.latest }}**"
+            echo
+            echo "網站改版後 yt-dlp 社群修好的下載問題，會跟著進到下一版電腦版。"
+            echo "**按標題連結 →「Merge pull request」**（找不到就先按「Create pull request」）；合併後自動測試、過了才發布。"
+          } > notes.md
+          python3 .github/discord_notify.py "⬇ yt-dlp 有新版，按一下就能更新電腦版" notes.md "${{ steps.pr.outputs.url }}"

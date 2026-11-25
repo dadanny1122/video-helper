@@ -1,11 +1,13 @@
 # 供應鏈安全：套件或 GitHub Actions 有新版、有漏洞修正時，自動開 PR 更新
-# （yt-dlp 常常要跟著網站改版更新，所以每週檢查）
+# （yt-dlp 由 ytdlp-update.yml 每天檢查、準備好一鍵合併，這裡就不重複開）
 version: 2
 updates:
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "yt-dlp"
     groups:
       python:
         patterns: ["*"]

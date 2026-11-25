@@ -31,6 +31,7 @@
 2. 點這裡安裝腳本：[Greasy Fork 頁面](https://greasyfork.org/zh-TW/scripts/601901-video-helper) → 按綠色「安裝此腳本」
    （或直接從 GitHub 裝：[video-helper.user.js](https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js)）
 3. 之後有新版本會自動更新
+4. 建議另外裝大社群維護的擋廣告當基本盤：Chrome／Edge 用 [uBlock Origin Lite](https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh)、Firefox 用 [uBlock Origin](https://addons.mozilla.org/zh-TW/firefox/addon/ublock-origin/)；網站壞了按盾牌 →「🐞 回報網站壞了」
 
 ## 電腦版（下載工具）
 適合下載高畫質、大檔案，下載結果直接是 MP4。
@@ -90,6 +91,8 @@ Two parts that work alone or together. Everything runs on your own computer — 
 - AI subtitles made on your own PC (whisper.cpp), optional translation
 - Nexus: let a second computer download in a sandbox and send files back, with SHA-256 checks
 - Security page: paired browsers, contacted sites, component fingerprints, one-click check that the EXE is an official GitHub build
+
+**Recommended companion** — add a community-maintained blocker as your baseline: [uBlock Origin Lite](https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh) (Chrome/Edge) or [uBlock Origin](https://addons.mozilla.org/en-US/firefox/addon/ublock-origin/) (Firefox). Something broke? Shield → 🐞 Report a broken site.
 
 **Supported sites**
 - Full features incl. download: Pornhub, XVideos, XNXX, YouPorn, RedTube, xHamster, Tube8, YouJizz, SpankBang

@@ -1,0 +1,45 @@
+name: 🐞 網站壞了 / Site broken
+description: 某個網站抓不到影片、廣告沒擋到、下載失敗… / A site stopped working
+title: "[網站壞了] "
+labels: ["site-broken"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        謝謝回報！**這裡是公開的**，請不要貼你正在看的影片網址、帳號或截圖裡的個人資料。
+        Thanks! **This is public** — please don't paste the video URL you were watching or personal info.
+  - type: input
+    id: site
+    attributes:
+      label: 網站 / Site
+      placeholder: Pornhub
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 腳本版本 / Script version
+      placeholder: "3.24.0"
+  - type: dropdown
+    id: problem
+    attributes:
+      label: 哪裡壞了 / What broke
+      options:
+        - 找不到影片、下載按鈕沒出現 / Can't find the video
+        - 下載失敗 / Download fails
+        - 廣告沒擋到 / Ads get through
+        - 誤擋（影片播不了）/ Blocked by mistake
+        - 其他 / Other
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: 發生什麼事 / What happened
+      description: 例如「按下載一直轉圈」「影片前有 15 秒廣告」 / e.g. "download spins forever"
+  - type: textarea
+    id: auto
+    attributes:
+      label: 自動附上的資料 / Auto-filled info
+      description: 腳本按「🐞 回報網站壞了」時自動填的（只有網站名和版本） / Filled by the script
+      render: text

@@ -118,6 +118,9 @@ EXE 裡的密碼學元件：`cryptography`（v1.28.4 起，給之後的「節點
 
 電腦版「⚙ 進階設定」→「🔒 安全」可以直接看：已配對的瀏覽器（可以單獨取消）、AI 使用次數和字數、這次開著時連過的網站、日誌大小（可清空、可設自動刪除）、各元件版本和 SHA-256。
 
+- **yt-dlp 更新（2026-11-26 起）**：`ytdlp-update.yml` 每天查 PyPI，有新版就把新版本和 PyPI 官方指紋寫進 `requirements.txt`，並用 `pip --require-hashes` 實際下載核對一次，再開 PR。機器人推不進 main，一定要擁有者按合併；合併後照常跑 pip-audit、全部測試、簽章才發布。
+- **腳本「🐞 回報網站壞了」**：只開 GitHub 的回報表單（公開），帶網站名稱和腳本版本；**不帶你正在看的網址、影片標題、封鎖清單**，開分頁用 `noopener,noreferrer`（GitHub 也看不到你從哪一頁來）。有自動測試（`.github/userscript_report_test.js`）。
+
 ## 5. 自動安全測試（每次發布都跑，結果公開）
 
 在 GitHub 的「Actions」頁面可以看到每次的結果：
