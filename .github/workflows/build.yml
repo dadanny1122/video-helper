@@ -14,6 +14,7 @@ on:
       - '.github/ci_smoke.py'
       - '.github/net_test.py'
       - '.github/ffmpeg/**'
+      - '.github/components_lock.py'
       - '.github/discord_notify.py'
       - 'requirements.txt'
       - 'CHANGELOG.md'
@@ -206,13 +207,26 @@ jobs:
           ls -la dist/VideoHelper.exe
           echo "::notice title=EXE size::$(stat -c %s dist/VideoHelper.exe) bytes"
 
+      # S1：components.lock.json＝這版每個元件的版本＋SHA-256（電腦版、腳本、Nexus、ffmpeg、whisper、模型、Python 套件）
+      #     也把非 Python 的元件補進 SBOM；產生後立刻重算一次，對不上就不發布。不含任何金鑰、憑證、使用者資料
+      - name: Components lock (make + verify)
+        shell: bash
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          python -I .github/components_lock.py selftest
+          python -I .github/components_lock.py make --exe dist/VideoHelper.exe --ffmpeg-dir ffmpeg_bin --sbom sbom.cdx.json -o components.lock.json
+          python -I .github/components_lock.py verify components.lock.json --exe dist/VideoHelper.exe --ffmpeg-dir ffmpeg_bin --sbom sbom.cdx.json
+
       # 發布簽章：GitHub 用 Sigstore 簽一張「這個 EXE 是 dadanny1122/video-helper 這次的程式碼在 GitHub Actions 打包的」證明
       # 指紋和簽章不在同一個地方，攻擊者就算換了發布頁的 EXE，也偽造不了 GitHub 的簽章
       - name: Sign build provenance
         if: steps.chk.outputs.exists != '1'
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2.4.0
         with:
-          subject-path: dist/VideoHelper.exe
+          subject-path: |
+            dist/VideoHelper.exe
+            components.lock.json
       - name: Sign SBOM
         if: steps.chk.outputs.exists != '1'
         uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b  # v2.4.0
@@ -268,6 +282,7 @@ jobs:
           body_path: release_notes.md
           files: |
             dist/VideoHelper.exe
+            components.lock.json
             sbom.cdx.json
             audit.md
 

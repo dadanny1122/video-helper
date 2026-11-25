@@ -105,7 +105,9 @@
 |---|---|---|
 | 套件版本＋指紋寫死（`requirements.txt`，`pip install --require-hashes`） | 打包時裝到被換掉的套件 | 看 `requirements.txt` |
 | 每次發布先跑 `pip-audit` 掃已知漏洞（CVE），有就不發布 | 用到有已知漏洞的版本 | 發布頁附的 `audit.md` |
-| SBOM（`sbom.cdx.json`，CycloneDX 格式） | 不知道用了什麼 | 發布頁附件 |
+| SBOM（`sbom.cdx.json`，CycloneDX 格式） | 不知道用了什麼 | 發布頁附件；v1.46.0 起也列出非 Python 元件（打包的 ffmpeg、執行時下載的 whisper.cpp 和模型、瀏覽器腳本和 mux.js） |
+| **元件清單 `components.lock.json`**（v1.46.0 起） | 不知道某一版 EXE 配的是哪一版腳本、Nexus 協定、資料檔 | 發布頁附件、跟 EXE 一起由 GitHub 簽章；CI 產生後立刻重算比對，對不上不發布；只放版本、大小、SHA-256、公開網址，產生時會掃描、出現金鑰或個人路徑就失敗（`.github/components_lock.py`） |
+| **發布 tag 對到打包的 commit**（S0，2026-11-25） | tag 指到後來的 commit，看不出 EXE 到底是哪份程式碼 | 發布用 `target_commitish: ${{ github.sha }}`，發布完核對 tag，對不上 workflow 失敗；Actions 一律用 commit SHA 鎖版本 |
 | **GitHub 發布簽章**（artifact attestation，Sigstore） | 有人換掉發布頁的 EXE 和指紋：簽章是 GitHub 用「這個 repo 的這次打包」身分簽的，不在發布頁上，偽造不了 | `gh attestation verify VideoHelper.exe -R dadanny1122/video-helper`，或看 https://github.com/dadanny1122/video-helper/attestations；v1.43.0 起電腦版「🔒 安全與統計」有「🔍 檢查這個 EXE」：算指紋 → 查 GitHub 的簽章紀錄 → 比對發布頁指紋（只送出指紋；是查紀錄，不是完整的密碼學驗證）。每次打包後 CI 也用真的 EXE 跑一次 |
 | Dependabot | 套件出新版或修漏洞時沒跟上 | 自動開 PR |
 

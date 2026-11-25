@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.45.0"
+VERSION = "1.46.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -3326,6 +3326,13 @@ def component_report():
     add("Video Helper", VERSION + ("（EXE）" if getattr(sys, "frozen", False) else "（原始碼執行）"),
         sys.executable if getattr(sys, "frozen", False) else None)
     add("Python", sys.version.split()[0])
+    try:                                           # S1：跟發布頁的 components.lock.json 對照用
+        import nexus
+        from nexus.storage.migrations import LATEST as _db
+        add("Nexus", f"{nexus.NEXUS_VERSION}（協定 {nexus.PROTOCOL_VERSION}、資料庫 {_db}）")
+    except Exception:
+        add("Nexus", "沒有")
+    add("Bridge API", str(BRIDGE_API))
     add("yt-dlp", getattr(getattr(yt_dlp, "version", None), "__version__", "?"))
     try:
         import truststore

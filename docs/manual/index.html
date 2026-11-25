@@ -250,6 +250,8 @@
   <li><b>腳本</b>：暴力猴每天自動檢查。想馬上更新：暴力猴管理頁 → Video Helper 那一行按 🔄</li>
   <li><b>電腦版</b>：「③ 設定」→「⚙ 進階設定…」→「備份與更新」→「檢查更新」，或到 <a href="https://github.com/dadanny1122/video-helper/releases/latest">下載頁</a> 下載新的 EXE，關掉舊的、打開新的。設定、紀錄、配對都會保留</li>
   <li>兩邊最好都保持最新版，有些功能要兩邊一起更新才能用</li>
+  <li><b>想退回舊版</b>：到 <a href="https://github.com/dadanny1122/video-helper/releases">所有版本</a> 下載舊的 EXE 換回去就好，設定和下載紀錄都能用。<b>例外是 Nexus 節點</b>：新版會把節點資料庫升級，舊版讀不了（會說「資料庫版本比程式新」）；真的要退回 v1.32 以前，要先把 <code>%APPDATA%\VideoHelper\nexus</code> 資料夾改名備份、重新配對節點</li>
+  <li><b>每一版用了哪些元件</b>：v1.46.0 起每次發布都附 <code>components.lock.json</code>，列出電腦版、瀏覽器腳本、Nexus、ffmpeg、AI 字幕程式和模型、Python 套件的版本和 SHA-256（跟 EXE 一起由 GitHub 簽章；只有版本和指紋，沒有任何金鑰或個人資料）。「🔒 安全與統計」的元件清單可以拿來對照</li>
 </ul>
 
 <h2 id="faq">7. 常見問題</h2>

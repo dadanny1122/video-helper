@@ -1,5 +1,12 @@
 # 電腦版更新內容
 
+## v1.46.0 每一版都附元件清單
+- 發布頁多一個 `components.lock.json`：這一版的電腦版、瀏覽器腳本、Nexus、ffmpeg、AI 字幕程式和模型、Python 套件，各是哪一版、指紋多少（跟 EXE 一起由 GitHub 簽章；只有版本和指紋，沒有任何金鑰或個人資料）
+- 發布頁的 SBOM 也補上 ffmpeg、whisper.cpp、AI 模型、瀏覽器腳本這些不是 Python 的元件
+- 「🔒 安全與統計」的元件清單多了 Nexus 版本（協定、資料庫）和 Bridge API，可以跟發布頁的清單對照
+- 發布流程更嚴：tag 一定指向打包的那個 commit、改了程式就算沒升版號也會跑 Windows 測試
+- 說明書補上「怎麼退回舊版」（Nexus 節點資料庫不能降版）
+
 ## v1.45.0 節點小視窗也有英文版
 - 節點那台（`VideoHelper.exe --worker`）的小視窗跟著 Windows 語言：中文 Windows 用中文、其他用英文
 - 小視窗多一顆「🌐 English／🌐 中文」，按了下次打開節點時換語言（不會中斷連線）

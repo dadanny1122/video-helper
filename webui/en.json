@@ -1668,6 +1668,10 @@
   [
    "建立沙箱失敗：{a}",
    "couldn't create the sandbox: {a}"
+  ],
+  [
+   "{a}（協定 {b}、資料庫 {c}）",
+   "{a} (protocol {b}, database {c})"
   ]
  ],
  "ignore": [
