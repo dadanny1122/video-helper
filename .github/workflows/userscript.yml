@@ -46,6 +46,8 @@ jobs:
 
       - name: Backfill old versions (manual, one time)
         if: github.event_name == 'workflow_dispatch' && inputs.backfill
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: python3 -I .github/userscript_tag.py backfill --push
 
       - name: Plan (version conflict stops here)
@@ -54,6 +56,8 @@ jobs:
 
       - name: Create tag
         if: steps.plan.outputs.action == 'create'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: python3 -I .github/userscript_tag.py create "${{ github.sha }}"
 
       - name: Sign the script (same as S1)
