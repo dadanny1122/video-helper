@@ -10,11 +10,6 @@ on:
       - '.github/userscript_tag.py'
       - '.github/workflows/userscript.yml'
   workflow_dispatch:
-    inputs:
-      backfill:
-        description: '幫歷史上每個版本補 tag（只要做一次；已有的 tag 不會動）'
-        type: boolean
-        default: false
 
 concurrency:
   group: userscript-tag
@@ -44,12 +39,6 @@ jobs:
       - name: Self-test (rules on a scratch repo)
         run: python3 -I .github/userscript_tag.py selftest
 
-      - name: Backfill old versions (manual, one time)
-        if: github.event_name == 'workflow_dispatch' && inputs.backfill
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python3 -I .github/userscript_tag.py backfill --push
-
       - name: Plan (version conflict stops here)
         id: plan
         run: python3 -I .github/userscript_tag.py plan "${{ github.sha }}"
@@ -61,7 +50,7 @@ jobs:
         run: python3 -I .github/userscript_tag.py create "${{ github.sha }}"
 
       - name: Sign the script (same as S1)
-        if: steps.plan.outputs.action == 'create' || (github.event_name == 'workflow_dispatch' && inputs.backfill)
+        if: steps.plan.outputs.action == 'create'
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2.4.0
         with:
           subject-path: video-helper.user.js

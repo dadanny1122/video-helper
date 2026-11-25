@@ -9,6 +9,7 @@
   python -I .github/userscript_tag.py verify <tag>         → 重新驗證：tag 名＝@version、指紋＝tag 裡的檔、說明的 commit＝tag 指的 commit
   python -I .github/userscript_tag.py verify-all [--download]  → 每個 userscript-v* 都驗；--download 再從 raw 網址下載核對
   python -I .github/userscript_tag.py backfill [--push]   → 幫歷史上每個版本補 tag（每版第一個出現的 commit）
+      ⚠ 要在自己電腦上用自己的 git 權限跑：GitHub 不准 workflow 的權限把 tag 放到 workflow 檔跟現在不一樣的舊 commit
   python -I .github/userscript_tag.py selftest             → 在暫存 git repo 走一次所有規則
 """
 import hashlib
