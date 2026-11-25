@@ -31,6 +31,9 @@ function state(theme, extra = {}) {
       keep_history: true, keep_stats: false, bridge: '✅ 執行中（127.0.0.1:47321）｜已配對 1 個瀏覽器', bridge_on: true, paired: 1,
       blocklist: '71,234 筆｜今天更新', ai: '沒有設定金鑰（只用免費清單）｜AI 記住 0 個網域', ai_has_key: false, mbps: 85.2, data_dir: 'C:\\Users\\me\\AppData\\Roaming\\VideoHelper' },
     setup: { chrome: true, done: ['1'] },
+    fb: { count: 1, level: 'bronze', badge: '🥉 銅牌支持者', themes: ['aurora', 'dusk'], beta: false, next: 3, theme: '', beta_on: false,
+      kinds: [['suggest', '💡 建議'], ['bug', '🐞 問題'], ['praise', '👍 稱讚'], ['other', '💬 其他']], ready: true,
+      themes_all: [['aurora', '極光'], ['dusk', '夕暮']], busy: false, result: null },
   }, extra);
 }
 

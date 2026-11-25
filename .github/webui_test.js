@@ -184,6 +184,32 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
       await page.screenshot({ path: path.join(out, 'setup-dark.png') });
       a3 = await page.evaluate(() => window.__acts);
       ok(a3.some((a) => a[0] === 'setup_step' && a[1] === '2'), '按「打開」→ setup_step 2');
+      // ---- v1.48.0 意見回饋 ----
+      await page.click('#nav a[data-page="fb"]');
+      await page.waitForTimeout(300);
+      ok(await page.isVisible('#page-fb') && (await page.locator('#fbkind option').count()) === 4, '意見回饋頁：4 種類型');
+      ok(await page.isVisible('#fbbadge') && /銅牌/.test(await page.textContent('#fbbadge')), '右上角顯示 🥉 徽章');
+      await page.fill('#fbtext', '太短了');
+      ok(await page.isDisabled('#fbsend') && /還差 13 個中文字/.test(await page.textContent('#fbcount')), '字數不夠：送出按鈕是灰的、顯示還差幾個字');
+      await page.fill('#fbtext', 'I really like this tool because it blocks ads well and the download button is simple to use every day');
+      ok(!(await page.isDisabled('#fbsend')), '英文 20 個單字：可以送出');
+      await page.click('#fbsend');
+      await page.waitForTimeout(200);
+      let fa = await page.evaluate(() => window.__acts);
+      ok(fa.some((a) => a[0] === 'feedback_send' && a[1].kind === 'suggest' && a[1].text.split(' ').length === 20), '按送出 → feedback_send（類型＋內容）');
+      ok(await page.isVisible('#fbthemes') && !(await page.isVisible('#fbbeta')), '1 則：有限定配色、還沒有搶先試用');
+      await page.click('[data-fbtheme="aurora"]');
+      await page.waitForTimeout(200);
+      fa = await page.evaluate(() => window.__acts);
+      ok(fa.some((a) => a[0] === 'set' && a[1].key === 'fb_theme' && a[1].value === 'aurora'), '按「極光」→ 存配色');
+      extra.fb = Object.assign({}, state(theme).fb, { theme: 'dusk', count: 3, level: 'silver', badge: '🥈 銀牌支持者', beta: true,
+        result: { ok: true, token: 'VH1.<img src=x onerror=window.__pwned=1>.sig', got: ['🧪 搶先試用'] } });
+      await page.waitForTimeout(900);
+      ok(await page.evaluate(() => document.body.classList.contains('acc-dusk')), '限定配色「夕暮」套到畫面');
+      ok(await page.isVisible('#fbbeta') && await page.evaluate(() => !window.__pwned) && /搶先試用/.test(await page.textContent('#fbres')),
+        '3 則：出現搶先試用；代碼有跳脫、不會執行');
+      await page.screenshot({ path: path.join(out, 'feedback-dark.png') });
+      delete extra.fb;
       await page.click('#bell');
       await page.click('.ntc.go');
       await page.waitForTimeout(200);

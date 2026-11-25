@@ -13,12 +13,71 @@ const FILTERS = { all: () => true, active: (t) => ['run', 'wait', 'retry'].inclu
 const TITLES = { home: ['首頁', '安全、乾淨、穩定地下載'], dl: ['下載管理', '新增下載、看佇列、找以前下載的影片'],
   nodes: ['Nexus 管理', '讓另一台電腦幫你下載、下載完傳回這台'],
   sec: ['安全與統計', '誰配對過、AI 用了多少、連過哪些網站、元件指紋、下載統計'],
-  set: ['設定', '改了馬上存；原本視窗的 ③ 設定、⚙ 進階設定都在這裡'], setup: ['安裝擋廣告', '在 Chrome 裝暴力猴和 Video Helper 腳本'] };
+  set: ['設定', '改了馬上存；原本視窗的 ③ 設定、⚙ 進階設定都在這裡'], setup: ['安裝擋廣告', '在 Chrome 裝暴力猴和 Video Helper 腳本'],
+  fb: ['意見回饋', '告訴開發者哪裡好用、哪裡要改；回饋有獎勵'] };
 const PAGES = Object.keys(TITLES);
 const EN_NEWS = 'Release notes are written in Chinese. Open "About" → GitHub releases to read them (your browser can translate the page).';
 const STEPS = [['安裝暴力猴（Violentmonkey）', '打開後按「加到 Chrome」→「新增擴充功能」'],
   ['打開暴力猴的必要設定', '把「允許使用者指令碼」打開；\n有用無痕視窗的話，「在無痕模式下允許」也打開'],
   ['安裝 Video Helper 腳本', '打開後按「安裝」，之後有新版本會自動更新']];
+
+// FB-RULE-START 意見回饋字數規則（跟電腦版 vh_feedback.py、腳本、新介面、Worker 同一套；.github/feedback_test.* 會比對）
+const FB_CJK = /[぀-ヿ㐀-䶿一-鿿가-힯豈-﫿]/;
+const FB_URL = /(?:https?:\/\/|www\.)\S+/gi;
+const FB_WORD = /[A-Za-z0-9]+(?:'[A-Za-z]+)?/g;
+const FB_NEED_CJK = 16, FB_NEED_WORDS = 20, FB_MAX = 1000;
+function fbRuns(items, keep) {
+  let n = 0;
+  for (let i = 0; i < items.length;) {
+    let j = i;
+    while (j < items.length && items[j] === items[i]) j++;
+    if (!keep || keep(items[i])) n += j - i > 5 ? 1 : j - i;
+    i = j;
+  }
+  return n;
+}
+function fbRule(text) {
+  const raw = text == null ? '' : String(text);
+  const clean = raw.replace(FB_URL, ' ');
+  const cjk = fbRuns(Array.from(clean), (c) => FB_CJK.test(c));
+  const words = fbRuns((clean.match(FB_WORD) || []).map((w) => w.toLowerCase()));
+  const tooLong = Array.from(raw).length > FB_MAX;
+  return { cjk, words, too_long: tooLong, ok: (cjk >= FB_NEED_CJK || words >= FB_NEED_WORDS) && !tooLong };
+}
+function fbMask(text) { return String(text).replace(FB_URL, '[網址已移除]'); }
+// FB-RULE-END
+
+// v1.48.0 意見回饋頁（docs/infra/04-意見回饋與回饋獎勵規格.md）
+let fbSig = '';
+function fbCount() {
+  const r = fbRule($('#fbtext').value);
+  $('#fbcount').textContent = r.too_long ? `太長了（最多 ${FB_MAX} 字）` : r.ok ? '✅ 可以送出了'
+    : `還差 ${FB_NEED_CJK - r.cjk} 個中文字，或 ${FB_NEED_WORDS - r.words} 個英文單字`;
+  $('#fbsend').disabled = !r.ok || !!(S && S.fb && S.fb.busy);
+}
+function renderFb(f) {
+  if (!f) return;
+  const sig = JSON.stringify(f);
+  if (sig === fbSig) return;
+  fbSig = sig;
+  const k = $('#fbkind');
+  if (!k.options.length) k.innerHTML = f.kinds.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+  $('#fbsend').textContent = f.busy ? '送出中…' : '送出';
+  const res = $('#fbres');
+  if (f.result) {
+    res.hidden = false;
+    res.classList.toggle('bad', !f.result.ok);
+    res.innerHTML = f.result.ok ? `🎉 謝謝！你的回饋代碼（腳本、Discord /回饋者 可以用）：<div class="mono small sel" translate="no">${esc(f.result.token)}</div>`
+      + (f.result.got.length ? `<div>拿到：${f.result.got.map(esc).join('、')}</div>` : '') : '❌ ' + esc(f.result.msg);
+  } else res.hidden = true;
+  if (!f.ready) { res.hidden = false; res.classList.add('bad'); res.textContent = '意見回饋還沒設定好（開發者還沒填 Worker 網址）'; }
+  $('#fblevel').textContent = f.badge ? `${f.badge}（回饋 ${f.count} 則）` : '還沒有回饋';
+  $('#fbthemes').hidden = !f.themes.length;
+  $('#fbthemebtn').innerHTML = [['', '預設'], ...f.themes_all].map(([v, l]) => `<button data-fbtheme="${esc(v)}" class="${v === f.theme ? 'on' : ''}">${esc(l)}</button>`).join('');
+  $('#fbbeta').hidden = !f.beta;
+  $('#s-beta').checked = !!f.beta_on;
+  fbCount();
+}
 
 function hue(s) { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
 
@@ -409,7 +468,7 @@ function go(p) {
   page = p;
   for (const a of $$('#nav a')) a.classList.toggle('on', a.dataset.page === p);
   for (const x of PAGES) $('#page-' + x).hidden = x !== p;
-  setSig = ''; nxSig = '';
+  setSig = ''; nxSig = ''; fbSig = '';
   if (p === 'nodes') loadNexus();
   if (p === 'sec') { secSig = ''; loadSec(); }
   $('#ptitle').textContent = TITLES[p][0]; $('#sub').textContent = TITLES[p][1];
@@ -432,7 +491,8 @@ function render(s) {
   S = s;
   if (I18N.set(s.lang)) { lastSig = ''; setSig = ''; nxSig = ''; secSig = ''; go(page); }   // 換語言：整頁重畫
   if (s.start_page && !render.started) { render.started = true; go(s.start_page); }   // 第一次打開：先帶去裝擋廣告
-  document.body.className = s.theme === 'light' ? 'light' : 'dark';
+  document.body.className = (s.theme === 'light' ? 'light' : 'dark') + (s.fb && s.fb.theme ? ' acc-' + s.fb.theme : '');
+  const fbb = $('#fbbadge'); fbb.hidden = !(s.fb && s.fb.badge); if (s.fb && s.fb.badge) fbb.textContent = s.fb.badge;
   $('#ver').textContent = 'v' + s.version;
   const br = $('#bridge'); br.textContent = s.bridge ? '● 瀏覽器已連動' : '瀏覽器未連動'; br.classList.toggle('ok', !!s.bridge);
   for (const b of $$('.pausebtn')) b.textContent = s.paused ? '▶ 全部繼續' : '⏸ 全部暫停';
@@ -447,6 +507,7 @@ function render(s) {
   if (page === 'nodes' && (tick.n = (tick.n || 0) + 1) % 2 === 0) loadNexus();
   if (page === 'sec' && (tick.m = (tick.m || 0) + 1) % 10 === 0) loadSec();      // 5 秒更新一次
   if (page === 'setup') renderSetup(s.setup);
+  if (page === 'fb') renderFb(s.fb);
   if (s.ask && s.ask.id !== render.asked) {          // 電腦版要問你一件事（例如還在下載時關視窗）
     render.asked = s.ask.id;
     modal(s.ask.title, s.ask.text, s.ask.buttons.map((b, i) => [b, i, i === 0 ? 'accent' : ''])).then((i) => act('answer', { id: s.ask.id, choice: i }));
@@ -474,6 +535,10 @@ function wire() {
     if (!e.target.closest('#menu')) $('#menu').hidden = true;
     const g = e.target.closest('[data-go], [data-gopage]');
     if (g && (g.dataset.go || g.dataset.gopage)) { go(g.dataset.go || g.dataset.gopage); lastSig = ''; if (S) render(S); if (g.dataset.gopage) $('#panel').hidden = true; return; }
+    const ft = e.target.closest('[data-fbtheme]');
+    if (ft) { fbSig = ''; act('set', { key: 'fb_theme', value: ft.dataset.fbtheme }); return; }
+    if (e.target.id === 'fbsend') { act('feedback_send', { kind: $('#fbkind').value, text: $('#fbtext').value }).then((r) => { if (r && r.ok) { $('#fbtext').value = ''; fbCount(); } }); return; }
+    if (e.target.id === 'fbadd') { act('feedback_code', $('#fbcode').value.trim()).then((r) => { if (r && r.ok) $('#fbcode').value = ''; }); return; }
     const th = e.target.closest('[data-theme]');
     if (th) { act('set', { key: 'theme', value: th.dataset.theme }); return; }
     const b = e.target.closest('[data-act]');
@@ -497,7 +562,7 @@ function wire() {
     if (k) {
       const key = k.dataset.set;
       const value = k.type === 'checkbox' ? k.checked : (key === 'rate_limit' || key === 'log_keep_days') ? +k.value : k.value;
-      setSig = ''; act('set', { key, value }); k.blur();
+      setSig = ''; fbSig = ''; act('set', { key, value }); k.blur();
       return;
     }
     const c = e.target.closest('[data-sel]'); if (!c) return;
@@ -530,6 +595,7 @@ function wire() {
   });
   // 下載管理
   $('#dlurls').addEventListener('input', updateGo);
+  $('#fbtext').addEventListener('input', fbCount);
   $('#dlurls').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.ctrlKey) $('#dlgo').click(); });
   $('#dlgo').addEventListener('click', async () => {
     const urls = [...new Set(dlLines())];

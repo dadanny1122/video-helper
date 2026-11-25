@@ -242,3 +242,13 @@ button.small { font-size: 12px; }
 .res { white-space: pre-line; padding: 8px 10px; border-radius: 10px; background: var(--card2); margin: 8px 0; font-size: 13px; }
 .res.good { color: var(--ok); } .res.bad { color: var(--bad); }
 .verify { margin: 8px 0 12px; } .verify .res { word-break: break-all; }
+
+/* v1.48.0 意見回饋：限定配色（回饋解鎖）、回饋頁 */
+body.acc-aurora { --a1: #3ee6a8; --a2: #3fa9ff; }
+body.acc-dusk { --a1: #ff9a5a; --a2: #c06cff; }
+#fbtext { width: 100%; min-height: 140px; margin-top: 10px; resize: vertical; font: inherit; color: var(--text); background: var(--card2);
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; box-sizing: border-box; }
+#fbkind { min-width: 160px; }
+#fbcode { min-width: 260px; }
+.mono { font-family: Consolas, "Cascadia Mono", monospace; word-break: break-all; }
+.sel { user-select: text; -webkit-user-select: text; margin: 6px 0; }

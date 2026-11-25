@@ -34,7 +34,8 @@ APP_SKIP_CONST = {"TIPS", "HOME_CARDS", "NAV_ITEMS",             # 只有舊視�
 NEXUS_ALL = ["nexus/tasks/scheduler.py", "nexus/tasks/states.py", "nexus/core/errors.py", "nexus/tasks/adapters.py",
              "nexus/worker/tray.py", "nexus/worker/agent.py",
              "nexus/display.py",            # S5：節點畫面的名稱、時間、大小（新介面和舊視窗共用）
-             "vh_updater.py"]               # v1.47.0 一鍵更新的錯誤原因（會顯示在首頁更新卡）
+             "vh_updater.py",
+             "vh_feedback.py"]              # v1.48.0 意見回饋（類型、字數提示、送不出去的原因）               # v1.47.0 一鍵更新的錯誤原因（會顯示在首頁更新卡）
 NEXUS_GUI_EXTRA = {"nexus/worker/executor.py": r"^(sandbox_status)$", "nexus/sandbox/jobs.py": r"^(probe)$"}   # 沙箱不能用的原因          # 節點小視窗（--worker）也翻
 NEXUS_GUI = {"nexus/gui/devices_tab.py": re.compile(r"^(_ago|_local|_isolation)$"),
              "nexus/gui/tasks_tab.py": re.compile(r"^(summary_of|fmt_size|local|_who|_download_result|_result_text|_why)$")}

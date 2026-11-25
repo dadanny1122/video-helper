@@ -19,6 +19,11 @@ on:
       - '.github/i18n_check.py'
       - '.github/userscript_i18n_test.js'
       - '.github/userscript_report_test.js'
+      - '.github/userscript_feedback_test.js'
+      - '.github/feedback_test.*'
+      - '.github/feedback/**'
+      - 'cloudflare/worker.js'
+      - 'vh_feedback.py'
       - '.github/ISSUE_TEMPLATE/**'
       - 'nexus/**'
       - '.github/workflows/security.yml'
@@ -56,6 +61,14 @@ jobs:
           node .github/userscript_i18n_test.js video-helper.user.js webui-shots/userscript-en
       - name: Report button test (no video URL leaks)
         run: node .github/userscript_report_test.js video-helper.user.js
+      - name: Feedback tests (word rule, Worker, script dialog)
+        env:
+          PYTHON: python3
+        run: |
+          python3 -m pip install -q cryptography 2>/dev/null || python3 -m pip install -q --break-system-packages cryptography
+          python3 -I .github/feedback_test.py
+          node .github/feedback_test.js
+          node .github/userscript_feedback_test.js video-helper.user.js
       - name: Upload new UI screenshots
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2

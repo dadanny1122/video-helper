@@ -52,6 +52,7 @@
 - 新聞、排行榜只貼**標題／名稱和連結**，不轉貼全文
 - 改了腳本：`@version` 一定要 +1（暴力猴、Greasy Fork、Discord 通知都看它）
 - 改了電腦版：`VERSION` +1，並在 `CHANGELOG.md` 最上面寫一段（GitHub 會自動打包發布）
+- **意見回饋（電腦版 v1.48.0、腳本 v3.25.0、`docs/infra/04-意見回饋與回饋獎勵規格.md`）**：字數規則四份要一樣（`.github/feedback/rule.js` 貼進腳本／`webui/app.js`／`cloudflare/worker.js` 的 `FB-RULE-START～END`，Python 版 `vh_feedback.fb_rule`，`cases.json` 共用）；中文 ≥16 或英文 ≥20 單字、重複超過 5 次算 1、網址不算且送前刪掉；Worker `POST /feedback`→Discord（`allowed_mentions` 空、不帶 IP）、KV 限流（每小時 3／每天 10，只存 IP＋日期雜湊）、重複 30 天、Ed25519 代碼（私鑰 Worker 自己產生存 KV）；`/回饋者`（feedback-role）給 `FEEDBACK_ROLE_ID`、`used:<id>` 一組代碼一人；好處 1 則銅＋配色極光／夕暮、3 則銀＋搶先試用（`beta_features`／腳本 `beta`）、10 則金；測試 `feedback_test.py`／`.js`、`userscript_feedback_test.js`（security.yml）
 - **S5（v1.47.1）**：Nexus 的中文名稱／時間／大小格式在 `nexus/display.py`（不碰 tkinter；`nexus/gui/*` 舊名字是別名），新介面（`_web_nexus_full`、`web_nx_*`）只用它；`MasterService` 由 `App.init_nexus()`（`__init__` 裡、`build_advanced` 之前）建；測試 `nexus/tests/unit/test_display.py`
 - **v1.47.0 一鍵更新**（`docs/infra/03-電腦版一鍵更新規格.md`、`vh_updater.py`）：首頁更新卡「⬆ 更新到」→ 下載 `VideoHelper.exe.new` → 三關（發布頁 digest、attestation 要是本 repo `build.yml`、`components.lock.json`）→ `.exe`→`.old`、`.new`→`.exe` → `.old --update-watchdog` 等舊版關掉再開新版 `--after-update`，新版介面打開後 `mark_ok`（`update_ok.json`），60 秒沒回報／閃退就換回並開 `--update-failed`；發布一定要附 `components.lock.json` 和 digest，不然舊版會拒絕更新。測試 `.github/updater_test.py`、`.github/update_e2e.py`（build.yml Windows）
 - **commit 訊息用中文白話寫**（會直接貼到 Discord #進度 給朋友看）

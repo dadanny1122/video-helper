@@ -18,6 +18,7 @@
     <a data-page="set"><i>⚙</i>設定</a>
     <a data-page="sec"><i>🔒</i>安全與統計</a>
     <a data-page="setup"><i>🛡</i>安裝擋廣告</a>
+    <a data-page="fb"><i>💬</i>意見回饋</a>
     <a data-page="about"><i>ⓘ</i>關於</a>
   </nav>
   <div class="grow"></div>
@@ -34,6 +35,7 @@
       <div class="muted small" id="sub">安全、乾淨、穩定地下載</div>
     </div>
     <div class="top-r">
+      <span class="pill" id="fbbadge" hidden></span>
       <span class="pill" id="bridge">瀏覽器未連動</span>
       <button class="icon" id="bell" title="通知">🔔<span class="badge" id="badge" hidden></span></button>
     </div>
@@ -288,6 +290,24 @@
       <div class="steps" id="steps"></div>
       <div class="note">✅ 完成後：打開影片網站，左下角出現綠色盾牌「🛡 已攔截 N 次」就成功了。</div>
       <div class="note bad" id="nochrome" hidden>⚠ 找不到 Chrome，會改用預設瀏覽器打開。這個工具是為 Chrome 設計的。</div>
+    </section>
+  </div>
+  <div id="page-fb" class="page" hidden>
+    <section class="card">
+      <div class="card-h"><h3>寫意見給開發者</h3></div>
+      <p class="muted small">會貼到開發者的 Discord 頻道。只送類型、內容和電腦版版本，不會送你下載的影片或網址；內容裡的網址會自動刪掉。</p>
+      <div class="fbrow"><select id="fbkind"></select></div>
+      <textarea id="fbtext" maxlength="1100" placeholder="中文 16 個字以上，或英文 20 個單字以上"></textarea>
+      <div class="muted small" id="fbcount"></div>
+      <div class="btns mt"><button class="accent" id="fbsend">送出</button></div>
+      <div class="note" id="fbres" hidden></div>
+    </section>
+    <section class="card">
+      <div class="card-h"><h3>回饋獎勵</h3><div class="grow"></div><span class="pill" id="fblevel"></span></div>
+      <p class="muted small">回饋 1 則：🥉 徽章＋🎨 限定配色；3 則：🥈＋🧪 搶先試用；10 則：🥇。拿到的代碼也可以在 Discord 打 /回饋者 領「回饋者」身分組。</p>
+      <div class="srow" id="fbthemes" hidden><div><b>🎨 限定配色</b><div class="muted small">只改新介面的顏色</div></div><div class="seg" id="fbthemebtn"></div></div>
+      <div class="srow" id="fbbeta" hidden><div><b>🧪 搶先試用新功能</b><div class="muted small">新功能會先標成「搶先版」只給打開的人用</div></div><label class="sw"><input type="checkbox" data-set="beta_features" id="s-beta"><span></span></label></div>
+      <div class="srow"><div><b>加入回饋代碼</b><div class="muted small">在瀏覽器腳本拿到的代碼貼這裡，好處兩邊都算</div></div><div class="sbtns"><input id="fbcode" placeholder="VH1.…"><button class="ghost small" id="fbadd">加入</button></div></div>
     </section>
   </div>
 </main>
