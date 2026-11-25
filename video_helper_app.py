@@ -27,6 +27,12 @@ if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] in ("--nexus-run
     from nexus.sandbox.child import entry as _nexus_child_entry
     sys.exit(_nexus_child_entry())
 
+# v1.47.0 一鍵更新的小幫手（跑在改名成 .old 的舊版裡）：開新版，沒等到「啟動成功」就換回舊版
+if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[1] == "--update-watchdog":
+    import vh_updater as _vhu
+    _vhu.watchdog(sys.argv[2])
+    sys.exit(0)
+
 import os
 import re
 import json
@@ -93,7 +99,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.46.1"
+VERSION = "1.47.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -171,6 +177,7 @@ DEFAULT_SETTINGS = {
     "keep_stats": True,               # 記錄下載統計（只存數字和網站名稱）
     "filename_template": DEFAULT_TEMPLATE,
     "close_action": "下載中才詢問",   # 關閉視窗時：下載中才詢問 / 一律縮到系統匣 / 直接結束
+    "auto_download_update": False,    # v1.47.0 D1：有新版時先在背景下載好（還是要按才換）
     "last_version": "",               # 上次執行的版本（版本變了就自動備份）
     "bridge_enabled": False,          # 瀏覽器連動（配對後才會打開）
     "bridge_tokens": [],              # 已配對的瀏覽器（只存雜湊值，不存原本的密碼）
@@ -1304,6 +1311,16 @@ def check_update(q, manual=False):
     except Exception as e:
         if manual:
             q.put(("update_failed", str(e)))
+
+
+def update_supported():
+    """一鍵更新能不能用：要是打包好的 EXE、資料夾能寫入（Program Files 不行）"""
+    if not getattr(sys, "frozen", False):
+        return False, "直接跑 Python 原始碼時不能自動更新"
+    import vh_updater
+    if not vh_updater.can_write(os.path.dirname(sys.executable)):
+        return False, "VideoHelper.exe 放的資料夾不能寫入（例如 Program Files）"
+    return True, ""
 
 
 def _gh_json(url, timeout=20):
@@ -3364,6 +3381,20 @@ class App:
         self.web_fallback = False      # 新介面打不開 → 改用原本的視窗
         self.notices = []              # 新介面的通知中心（最新的在前）
         self.update_info = None        # 有新版本：(版本, 網址)
+        self.upd = {"phase": "", "pct": 0, "msg": ""}   # v1.47.0 一鍵更新：""／downloading／verifying／ready／waiting／restarting／failed
+        self.upd_rel = None
+        self.upd_cancel = False
+        self.upd_after = ("", "")      # (--after-update 舊版本, --update-failed 新版本)
+        for i, a in enumerate(sys.argv):
+            if a == "--after-update" and i + 1 < len(sys.argv):
+                self.upd_after = (sys.argv[i + 1], "")
+            if a == "--update-failed" and i + 1 < len(sys.argv):
+                self.upd_after = ("", sys.argv[i + 1])
+        self.upd_marked = False
+        self.upd_ok = update_supported()[0]    # 算一次就好（裡面會試寫一個檔）
+        if getattr(sys, "frozen", False) and self.upd_after == ("", ""):     # 一般啟動：清掉上次更新留下的 .old／.failed
+            import vh_updater
+            threading.Thread(target=vh_updater.cleanup, args=(sys.executable, 1), daemon=True).start()
         self._web_ask = None           # 新介面要問使用者的事（例如還在下載時關視窗）
         self._web_an = None            # 新介面「新增下載」讀取一個網址的結果（畫質清單）
         self._web_urls = {}            # 新介面紀錄編號 → 網址
@@ -3605,6 +3636,7 @@ class App:
             except Exception:
                 log.exception("新介面狀態")
         if self._tick % 10 == 0:                       # 約每 1 秒：把「等重試」時間到的放回佇列
+            self.update_check_tick()
             self.update_tray()
             if not ui_busy():                            # 拖動視窗時先不重畫
                 self.refresh_header()
@@ -3687,13 +3719,177 @@ class App:
     def on_update(self, data):
         tag, url, notes = data
         self.update_info = (tag, url)
+        if self.settings["auto_download_update"] and self.upd_ok:    # D1：先下載好，還是要按才換
+            self.start_update(auto=True)
         if self.web and not self.web_fallback:            # 新介面：放在「最新消息」最上面＋通知，不跳視窗
-            self.add_notice("✨", f"有新版本 v{tag}（目前 v{VERSION}），在首頁「最新消息」按一下前往下載", "home")
+            self.add_notice("✨", f"有新版本 v{tag}（目前 v{VERSION}），在首頁「最新消息」按「⬆ 更新」", "home")
             return
         notes = notes[:600] + ("…" if len(notes) > 600 else "")
-        msg = f"有新版本 v{tag}（目前 v{VERSION}）。\n\n" + (f"更新內容：\n{notes}\n\n" if notes else "") + "要前往下載嗎？"
-        if messagebox.askyesno("有新版本", msg):
+        head = f"有新版本 v{tag}（目前 v{VERSION}）。"
+        body = f"{head}\n\n" + (f"更新內容：\n{notes}\n\n" if notes else "")
+        if self.upd_ok:
+            if messagebox.askyesno("有新版本", body + "要現在自動更新嗎？（會下載、核對指紋後換掉舊版並重新開啟）"):
+                self.start_update()
+        elif messagebox.askyesno("有新版本", body + "要前往下載嗎？"):
             webbrowser.open(url)
+
+    # ------------------------------------------------------------------
+    # v1.47.0 一鍵更新（docs/infra/03-電腦版一鍵更新規格.md；邏輯在 vh_updater.py）
+    # ------------------------------------------------------------------
+
+    def upd_set(self, phase, pct=0, msg=""):
+        self.upd = {"phase": phase, "pct": int(pct), "msg": msg}
+
+    def start_update(self, auto=False):
+        import vh_updater
+        ok, why = update_supported()
+        if not ok:
+            self.add_notice("ℹ", why + "，已打開發布頁，請手動下載")
+            webbrowser.open(f"https://github.com/{REPO}/releases/latest")
+            return {"ok": False, "msg": why}
+        if self.upd["phase"] in ("downloading", "verifying", "restarting"):
+            return {"ok": False, "msg": "更新已經在進行了"}
+        if self.upd["phase"] == "ready" and self.upd_rel:   # 已經下載、核對好了
+            self.update_install()
+            return {"ok": True}
+        self.upd_cancel = False
+        self.upd_set("downloading", 0, "準備下載…")
+        exe = sys.executable
+
+        def work():
+            try:
+                rel = vh_updater.latest_release(_gh_json, REPO)
+                if vh_updater.vtuple(rel["tag"]) <= vh_updater.vtuple(VERSION):
+                    self.q.put(("upd_failed", ("none", f"目前已經是最新版本（v{VERSION}）")))
+                    return
+                new = vh_updater.paths(exe)["new"]
+                vh_updater.download(rel["exe"]["url"], new, rel["exe"]["size"],
+                                    progress=lambda g, t: self.q.put(("upd_progress", (g, t))),
+                                    cancel=lambda: self.upd_cancel, ua=f"VideoHelper/{VERSION}")
+                self.q.put(("upd_progress", (-1, 0)))
+                lock = vh_updater.fetch_json(rel["lock"]["url"])
+                bad = vh_updater.verify(new, rel, _gh_json, REPO, lock)
+                if bad:
+                    vh_updater._rm(new)
+                    self.q.put(("upd_failed", ("bad", bad)))
+                    return
+                self.q.put(("upd_ready", (rel, auto)))
+            except vh_updater.UpdateError as e:
+                vh_updater._rm(vh_updater.paths(exe)["new"])
+                self.q.put(("upd_failed", ("err", str(e))))
+            except Exception as e:
+                log.exception("更新失敗")
+                vh_updater._rm(vh_updater.paths(exe)["new"])
+                self.q.put(("upd_failed", ("err", f"出錯了：{type(e).__name__}")))
+        threading.Thread(target=work, daemon=True).start()
+        return {"ok": True, "msg": "開始下載新版…"}
+
+    def on_upd_progress(self, data):
+        got, total = data
+        if got < 0:
+            self.upd_set("verifying", 100, "核對指紋和打包紀錄中…")
+        else:
+            self.upd_set("downloading", got * 100 / total if total else 0, f"下載中 {fmt_size(got)} / {fmt_size(total)}")
+
+    def on_upd_failed(self, data):
+        kind, msg = data
+        if kind == "none":
+            self.upd_set("")
+            self.add_notice("✅", msg)
+            return
+        cancelled = msg == "已取消更新"
+        self.upd_set("" if cancelled else "failed", 0, msg)
+        log.warning("更新沒有完成：%s", msg)
+        if not cancelled:
+            self.add_notice("⚠", f"更新沒有完成：{msg}（舊版照常可用）", "home")
+            if not self.web or self.web_fallback:
+                messagebox.showwarning("更新沒有完成", f"{msg}\n\n舊版照常可用；也可以到發布頁手動下載。")
+
+    def on_upd_ready(self, data):
+        rel, auto = data
+        self.upd_rel = rel
+        self.upd_set("ready", 100, f"v{rel['tag']} 已下載並核對完成")
+        if auto:                                          # D1：背景下載好了，等使用者按
+            self.add_notice("⬆", f"v{rel['tag']} 已經下載並核對好，在首頁按「⬆ 更新」就會換成新版", "home")
+            return
+        self.update_install()
+
+    def update_install(self):
+        """D2：有下載中的任務 → 先問（預設等下載完）"""
+        if not self.downloads_active():
+            return self.update_swap()
+        choices = ["等下載完再更新", "現在更新（中斷下載）", "先不要"]
+
+        def done(c):
+            if c == choices[0]:
+                self.upd_set("waiting", 100, "等下載完就自動更新…")
+                self.add_notice("⏳", "等目前的下載完成後會自動更新並重新開啟")
+            elif c == choices[1]:
+                self.update_swap()
+            else:
+                self.upd_set("ready", 100, self.upd["msg"])
+        text = "目前還有影片在下載。\n要等下載完再更新，還是現在就更新？（現在更新會中斷下載，下次要重新加入）"
+        if self.web and not self.web_fallback:
+            self.web_ask("要更新了", text, choices, done)
+        else:
+            r = messagebox.askyesnocancel("要更新了", text + "\n\n是＝等下載完、否＝現在更新、取消＝先不要")
+            done(choices[0] if r else choices[1] if r is False else choices[2])
+
+    def update_check_tick(self):
+        """每秒：新版回報啟動成功；「等下載完」的時候到了就換"""
+        if self.upd_after[0] and not self.upd_marked and (not self.web or self.web.loaded or self.web_fallback):
+            import vh_updater
+            self.upd_marked = True
+            vh_updater.mark_ok(data_dir(), VERSION)
+            self.add_notice("✅", f"已更新到 v{VERSION}（原本 v{self.upd_after[0]}）")
+            log.info("更新完成：v%s → v%s", self.upd_after[0], VERSION)
+            if getattr(sys, "frozen", False):
+                threading.Thread(target=vh_updater.cleanup, args=(sys.executable, 24), daemon=True).start()
+        if self.upd_after[1] and not self.upd_marked:
+            import vh_updater
+            self.upd_marked = True
+            st = vh_updater.read_state(data_dir())
+            msg = f"更新到 v{self.upd_after[1]} 失敗（{st.get('reason', '新版打不開')}），已自動換回 v{VERSION}"
+            self.add_notice("⚠", msg, "home")
+            log.warning(msg)
+            if not self.web or self.web_fallback:
+                messagebox.showwarning("更新失敗", msg + "\n\n可以到發布頁手動下載，或把錯誤日誌傳給開發者。")
+        if self.upd["phase"] == "waiting" and not self.downloads_active():
+            self.update_swap()
+
+    def update_swap(self):
+        import vh_updater
+        rel = self.upd_rel
+        exe = sys.executable
+        try:
+            if not rel or not os.path.exists(vh_updater.paths(exe)["new"]):
+                raise vh_updater.UpdateError("下載好的新版不見了，請重新按更新")
+            old = vh_updater.swap(exe)
+            vh_updater.start_watchdog(old, exe, rel["tag"], VERSION, data_dir())
+        except Exception as e:
+            msg = str(e) if isinstance(e, vh_updater.UpdateError) else f"換檔失敗：{type(e).__name__}"
+            log.exception("更新換檔")
+            self.upd_set("failed", 0, msg)
+            self.add_notice("⚠", f"更新沒有完成：{msg}（舊版照常可用）", "home")
+            return
+        self.upd_set("restarting", 100, f"重新開啟成 v{rel['tag']}…")
+        log.info("更新：v%s → v%s，重新開啟", VERSION, rel["tag"])
+        try:
+            self.web_publish()
+        except Exception:
+            pass
+        self.root.after(600, self.quit_app)
+
+    def web_update_now(self, _):
+        return self.start_update() or {"ok": True}
+
+    def web_update_cancel(self, _):
+        if self.upd["phase"] == "downloading":
+            self.upd_cancel = True
+        elif self.upd["phase"] in ("waiting", "failed", "ready"):
+            self.upd_set("ready" if self.upd["phase"] == "waiting" else "", 100 if self.upd["phase"] == "waiting" else 0,
+                         self.upd["msg"] if self.upd["phase"] == "waiting" else "")
+        return {"ok": True}
 
     # ------------------------------------------------------------------
     # ② 下載影片 + 下載佇列
@@ -4802,7 +4998,8 @@ class App:
             "version": VERSION, "theme": self.theme, "paused": paused, "bridge": bool(self.bridge.server),
             "lang": I18N.LANG if I18N else "zh",
             "kpis": kpis, "tasks": tasks, "nexus": nx, "notices": list(self.notices),
-            "update": {"tag": self.update_info[0]} if self.update_info else None, "ask": self._web_ask,
+            "update": dict(self.upd, tag=self.update_info[0], auto=self.upd_ok) if self.update_info else None,
+            "ask": self._web_ask,
             "hist_ver": ver, "analysis": self._web_an, "batch": self.batch_running,
             "qualities": QUALITY_CHOICES, "default_quality": self.settings["default_quality"],
             "rate_limit": self.settings["rate_limit_mbps"] or 0,
@@ -5047,7 +5244,7 @@ class App:
         return {"ok": True, "msg": f"刪除 {n} 筆紀錄（影片檔案不會刪）"}
 
     # ---- v1.38.0 設定頁、安裝擋廣告頁 ----
-    WEB_BOOL_SETTINGS = ("skip_downloaded", "tray_always", "keep_history", "keep_stats")
+    WEB_BOOL_SETTINGS = ("skip_downloaded", "tray_always", "keep_history", "keep_stats", "auto_download_update")
 
     def _web_settings(self):
         """設定頁要顯示的值（金鑰本身不送出去，只說有沒有設定）"""
@@ -5065,6 +5262,7 @@ class App:
             "close_action": st["close_action"], "close_choices": CLOSE_CHOICES if pystray else [c for c in CLOSE_CHOICES if "系統匣" not in c],
             "tray_always": bool(st["tray_always"]), "tray_ok": pystray is not None,
             "keep_history": bool(st["keep_history"]), "keep_stats": bool(st["keep_stats"]),
+            "auto_download_update": bool(st["auto_download_update"]), "update_ok": self.upd_ok,
             "bridge": lbl("bridge_lbl"), "bridge_on": bool(self.bridge.server), "paired": len(st["bridge_tokens"] or []),
             "blocklist": lbl("bl_lbl"), "ai": lbl("ai_lbl"), "ai_has_key": bool((st["ai_key"] or "").strip()),
             "mbps": round(self.mbps, 1) if self.mbps else 0, "data_dir": data_dir(),
@@ -6866,6 +7064,12 @@ def selftest(out_path):
         ok &= r["webui"]["html"] > 5000 and r["webui"]["news"] > 0 and r["webui"]["en"] > 500 and r["webui"]["en_test"] == "Quit"
     except Exception as e:
         r["webui_error"] = repr(e)
+        ok = False
+    try:                                            # v1.47.0 一鍵更新的程式有打包進來、EXE 資料夾能不能寫入
+        import vh_updater
+        r["updater"] = {"watch_seconds": vh_updater.WATCH_SECONDS, "supported": update_supported()[0]}
+    except Exception as e:
+        r["updater_error"] = repr(e)
         ok = False
     r["ok"] = bool(ok)
     with open(out_path, "w", encoding="utf-8") as f:

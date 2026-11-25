@@ -128,9 +128,28 @@ function renderNexus(n) {
 }
 
 function renderNews(news, upd) {
-  const u = upd ? `<div class="news upd" data-act="link:update"><b>✨ 有新版本 v${esc(upd.tag)}</b><div class="muted">按這裡前往下載</div></div>` : '';
+  $('#news').innerHTML = updCard(upd) + newsList(news);
+}
+
+// v1.47.0 一鍵更新：有新版時「最新消息」最上面那張卡
+function updCard(upd) {
+  if (!upd) return '';
+  const ph = upd.phase || '';
+  const bar = (p) => `<div class="bar"><b style="width:${Math.max(0, Math.min(100, +p || 0))}%"></b></div>`;
+  let body;
+  if (!upd.auto) body = `<div class="muted">這台不能自動更新，按這裡前往下載</div>`;
+  else if (ph === 'downloading') body = `<div class="muted">${esc(upd.msg)}</div>${bar(upd.pct)}<div class="btns mt"><button class="ghost small" data-act="update_cancel">取消</button></div>`;
+  else if (ph === 'verifying' || ph === 'restarting') body = `<div class="muted">${esc(upd.msg)}</div>${bar(100)}`;
+  else if (ph === 'waiting') body = `<div class="muted">${esc(upd.msg)}</div><div class="btns mt"><button class="ghost small" data-act="update_cancel">先不要</button></div>`;
+  else if (ph === 'failed') body = `<div class="muted">更新沒有完成：${esc(upd.msg)}</div><div class="btns mt"><button class="accent small" data-act="update_now">再試一次</button><button class="ghost small" data-act="link:update">前往發布頁</button></div>`;
+  else if (ph === 'ready') body = `<div class="muted">已下載並核對好</div><div class="btns mt"><button class="accent small" data-act="update_now">⬆ 更新並重新開啟</button></div>`;
+  else body = `<div class="muted">下載、核對指紋後自動換成新版並重新開啟（新版打不開會自動換回）</div><div class="btns mt"><button class="accent small" data-act="update_now">⬆ 更新到 v${esc(upd.tag)}</button><button class="ghost small" data-act="link:update">看更新內容</button></div>`;
+  return `<div class="news upd"${upd.auto ? '' : ' data-act="link:update"'}><b>✨ 有新版本 v${esc(upd.tag)}</b>${body}</div>`;
+}
+
+function newsList(news) {
   // 更新紀錄只有中文（規格 L6）：英文模式只說有哪些版本
-  $('#news').innerHTML = u + (I18N.lang === 'en' ? (news || []).slice(0, 1).map((n) => `<div class="news"><b>v${esc(n.ver)}</b><div class="muted">${esc(EN_NEWS)}</div></div>`).join('')
+  return (I18N.lang === 'en' ? (news || []).slice(0, 1).map((n) => `<div class="news"><b>v${esc(n.ver)}</b><div class="muted">${esc(EN_NEWS)}</div></div>`).join('')
     : (news || []).map((n) => `<div class="news" translate="no"><b>v${esc(n.ver)} ${esc(n.title)}</b>
     <div class="muted">${(n.items || []).map(esc).join('<br>')}</div></div>`).join(''));
 }
@@ -224,6 +243,7 @@ function renderSettings(c) {
   $('#s-close').innerHTML = opts(c.close_choices, c.close_action);
   $('#s-lang').innerHTML = opts(c.langs || [], c.lang);
   $('#s-tray').disabled = !c.tray_ok;
+  $('#s-autoupd').disabled = !c.update_ok;   // v1.47.0：原始碼執行、資料夾不能寫入時不能自動更新
   for (const el of $$('#page-set input[type=checkbox][data-set]')) el.checked = !!c[el.dataset.set];
   $('#s-bridge').textContent = c.bridge || (c.bridge_on ? '執行中' : '關閉中') + `｜已配對 ${c.paired} 個瀏覽器`;
   $('#s-mbps').textContent = c.mbps ? `目前記得約 ${c.mbps} Mbps（換了網路、預估變很不準時清除）` : '還沒量過';

@@ -40,6 +40,23 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
     await page.screenshot({ path: path.join(out, `home-${theme}.png`) });
 
     if (theme === 'dark') {
+      // v1.47.0 一鍵更新卡：下載中有進度條＋取消；平常有「⬆ 更新到」按鈕
+      extra.update = { tag: '1.48.0', auto: true, phase: 'downloading', pct: 42, msg: '下載中 10 MB / 24 MB' };
+      await page.waitForSelector('.news.upd .bar b', { timeout: 3000 }).catch(() => {});
+      ok(await page.evaluate(() => (document.querySelector('.news.upd .bar b') || {}).style?.width === '42%')
+        && await page.locator('.news.upd [data-act="update_cancel"]').count() === 1, '更新卡：下載中有進度 42%＋取消');
+      extra.update = { tag: '1.48.0', auto: true, phase: '', pct: 0, msg: '' };
+      await page.waitForSelector('.news.upd [data-act="update_now"]', { timeout: 3000 }).catch(() => {});
+      await page.click('.news.upd [data-act="update_now"]');
+      await page.waitForTimeout(150);
+      ok((await page.evaluate(() => window.__acts)).some((a) => a[0] === 'update_now'), '更新卡：按「⬆ 更新到」→ update_now');
+      extra.update = { tag: '1.48.0', auto: false };
+      await page.waitForFunction(() => /不能自動更新/.test((document.querySelector('.news.upd') || {}).textContent || ''), null, { timeout: 3000 }).catch(() => {});
+      ok(await page.evaluate(() => /不能自動更新/.test(document.querySelector('.news.upd').textContent) && document.querySelector('.news.upd').dataset.act === 'link:update'),
+        '更新卡：不能自動更新的電腦 → 前往發布頁');
+      await page.evaluate(() => { window.__acts.length = 0; });
+      delete extra.update;
+      await page.waitForTimeout(700);
       await page.click('#chips button[data-f="done"]');
       ok(await page.locator('#list .row').count() === 2, '篩選「已完成」剩 2 筆');
       await page.click('#chips button[data-f="active"]');

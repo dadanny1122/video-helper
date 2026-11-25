@@ -198,7 +198,11 @@
 <h2 id="update">6. Updates</h2>
 <ul>
   <li><b>Script</b>: Violentmonkey checks daily. To update now: Violentmonkey dashboard → Video Helper → 🔄</li>
-  <li><b>Desktop app</b>: Settings → "Check for updates", or download the new EXE from the <a href="https://github.com/dadanny1122/video-helper/releases/latest">release page</a>, close the old one and start the new one. Settings, history and pairing are kept</li>
+  <li><b>Desktop app (one-click updates from v1.47.0)</b>: when a new version is out, <b>⬆ Update to vX.Y.Z</b> appears at the top of News on the home page. Press it and the app downloads and verifies the update (its fingerprint must match the release page, GitHub must have a signed build record for the file, and the component list must agree), then swaps in the new version and restarts. <b>If the new version doesn't open within 60 seconds, it rolls back automatically.</b> If videos are downloading, it asks whether to wait for them first. Settings, history and pairing are kept
+    <ul>
+      <li>To have it download updates in the background: Settings → "Download new versions in the background" (it still waits for you to press Update)</li>
+      <li>If the EXE is in a folder like <code>C:\Program Files</code> that can't be written to, or on a node (<code>--worker</code>), it won't update itself — download the new EXE from the <a href="https://github.com/dadanny1122/video-helper/releases/latest">release page</a>, close the old one and start the new one</li>
+    </ul></li>
   <li>Keep both up to date — some features need both sides updated</li>
   <li><b>Going back to an older version</b>: download the older EXE from <a href="https://github.com/dadanny1122/video-helper/releases">all releases</a> and swap it in — settings and history still work. <b>Exception: Nexus nodes.</b> Newer versions upgrade the node database and older ones can't read it ("database version is newer than the program"). To go back before v1.32, rename the <code>%APPDATA%\VideoHelper\nexus</code> folder first and pair your nodes again</li>
   <li><b>What each version contains</b>: from v1.46.0 every release includes <code>components.lock.json</code> listing the versions and SHA-256 of the desktop app, browser script, Nexus, ffmpeg, the AI subtitle tool and models, and the Python packages (signed by GitHub together with the EXE; versions and fingerprints only — no keys or personal data). Compare it with the component list in Security &amp; stats</li>

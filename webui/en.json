@@ -738,7 +738,49 @@
   "🛡 廣告判斷": "🛡 Ad detection",
   "🤖 AI 使用紀錄": "🤖 AI usage",
   "🧩 用到的元件和指紋（SHA-256）": "🧩 Components and fingerprints (SHA-256)",
-  "🧹 清掉已結束": "🧹 Clear finished"
+  "🧹 清掉已結束": "🧹 Clear finished",
+  "有新版時先在背景下載好": "Download new versions in the background",
+  "下載並核對好之後，還是要你按「⬆ 更新」才會換成新版": "Once downloaded and verified, it still waits for you to press \"⬆ Update\"",
+  "這台不能自動更新，按這裡前往下載": "This computer can't update automatically — click to go to the download page",
+  "先不要": "Not now",
+  "再試一次": "Try again",
+  "前往發布頁": "Open release page",
+  "已下載並核對好": "Downloaded and verified",
+  "⬆ 更新並重新開啟": "⬆ Update and restart",
+  "下載、核對指紋後自動換成新版並重新開啟（新版打不開會自動換回）": "Downloads, checks fingerprints, swaps in the new version and restarts (rolls back automatically if it won't start)",
+  "看更新內容": "What's new",
+  "要現在自動更新嗎？（會下載、核對指紋後換掉舊版並重新開啟）": "Update automatically now? (downloads, checks fingerprints, replaces the old version and restarts)",
+  "要前往下載嗎？": "Go to the download page?",
+  "更新內容：": "What's new:",
+  "準備下載…": "Preparing download…",
+  "核對指紋和打包紀錄中…": "Checking fingerprints and build records…",
+  "等下載完就自動更新…": "Will update once current downloads finish…",
+  "等目前的下載完成後會自動更新並重新開啟": "Will update and restart once current downloads finish",
+  "要更新了": "Ready to update",
+  "目前還有影片在下載。\n要等下載完再更新，還是現在就更新？（現在更新會中斷下載，下次要重新加入）": "Videos are still downloading.\nUpdate after they finish, or now? (Updating now interrupts them; you'll need to add them again)",
+  "等下載完再更新": "Update after downloads",
+  "現在更新（中斷下載）": "Update now (interrupt downloads)",
+  "更新已經在進行了": "An update is already in progress",
+  "開始下載新版…": "Downloading the new version…",
+  "已取消更新": "Update cancelled",
+  "下載好的新版不見了，請重新按更新": "The downloaded update is missing — press Update again",
+  "更新失敗": "Update failed",
+  "更新沒有完成": "Update not completed",
+  "直接跑 Python 原始碼時不能自動更新": "Automatic updates aren't available when running from Python source",
+  "VideoHelper.exe 放的資料夾不能寫入（例如 Program Files）": "The folder containing VideoHelper.exe isn't writable (e.g. Program Files)",
+  "下載網址不是 GitHub，已停止": "The download address isn't GitHub — stopped",
+  "下載被轉到不認識的網站，已停止": "The download was redirected to an unknown site — stopped",
+  "下載的檔案比發布頁寫的大，已停止": "The download is larger than the release page says — stopped",
+  "元件清單太大，不正常": "The component list is suspiciously large",
+  "清單網址不是 GitHub": "The list address isn't GitHub",
+  "① 檔案大小跟發布頁不一樣": "① File size doesn't match the release page",
+  "① 檔案指紋跟發布頁不一樣（可能下載壞了或被改過）": "① Fingerprint doesn't match the release page (corrupted or tampered download)",
+  "② GitHub 暫時限制查詢次數，查不到打包紀錄，請過一陣子再試": "② GitHub is rate-limiting — couldn't check the build record; try again later",
+  "② GitHub 查不到這個檔案的打包紀錄": "② GitHub has no build record for this file",
+  "② 這個檔案不是本專案 build.yml 打包的（沒有對應的簽章紀錄）": "② This file wasn't built by this project's build.yml (no matching signed record)",
+  "③ 元件清單的指紋跟發布頁不一樣": "③ The component list's fingerprint doesn't match the release page",
+  "③ 元件清單寫的版本或 EXE 指紋對不上": "③ The component list's version or EXE fingerprint doesn't match",
+  "③ 元件清單讀不懂": "③ The component list can't be read"
  },
  "patterns": [
   [
@@ -1672,6 +1714,90 @@
   [
    "{a}（協定 {b}、資料庫 {c}）",
    "{a} (protocol {b}, database {c})"
+  ],
+  [
+   "有新版本 v{a}（目前 v{b}）。",
+   "New version v{a} available (you have v{b})."
+  ],
+  [
+   "有新版本 v{a}（目前 v{b}），在首頁「最新消息」按「⬆ 更新」",
+   "New version v{a} available (you have v{b}) — press \"⬆ Update\" under News on the home page"
+  ],
+  [
+   "{a}要現在自動更新嗎？（會下載、核對指紋後換掉舊版並重新開啟）",
+   "{a}Update automatically now? (downloads, checks fingerprints, replaces the old version and restarts)"
+  ],
+  [
+   "{a}要前往下載嗎？",
+   "{a}Go to the download page?"
+  ],
+  [
+   "更新沒有完成：{a}",
+   "Update not completed: {a}"
+  ],
+  [
+   "更新沒有完成：{a}（舊版照常可用）",
+   "Update not completed: {a} (the current version still works)"
+  ],
+  [
+   "⬆ 更新到 v{a}",
+   "⬆ Update to v{a}"
+  ],
+  [
+   "下載中 {a} / {b}",
+   "Downloading {a} / {b}"
+  ],
+  [
+   "v{a} 已下載並核對完成",
+   "v{a} downloaded and verified"
+  ],
+  [
+   "v{a} 已經下載並核對好，在首頁按「⬆ 更新」就會換成新版",
+   "v{a} is downloaded and verified — press \"⬆ Update\" on the home page to switch"
+  ],
+  [
+   "重新開啟成 v{a}…",
+   "Restarting as v{a}…"
+  ],
+  [
+   "已更新到 v{a}（原本 v{b}）",
+   "Updated to v{a} (was v{b})"
+  ],
+  [
+   "更新到 v{a} 失敗（{b}），已自動換回 v{c}",
+   "Updating to v{a} failed ({b}); rolled back to v{c}"
+  ],
+  [
+   "{a}，已打開發布頁，請手動下載",
+   "{a} — opened the release page; please download manually"
+  ],
+  [
+   "這一版的發布頁還沒有 {a}（可能還在上傳），等幾分鐘再試",
+   "This release doesn't have {a} yet (maybe still uploading) — try again in a few minutes"
+  ],
+  [
+   "發布頁沒有 {a} 的指紋，不能核對，請手動更新",
+   "The release page has no fingerprint for {a}, so it can't be verified — please update manually"
+  ],
+  [
+   "連不到 GitHub（{a}）",
+   "Can't reach GitHub ({a})"
+  ],
+  [
+   "下載不完整（{a}/{b}），請再試一次",
+   "Incomplete download ({a}/{b}) — try again"
+  ],
+  [
+   "換檔失敗：{a}",
+   "Couldn't replace the file: {a}"
+  ],
+  [
+   "{a} 秒內沒有正常打開",
+   "didn't open within {a} s"
+  ],
+  [
+   "打開後馬上結束（代碼 {a}）",
+   "closed right after starting (code {a})"
   ]
  ],
  "ignore": [

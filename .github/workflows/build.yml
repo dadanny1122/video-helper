@@ -16,6 +16,9 @@ on:
       - '.github/ffmpeg/**'
       - '.github/components_lock.py'
       - '.github/discord_notify.py'
+      - 'vh_updater.py'
+      - '.github/updater_test.py'
+      - '.github/update_e2e.py'
       - 'requirements.txt'
       - 'CHANGELOG.md'
   workflow_dispatch:
@@ -192,7 +195,7 @@ jobs:
           --add-binary "ffmpeg_bin/ffmpeg.exe;ffmpeg" --add-binary "ffmpeg_bin/ffprobe.exe;ffmpeg"
           --add-data "nexus/net/sites.json;nexus/net"
           --add-data "webui;webui" --add-data "CHANGELOG.md;."
-          --hidden-import webui --hidden-import webui.i18n --hidden-import webview.platforms.winforms --hidden-import webview.platforms.edgechromium
+          --hidden-import webui --hidden-import webui.i18n --hidden-import vh_updater --hidden-import webview.platforms.winforms --hidden-import webview.platforms.edgechromium
           --exclude-module webview.platforms.gtk --exclude-module webview.platforms.qt --exclude-module webview.platforms.cocoa
           --exclude-module webview.platforms.android --exclude-module webview.platforms.cef --exclude-module webview.platforms.mshtml
           --exclude-module PIL._avif --exclude-module PIL.AvifImagePlugin
@@ -211,6 +214,15 @@ jobs:
           python -c "import json,sys; r=json.load(open('selftest.json',encoding='utf-8')); print('::notice title=EXE self-test::ffmpeg=%s tray=%s webui=%s ok=%s' % (r.get('ffmpeg_version'), r.get('tray'), r.get('webui') or r.get('webui_error'), r.get('ok'))); sys.exit(0 if r.get('ok') and r.get('frozen') else 1)"
           ls -la dist/VideoHelper.exe
           echo "::notice title=EXE size::$(stat -c %s dist/VideoHelper.exe) bytes"
+
+      # v1.47.0 一鍵更新：真的 EXE 走一遍「正常換新版」和「新版打不開 → 換回舊版」
+      - name: One-click update test (real exe, swap + rollback)
+        shell: bash
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          python -I .github/updater_test.py
+          python -I .github/update_e2e.py dist/VideoHelper.exe
 
       # S1：components.lock.json＝這版每個元件的版本＋SHA-256（電腦版、腳本、Nexus、ffmpeg、whisper、模型、Python 套件）
       #     也把非 Python 的元件補進 SBOM；產生後立刻重算一次，對不上就不發布。不含任何金鑰、憑證、使用者資料

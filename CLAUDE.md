@@ -52,6 +52,7 @@
 - 新聞、排行榜只貼**標題／名稱和連結**，不轉貼全文
 - 改了腳本：`@version` 一定要 +1（暴力猴、Greasy Fork、Discord 通知都看它）
 - 改了電腦版：`VERSION` +1，並在 `CHANGELOG.md` 最上面寫一段（GitHub 會自動打包發布）
+- **v1.47.0 一鍵更新**（`docs/infra/03-電腦版一鍵更新規格.md`、`vh_updater.py`）：首頁更新卡「⬆ 更新到」→ 下載 `VideoHelper.exe.new` → 三關（發布頁 digest、attestation 要是本 repo `build.yml`、`components.lock.json`）→ `.exe`→`.old`、`.new`→`.exe` → `.old --update-watchdog` 等舊版關掉再開新版 `--after-update`，新版介面打開後 `mark_ok`（`update_ok.json`），60 秒沒回報／閃退就換回並開 `--update-failed`；發布一定要附 `components.lock.json` 和 digest，不然舊版會拒絕更新。測試 `.github/updater_test.py`、`.github/update_e2e.py`（build.yml Windows）
 - **commit 訊息用中文白話寫**（會直接貼到 Discord #進度 給朋友看）
 - 說明書裡的分頁名稱要跟電腦版一致：① 下載影片 ② 下載紀錄 ③ 設定 ④ 安裝擋廣告；其他設定在「⚙ 進階設定…」
 - 推之前先 `git pull --rebase`
@@ -114,7 +115,6 @@ body `{"ref":"main","inputs":{"wait":"true"}}`，Header 帶使用者的 fine-gra
 
 ## 還沒做的事
 
-- **電腦版一鍵自動更新**（使用者 2026-11-25：排到最後、整個完成時再做；目前只提醒要手動下載）
 - xHamster：v3.12.0 真網站確認可選畫質（瀏覽器自己解密）；「交給電腦版」也可下載
 - xHamster 影片前廣告會閃約 0.7 秒才被跳過（使用者說先不處理；要擋再請他貼 Console 紀錄）
 - XNXX 首頁 2026-10 改成分類頁（沒影片連結），site_check 改去 /best、/hits 找；site-check.yml 可用 probe=xnxx 診斷；probe=tube8 會看 Tube8／SpankBang／YouJizz 影片頁結構

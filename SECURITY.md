@@ -121,6 +121,8 @@ EXE 裡的密碼學元件：`cryptography`（v1.28.4 起，給之後的「節點
 - **yt-dlp 更新（2026-11-26 起）**：`ytdlp-update.yml` 每天查 PyPI，有新版就把新版本和 PyPI 官方指紋寫進 `requirements.txt`，並用 `pip --require-hashes` 實際下載核對一次，再開 PR。機器人推不進 main，一定要擁有者按合併；合併後照常跑 pip-audit、全部測試、簽章才發布。
 - **腳本「🐞 回報網站壞了」**：只開 GitHub 的回報表單（公開），帶網站名稱和腳本版本；**不帶你正在看的網址、影片標題、封鎖清單**，開分頁用 `noopener,noreferrer`（GitHub 也看不到你從哪一頁來）。有自動測試（`.github/userscript_report_test.js`）。
 
+- **電腦版一鍵更新（v1.47.0 起，`vh_updater.py`）**：只有你按「⬆ 更新」才會換（可選先在背景下載好）。只從 `api.github.com`、`github.com`、`*.githubusercontent.com` 下載（轉址到別的網站就停止）；換檔前三關核對：① 大小和 SHA-256 等於發布頁上 GitHub 記的指紋 ② GitHub 查得到本專案 `build.yml` 對這個指紋的打包簽章紀錄（attestation）③ 發布頁的 `components.lock.json`（自己的指紋也要對）寫的 EXE 指紋一樣。任何一關不過就刪掉、不換。新版 60 秒內沒回報「啟動成功」就由舊版小幫手換回舊版。這不是完整的 Sigstore 密碼學驗證，前提是 GitHub 帳號沒被盜（跟手動從發布頁下載一樣），但多了指紋和簽章紀錄比對。自動測試：`.github/updater_test.py`（各種核對失敗都不換）、`.github/update_e2e.py`（Windows 真的 EXE：正常更新、新版打不開 → 換回）。
+
 ## 5. 自動安全測試（每次發布都跑，結果公開）
 
 在 GitHub 的「Actions」頁面可以看到每次的結果：
