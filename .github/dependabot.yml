@@ -9,7 +9,15 @@ updates:
     groups:
       python:
         patterns: ["*"]
+  # Actions 用 commit SHA 釘版本（S0）。大版本可能改行為（尤其簽章、上傳發布檔），
+  # 所以只自動提小版本和修補；大版本要升時人工看更新說明、完整跑一次發布流程再改
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      actions:
+        patterns: ["*"]
