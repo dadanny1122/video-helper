@@ -23,7 +23,8 @@ def test_summary_and_download_result():
     t = {"manifest_json": json.dumps({"params": {"url": "https://www.xvideos.com/video123/some-title", "quality": "720",
                                                  "return_to_master": True}})}
     assert d.summary_of(t) == "xvideos.com／some-title（720p，傳回）"
-    r = json.dumps({"site": "xvideos.com", "title": "x", "returned": True, "files": [{"name": "a.mp4", "size": 2048, "path": "C:/v/a.mp4"}]})
+    r = json.dumps({"site": "xvideos.com", "title": "x", "returned": True,
+                    "files": [{"name": "a.mp4", "size": 2048, "path": "C:/v/a.mp4"}]})
     assert "已傳回這台：C:/v/a.mp4" in d.download_result(r, "書房")
 
 
