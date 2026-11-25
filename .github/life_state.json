@@ -16,6 +16,18 @@
  },
  "invoice": [
   {
+   "period": "115年 09~10月",
+   "link": "https://www.etax.nat.gov.tw/etw-main/ETW183W2_11509",
+   "special": "97606522",
+   "grand": "76160702",
+   "first": [
+    "02096005",
+    "28745017",
+    "76740352"
+   ],
+   "extra": []
+  },
+  {
    "period": "115年 07~08月",
    "link": "https://www.etax.nat.gov.tw/etw-main/ETW183W2_11507",
    "special": "89996565",
@@ -38,19 +50,7 @@
     "83663333"
    ],
    "extra": []
-  },
-  {
-   "period": "115年 03~04月",
-   "link": "https://www.etax.nat.gov.tw/etw-main/ETW183W2_11503",
-   "special": "19531471",
-   "grand": "85941329",
-   "first": [
-    "07225810",
-    "20231230",
-    "83518781"
-   ],
-   "extra": []
   }
  ],
- "updated": "2026-11-25 13:29"
+ "updated": "2026-11-26 01:12"
 }
