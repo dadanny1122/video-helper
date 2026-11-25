@@ -4,3 +4,15 @@ build/
 dist/
 *.spec
 ffmpeg_bin/
+
+# S4：機器人的狀態檔放在 bot-data 分支，不放 main（docs/infra/02-S4機器人分離規格.md）
+/.github/fx_state.json
+/docs/fx/rates.json
+/docs/fx/arena.json
+/.github/weather_state.json
+/.github/life_state.json
+/.github/news_seen.json
+/.github/rank_state.json
+/.github/dash_state.json
+/.github/site_status.json
+/.github/discord_manual_ids.json

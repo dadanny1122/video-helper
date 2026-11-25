@@ -31,6 +31,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
         with:
           ref: main
+      - name: Load state (bot-data branch)
+        run: bash .github/bot_data.sh load .github/life_state.json
       - name: Fetch and post
         env:
           DISCORD_LIFE_WEBHOOK: ${{ secrets.DISCORD_LIFE_WEBHOOK }}
@@ -42,10 +44,4 @@ jobs:
       - name: Remember
         if: ${{ inputs.preview != true }}
         run: |
-          [ -f .github/life_state.json ] || exit 0
-          git add .github/life_state.json
-          git diff --cached --quiet && exit 0
-          git config user.name "github-actions[bot]"
-          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
-          git commit -m "記住最新油價和發票號碼"
-          for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 5; done
+          bash .github/bot_data.sh save "記住最新油價和發票號碼" .github/life_state.json

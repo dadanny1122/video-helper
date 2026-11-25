@@ -194,7 +194,7 @@ $('tm').oninput = calc;
 $('ccy').onchange = () => { quick(); calc(); };
 $('amt').oninput = calc;
 
-fetch('rates.json?t=' + Date.now()).then(r => r.json()).then(d => {
+fetch('https://raw.githubusercontent.com/dadanny1122/video-helper/bot-data/docs/fx/rates.json?t=' + Date.now()).then(r => r.json()).then(d => {
   R = d;
   $('ccy').innerHTML = Object.entries(d.rates).map(([c, r]) => `<option value="${c}">${r.flag} ${r.zh} ${c}</option>`).join('');
   $('meta').textContent = `牌價更新：${d.updated}｜台銀掛牌時間：${d.quote_time || '—'}`;

@@ -16,7 +16,7 @@
 // 第一次設定好、或改了指令之後，用瀏覽器打開「你的 Worker 網址/register」註冊指令
 
 const REPO = 'dadanny1122/video-helper';
-const RAW = `https://raw.githubusercontent.com/${REPO}/main/`;
+const RAW = `https://raw.githubusercontent.com/${REPO}/bot-data/`;   // S4：機器人的狀態檔在 bot-data 分支（不是 main）
 const CALC = 'https://dadanny1122.github.io/video-helper/fx/calc.html';
 const DASH = 'https://dadanny1122.github.io/video-helper/dash/';
 const BOT_PAGE = 'https://rate.bot.com.tw/xrt?Lang=zh-TW';
