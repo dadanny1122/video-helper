@@ -51,8 +51,10 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
       await page.waitForTimeout(150);
       ok((await page.evaluate(() => window.__acts)).some((a) => a[0] === 'update_now'), '更新卡：按「⬆ 更新到」→ update_now');
       extra.update = { tag: '1.48.0', auto: false };
-      await page.waitForFunction(() => ((document.querySelector('.news.upd') || {}).dataset || {}).act === 'link:update', null, { timeout: 3000 }).catch(() => {});
-      ok(await page.evaluate(() => document.querySelector('.news.upd').dataset.act === 'link:update' && !document.querySelector('.news.upd [data-act="update_now"]')),
+      const noAuto = () => page.evaluate(() => { const c = document.querySelector('.news.upd'); return !!c && c.dataset.act === 'link:update' && !c.querySelector('[data-act="update_now"]'); });
+      let na = false;
+      for (let i = 0; i < 30 && !(na = await noAuto()); i++) await page.waitForTimeout(100);
+      ok(na,
         '更新卡：不能自動更新的電腦 → 前往發布頁');
       await page.evaluate(() => { window.__acts.length = 0; });
       delete extra.update;
