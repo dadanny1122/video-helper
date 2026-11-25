@@ -221,7 +221,7 @@ def backfill(push=False):
         git("-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
             "tag", "-a", tag, commit, "-F", msgfile)
         made += 1
-    if push and made:
+    if push:                                     # 上次推失敗、tag 只在本機的，這次也要推
         remote = set(git("ls-remote", "--tags", "origin", PREFIX + "*").split())
         for ver, _ in history():
             tag = PREFIX + ver
