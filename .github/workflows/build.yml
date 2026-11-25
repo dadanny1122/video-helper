@@ -19,8 +19,14 @@ on:
       - 'CHANGELOG.md'
   workflow_dispatch:
 
+# S0（2026-11-25 架構稽核）：預設唯讀，只有 build 那個 job 拿寫入（發布要用）
 permissions:
-  contents: write
+  contents: read
+
+# 同一時間只跑一次，避免兩次 push 搶著發布同一個版本
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   FFMPEG_TAG: n7.1
@@ -31,11 +37,10 @@ jobs:
   ffmpeg:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
       - name: Reuse a previous build
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
         with:
           path: ffmpeg-win
           key: ffmpeg-win-${{ env.FFMPEG_TAG }}-${{ hashFiles('.github/ffmpeg/build.sh') }}
@@ -55,7 +60,7 @@ jobs:
           ! grep -viE "KERNEL32|SHELL32|bcrypt|msvcrt|ADVAPI32|USER32|ole32" dlls.txt
           ls -la ffmpeg-win
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: ffmpeg-win
           path: ffmpeg-win
@@ -69,13 +74,13 @@ jobs:
       id-token: write          # 發布簽章（GitHub 用這個身分證明 EXE 是這個 repo 打包的）
       attestations: write
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
       - name: Read version
         id: ver
         shell: bash
         run: echo "v=$(python -c "import re;print(re.search(r'VERSION = .(.+?).$', open('video_helper_app.py',encoding='utf-8').read(), re.M).group(1))")" >> $GITHUB_OUTPUT
 
+      # 這版已經發布過 → 測試和打包照樣跑（改了程式沒升版號也要測），只是不簽章、不發布
       - name: Check if this version is already released
         id: chk
         shell: bash
@@ -86,26 +91,22 @@ jobs:
             echo "exists=1" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/download-artifact@v4
-        if: steps.chk.outputs.exists != '1'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           name: ffmpeg-win
           path: ffmpeg_bin
 
-      - uses: actions/setup-python@v5
-        if: steps.chk.outputs.exists != '1'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: '3.12'
 
       # 不裝 imageio-ffmpeg（那是 88 MB 的完整版），改用上面編的迷你版
       # 供應鏈安全：版本和指紋都寫死在 requirements.txt，被換掉就裝不起來
       - name: Install packages (pinned + hash-checked)
-        if: steps.chk.outputs.exists != '1'
         run: pip install --require-hashes --no-deps -r requirements.txt
 
       # 漏洞掃描：已知漏洞（CVE）資料庫裡有我們用的版本就不發布
       - name: Vulnerability scan (pip-audit)
-        if: steps.chk.outputs.exists != '1'
         shell: bash
         run: |
           pip install -q pip-audit cyclonedx-bom
@@ -123,7 +124,6 @@ jobs:
           echo "::notice title=SBOM::$(python -c "import json;print(len(json.load(open('sbom.cdx.json'))['components']))") 個套件"
 
       - name: Smoke test (window, tabs, history, bridge, mini ffmpeg on Windows)
-        if: steps.chk.outputs.exists != '1'
         timeout-minutes: 5
         env:
           PYTHONIOENCODING: utf-8
@@ -132,7 +132,6 @@ jobs:
 
       # v1.36.0 新介面：先測白名單／動作／關視窗流程（假網頁），再真的開 WebView2 截圖
       - name: New UI test (WebView2)
-        if: steps.chk.outputs.exists != '1'
         timeout-minutes: 5
         env:
           PYTHONIOENCODING: utf-8
@@ -142,8 +141,8 @@ jobs:
           python .github/webui_host_test.py --real
 
       - name: Upload new UI screenshot
-        if: always() && steps.chk.outputs.exists != '1'
-        uses: actions/upload-artifact@v4
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: webui-shots
           path: webui-shots/
@@ -151,7 +150,6 @@ jobs:
 
       # 網路流量測試：記錄電腦版所有對外連線，連到 SECURITY.md 清單以外的地方就失敗（擋發布）
       - name: Network allowlist test
-        if: steps.chk.outputs.exists != '1'
         timeout-minutes: 15
         env:
           PYTHONIOENCODING: utf-8
@@ -159,7 +157,6 @@ jobs:
         run: python .github/net_test.py
 
       - name: Secret encryption test (DPAPI)
-        if: steps.chk.outputs.exists != '1'
         shell: pwsh
         env:
           PYTHONUTF8: "1"
@@ -169,7 +166,6 @@ jobs:
       # AI 字幕：真的下載 whisper.cpp ＋ 最小模型，用 Windows 內建語音念一句英文，看聽不聽得出來
       # 失敗就不發布（獨立稽核建議：安全說明寫了「每次發布都跑」，就要真的擋）
       - name: AI subtitle test (real whisper.cpp)
-        if: steps.chk.outputs.exists != '1'
         timeout-minutes: 15
         shell: pwsh
         env:
@@ -184,7 +180,6 @@ jobs:
 
       # Pillow 只用來畫系統匣圖示，用不到的圖片格式（AVIF、WebP…）不包進去
       - name: Build exe
-        if: steps.chk.outputs.exists != '1'
         run: >
           pyinstaller --onefile --windowed --name VideoHelper
           --collect-all yt_dlp --collect-submodules pystray --collect-data sv_ttk
@@ -201,7 +196,6 @@ jobs:
           video_helper_app.py
 
       - name: Run the finished exe once (self-test, no window)
-        if: steps.chk.outputs.exists != '1'
         shell: bash
         env:
           PYTHONIOENCODING: utf-8
@@ -216,12 +210,12 @@ jobs:
       # 指紋和簽章不在同一個地方，攻擊者就算換了發布頁的 EXE，也偽造不了 GitHub 的簽章
       - name: Sign build provenance
         if: steps.chk.outputs.exists != '1'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2.4.0
         with:
           subject-path: dist/VideoHelper.exe
       - name: Sign SBOM
         if: steps.chk.outputs.exists != '1'
-        uses: actions/attest-sbom@v2
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b  # v2.4.0
         with:
           subject-path: dist/VideoHelper.exe
           sbom-path: sbom.cdx.json
@@ -266,15 +260,31 @@ jobs:
 
       - name: Publish release
         if: steps.chk.outputs.exists != '1'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
         with:
           tag_name: v${{ steps.ver.outputs.v }}
+          target_commitish: ${{ github.sha }}     # S0：tag 一定指向這次打包的 commit（機器人每幾分鐘就 commit 一次，不能用 main）
           name: Video Helper v${{ steps.ver.outputs.v }}
           body_path: release_notes.md
           files: |
             dist/VideoHelper.exe
             sbom.cdx.json
             audit.md
+
+      - name: Check the tag points at the commit we built
+        if: steps.chk.outputs.exists != '1'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ref=$(gh api "repos/${{ github.repository }}/git/ref/tags/v${{ steps.ver.outputs.v }}" -q '.object.type + " " + .object.sha')
+          sha=${ref#* }
+          if [ "${ref%% *}" = "tag" ]; then sha=$(gh api "repos/${{ github.repository }}/git/tags/$sha" -q .object.sha); fi
+          if [ "$sha" != "${{ github.sha }}" ]; then
+            echo "::error title=tag 指錯 commit::v${{ steps.ver.outputs.v }} 指向 $sha，但這次打包的是 ${{ github.sha }}"
+            exit 1
+          fi
+          echo "::notice title=tag::v${{ steps.ver.outputs.v }} → ${{ github.sha }}（就是這次打包的 commit）"
 
       - name: Post the update to Discord
         if: steps.chk.outputs.exists != '1'

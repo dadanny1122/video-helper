@@ -22,11 +22,15 @@ on:
       - '.github/workflows/security.yml'
   workflow_dispatch:
 
+# S0：只讀程式碼、往 Discord 貼訊息，不需要寫入 repo
+permissions:
+  contents: read
+
 jobs:
   userscript:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
       # HLS（m3u8）解析：腳本和電腦版都用同一份固定假資料測（不連網）
       - name: HLS parser tests (userscript + desktop)
         run: |
@@ -50,7 +54,7 @@ jobs:
           node .github/userscript_i18n_test.js video-helper.user.js webui-shots/userscript-en
       - name: Upload new UI screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: webui-page-shots
           path: webui-shots/
