@@ -30,18 +30,20 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
         with:
           fetch-depth: 0       # 要拿上一版的 tag
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: '3.12'
       - name: Install
         run: |
-          sudo apt-get install -y -q python3-tk >/dev/null
-          pip install -q yt-dlp truststore cryptography
+          python -m pip install -q yt-dlp truststore cryptography
           npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
       - name: Run C1-C4
         env:
-          PYTHON: python3
+          PYTHON: python
           DESKTOP: ${{ inputs.desktop }}
           SCRIPT: ${{ inputs.script }}
         run: |
           args=()
           [ -n "$DESKTOP" ] && args+=(--desktop "$DESKTOP")
           [ -n "$SCRIPT" ] && args+=(--script "$SCRIPT")
-          python3 -I .github/compat_test.py "${args[@]}"
+          python -I .github/compat_test.py "${args[@]}"
