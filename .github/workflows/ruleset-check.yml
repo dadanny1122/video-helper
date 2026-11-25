@@ -1,0 +1,27 @@
+name: Main protection check (S4)
+
+# 手動跑：確認機器人（GITHUB_TOKEN）推不進 main、但寫得進 bot-data（S4，docs/infra/02-S4機器人分離規格.md）
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - name: Bot must NOT be able to push main
+        run: |
+          git -c user.name="github-actions[bot]" -c user.email="41898+github-actions[bot]@users.noreply.github.com" \
+            commit -q --allow-empty -m "S4 測試：機器人推 main（應該被擋）"
+          if git push -q origin HEAD:main 2> err.txt; then
+            echo "::error title=main 沒擋住::機器人推進 main 了！請檢查 Rulesets"; exit 1
+          fi
+          echo "::notice title=main 有擋住::$(head -c 300 err.txt | tr '\n' ' ')"
+      - name: Bot can still write bot-data
+        run: |
+          git fetch -q --depth=1 origin bot-data
+          git ls-remote --exit-code origin refs/heads/bot-data >/dev/null
+          echo "::notice title=bot-data::機器人用的分支在，平常的紀錄照常寫"
