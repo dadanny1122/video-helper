@@ -7,6 +7,8 @@ on:
   push:
     paths:
       - 'nexus/**'
+      - 'webui/i18n.py'
+      - 'webui/en.json'
       - '.github/nexus_frozen_check.py'
       - 'requirements-dev.in'
       - 'requirements-dev.txt'
@@ -16,6 +18,8 @@ on:
   pull_request:
     paths:
       - 'nexus/**'
+      - 'webui/i18n.py'
+      - 'webui/en.json'
   workflow_dispatch:
 
 permissions:

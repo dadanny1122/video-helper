@@ -38,6 +38,7 @@ WORKER_DEFAULTS = {
     "max_concurrency": 1,                # V2：同時最多跑幾個任務（1～4）
     "download_dir": "",                  # V3：節點下載的影片放哪（空白＝「下載\VideoHelper 節點」）
     "keep_after_return": False,          # V4：傳回 Master 驗證成功後，節點這份要不要留著（預設刪，D3）
+    "lang": "auto",                      # 英文版：節點小視窗的語言 auto（跟 Windows）／zh／en
 }
 _PROFILE = None                          # `--worker --profile 名稱`：同一台電腦開好幾個獨立節點
 

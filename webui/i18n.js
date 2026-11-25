@@ -10,6 +10,7 @@ const I18N = (() => {
   const PUNCT = { '：': ': ', '（': ' (', '）': ')', '，': ', ', '。': '. ', '、': ', ', '「': '"', '」': '"', '『': '"', '』': '"',
     '！': '!', '？': '?', '；': '; ', '｜': ' | ', '・': ' · ', '～': '–', '　': ' ', '【': '[', '】': ']', '《': '"', '》': '"' };
   const SEPS = /(｜|・|；|。)/, SEP1 = new Set(['｜', '・', '；', '。']);
+  const balanced = (x) => x.split('（').length === x.split('）').length && x.split('(').length === x.split(')').length;   // 括號要成對
   const edge = (c) => /[\s\p{P}\p{S}]/u.test(c);
   for (const [zh, en] of Object.entries(D.exact)) {     // 多行的句子也拆成一行一行（規則同 i18n.py _split_lines）
     const a = zh.split('\n'), b = en.split('\n');
@@ -51,7 +52,7 @@ const I18N = (() => {
     while (b > a && edge(cs[b - 1])) b--;
     if ((a > 0 || b < cs.length) && a < b) {
       for (const [x, y] of [[a, cs.length], [0, b], [a, b]]) {     // 前後的標點拿掉（只拿前面／只拿後面：括號要成對）
-        r = x === 0 && y === cs.length ? null : core(cs.slice(x, y).join(''));
+        r = (x === 0 && y === cs.length) || !balanced(cs.slice(x, y).join('')) ? null : core(cs.slice(x, y).join(''));
         if (r !== null) return fixPunct(cs.slice(0, x).join('')) + r + fixPunct(cs.slice(y).join('')).trimEnd();
       }
     }

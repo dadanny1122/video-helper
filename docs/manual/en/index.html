@@ -134,7 +134,7 @@
 <ul>
   <li><b>Desktop app</b>: Settings → Appearance &amp; window → Language: <b>System</b> (Chinese if Windows is in Chinese, otherwise English), 繁體中文 or English. It switches instantly, including the tray menu, notifications and dialogs</li>
   <li><b>Browser script</b>: shield → "🌐 中文 / 🌐 English" at the bottom, or the same item in the Violentmonkey menu (the page reloads). Only the script's own panels are translated; the website itself is never changed</li>
-  <li>Not translated: video titles, names you gave your nodes, the release notes (written in Chinese — your browser can translate the release page), the older fallback window and the node window (<code>--worker</code>)</li>
+  <li>Not translated: video titles, names you gave your nodes, the release notes (written in Chinese — your browser can translate the release page), and the older fallback window. The node window (<code>--worker</code>) follows the Windows language too; its "🌐 中文 / 🌐 English" button switches it the next time the node starts</li>
 </ul>
 
 <h3>Tray icon, pause, speed limit, duplicates</h3>
@@ -172,7 +172,7 @@
 <ol>
   <li><b>On the Master</b>: Nexus → turn on <b>Enable</b>. Pick the local-network address (e.g. 192.168.x.x); when Windows asks about the firewall, allow "Private networks"</li>
   <li>Press <b>Create pairing code</b> (6 digits, 5 minutes, single use) and note the first 8 characters of the <b>Master fingerprint</b></li>
-  <li><b>On the node</b>: run the same <code>VideoHelper.exe --worker</code> (e.g. a shortcut with <code>--worker</code> added to the target). Enter the Master address (<code>https://192.168.x.x:47331</code>), a name and the code, then pair. <i>The node window is currently Chinese only.</i></li>
+  <li><b>On the node</b>: run the same <code>VideoHelper.exe --worker</code> (e.g. a shortcut with <code>--worker</code> added to the target). Enter the Master address (<code>https://192.168.x.x:47331</code>), a name and the code, then pair.</li>
   <li>The node shows the Master fingerprint — continue <b>only if the first 8 characters match</b></li>
   <li>Back on the Master, approve the node that's waiting. It shows "Connected" when it works</li>
 </ol>

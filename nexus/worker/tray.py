@@ -90,11 +90,29 @@ def friendly_error(e: Exception, url: str) -> str:
     return f"連不上 Master：{e}"
 
 
+def _i18n():
+    """英文版（v1.45.0）：跟主程式同一份字典；打包少了就一律中文"""
+    try:
+        from webui import i18n
+        return i18n
+    except Exception:
+        return None
+
+
+def _t(s: str, **kw) -> str:
+    i = _i18n()
+    out = i.t(s) if i else s
+    return out.format(**kw) if kw else out
+
+
 def run_window() -> int:
     import tkinter as tk
     from tkinter import messagebox, ttk
 
     cfg = Config("worker")
+    I18N = _i18n()
+    if I18N:                                    # 節點自己的設定（不碰主程式的 settings.json）：auto＝跟 Windows
+        I18N.set_lang(cfg["lang"])
     store = CredStore()
     root = tk.Tk()
     root.title(f"Video Helper 節點（Worker）v{NEXUS_VERSION}" + (f"　[{worker_profile()}]" if worker_profile() else ""))
@@ -167,7 +185,7 @@ def run_window() -> int:
     dl.bind("<FocusOut>", save_dl)
     ttk.Button(f, text="選…", command=pick_dl).grid(row=11, column=2, sticky="w", padx=(6, 0), pady=(10, 0))
     ttk.Label(f, text="同時下載").grid(row=12, column=0, sticky="w", pady=2)
-    conc = ttk.Combobox(f, state="readonly", width=6, values=["1 部", "2 部"])
+    conc = ttk.Combobox(f, state="readonly", width=8, values=[_t("1 部"), _t("2 部")])
     conc.current(1 if int(cfg["max_concurrency"] or 1) >= 2 else 0)
 
     def on_conc(*_):
@@ -207,8 +225,9 @@ def run_window() -> int:
 
         def one(r):
             extra = {"disk_full": "（Master 空間不夠，等一下）", "retrying": "（連不上，重試中）"}.get(r.get("status", ""), "")
-            return f"{names.get(r['type'], r['type'])} {int(r['progress'] * 100)}%{extra}"
-        tasks_lbl.config(text="目前任務：" + ("、".join(one(r) for r in run) if run else "沒有"))
+            return f"{_t(names.get(r['type'], r['type']))} {int(r['progress'] * 100)}%{_t(extra) if extra else ''}"
+        sep = ", " if I18N and I18N.LANG == "en" else "、"
+        tasks_lbl.config(text=_t("目前任務：{a}", a=sep.join(one(r) for r in run)) if run else _t("目前任務：沒有"))
 
     def do_pair():
         if agent.store.state["status"] in ("ACTIVE", "PENDING") and agent.store.state["device_id"] and not messagebox.askyesno(
@@ -227,6 +246,16 @@ def run_window() -> int:
     ttk.Button(btns, text="配對", command=do_pair).pack(side="left")
     ttk.Button(btns, text="結束節點", command=lambda: (agent.stop(), root.destroy())).pack(side="left", padx=8)
 
+    def toggle_lang():                           # 換語言：存在節點自己的設定，下次打開生效（不中斷連線）
+        en = bool(I18N and I18N.LANG == "en")
+        cfg["lang"] = "zh" if en else "en"
+        cfg.save()
+        messagebox.showinfo("Video Helper", "下次打開節點時換語言" if en else "The language changes the next time the node starts")
+    if I18N:
+        ttk.Button(btns, text="🌐 中文" if I18N.LANG == "en" else "🌐 English", command=toggle_lang).pack(side="left")
+
+    if I18N:
+        I18N.tk_translate(root)
     agent.on_state = lambda *_: root.after(0, refresh)
     agent.start()
     refresh()

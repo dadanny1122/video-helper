@@ -3,7 +3,7 @@
 // @name:en      Video Helper
 // @name:zh-TW   Video Helper
 // @namespace    https://github.com/dadanny1122/video-helper
-// @version      3.23.0
+// @version      3.23.1
 // @description  安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @description:zh-TW 安全防護（擋彈窗、跳轉、危險下載）、省流模式（廣告不下載）、影片狀態、隱藏廣告、自動略過廣告、載入時間評估、一鍵下載
 // @description:en Blocks pop-ups, forced redirects and dangerous downloads; stops ad networks from loading (saves bandwidth); hides and skips video ads; shows playback status and load-time estimates; one-click download with quality picker on supported sites. English and Traditional Chinese interface (follows your browser language; switch with the 🌐 button in the shield panel).
@@ -169,6 +169,7 @@
     const PUNCT = { '：': ': ', '（': ' (', '）': ')', '，': ', ', '。': '. ', '、': ', ', '「': '"', '」': '"', '『': '"', '』': '"',
       '！': '!', '？': '?', '；': '; ', '｜': ' | ', '・': ' · ', '～': '–', '　': ' ', '【': '[', '】': ']', '《': '"', '》': '"' };
     const SEPS = /(｜|・|；|。)/, SEP1 = ['｜', '・', '；', '。'];
+    const balanced = (x) => x.split('（').length === x.split('）').length && x.split('(').length === x.split(')').length;   // 括號要成對
     const edge = (c) => /[\s\p{P}\p{S}]/u.test(c);
     const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
     for (const zh of Object.keys(D.exact)) {           // 多行的句子也拆成一行一行
@@ -205,7 +206,7 @@
       while (b > a && edge(cs[b - 1])) b--;
       if ((a > 0 || b < cs.length) && a < b) {
         for (const [x, y] of [[a, cs.length], [0, b], [a, b]]) {
-          r = x === 0 && y === cs.length ? null : core(cs.slice(x, y).join(''));
+          r = (x === 0 && y === cs.length) || !balanced(cs.slice(x, y).join('')) ? null : core(cs.slice(x, y).join(''));
           if (r !== null) return fixPunct(cs.slice(0, x).join('')) + r + fixPunct(cs.slice(y).join('')).trimEnd();
         }
       }

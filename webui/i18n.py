@@ -87,6 +87,11 @@ def _fix(s):
     return re.sub(r" {2,}", " ", s).replace("( ", "(")
 
 
+def _balanced(s):
+    """括號要成對（「已暫停（2 部」這種切一半的不算）"""
+    return s.count("（") == s.count("）") and s.count("(") == s.count(")")
+
+
 def _edge(c):
     return c.isspace() or unicodedata.category(c)[0] in "PS"
 
@@ -123,7 +128,7 @@ def tr(s):
         b -= 1
     if (a > 0 or b < len(s)) and a < b:
         for x, y in ((a, len(s)), (0, b), (a, b)):         # 前後的標點拿掉（只拿前面／只拿後面：括號要成對）
-            r = _core(s[x:y]) if (x, y) != (0, len(s)) else None
+            r = _core(s[x:y]) if (x, y) != (0, len(s)) and _balanced(s[x:y]) else None
             if r is not None:
                 return _fix(s[:x]) + r + _fix(s[y:]).rstrip()
     if "\n" in s:                                             # 先一行一行翻
@@ -144,3 +149,35 @@ def t(s, **kw):
     """電腦版自己顯示的字：英文模式才翻；kw 填進 {名字}（先翻再填，名字本身不翻）"""
     out = tr(s) if LANG == "en" else s
     return out.format(**kw) if kw else out
+
+
+def tk_translate(win, every_ms=700):
+    """Tk 小視窗（配對、AI 字幕、節點視窗）：英文模式把所有元件的 text、視窗標題換成英文；之後程式改了字，每 0.7 秒再換一次。
+    下拉選單（Combobox）的選項不動：程式常拿選到的中文去比對。"""
+    if LANG != "en":
+        return
+
+    def walk(w):
+        try:
+            txt = w.cget("text")
+        except Exception:
+            txt = None
+        if isinstance(txt, str) and CJK.search(txt):
+            try:
+                w.configure(text=tr(txt))
+            except Exception:
+                pass
+        if hasattr(w, "title") and hasattr(w, "wm_title"):
+            try:
+                if CJK.search(w.title()):
+                    w.title(tr(w.title()))
+            except Exception:
+                pass
+        for c in w.winfo_children():
+            walk(c)
+    try:
+        if win.winfo_exists():
+            walk(win)
+            win.after(every_ms, lambda: tk_translate(win, every_ms))
+    except Exception:
+        pass

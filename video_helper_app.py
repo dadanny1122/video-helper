@@ -93,7 +93,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.44.0"
+VERSION = "1.45.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -2190,33 +2190,9 @@ _wrap_dialogs()
 
 
 def tk_translate(win):
-    """小視窗（配對、AI 字幕…）：英文模式把所有元件的 text 換成英文；之後程式改了字，每 0.7 秒再換一次"""
-    if not I18N or I18N.LANG != "en":
-        return
-    def walk(w):
-        try:
-            txt = w.cget("text")
-        except Exception:
-            txt = None
-        if isinstance(txt, str) and I18N.CJK.search(txt):
-            try:
-                w.configure(text=I18N.tr(txt))
-            except Exception:
-                pass
-        if isinstance(w, (tk.Toplevel, tk.Tk)):
-            try:
-                if I18N.CJK.search(w.title()):
-                    w.title(I18N.tr(w.title()))
-            except Exception:
-                pass
-        for c in w.winfo_children():
-            walk(c)
-    try:
-        if win.winfo_exists():
-            walk(win)
-            win.after(700, lambda: tk_translate(win))
-    except Exception:
-        pass
+    """小視窗（配對、AI 字幕…）：英文模式把字換成英文（webui/i18n.py 的 tk_translate）"""
+    if I18N:
+        I18N.tk_translate(win)
 
 
 # ======================================================================

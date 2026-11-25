@@ -2,6 +2,8 @@
  "exact": {
   "\n\n（目前有其他影片在下載，會排在後面）": "\n\n(Other videos are downloading; this one will wait its turn)",
   "\n兩種模式各有 10 個以上任務、在差不多的網路下比較，才看得出自動調整有沒有比較好。": "\nOnly with 10+ tasks in each mode on a similar network can you tell whether Auto is better.",
+  "1 部": "1 video",
+  "2 部": "2 videos",
   "AI 伺服器太忙，等一下再試": "The AI server is busy — try again later",
   "AI 字幕": "AI subtitles",
   "AI 模型": "AI model",
@@ -13,6 +15,10 @@
   "GitHub 暫時限制查詢次數，請過一陣子再試": "GitHub is rate-limiting lookups — try again in a while",
   "GitHub 發布頁": "GitHub releases",
   "MP4 直連": "Direct MP4",
+  "Master CA 跟註冊時不一致": "The Master CA differs from the one at registration",
+  "Master 伺服器憑證不是這張 CA 簽的": "The Master server certificate isn't signed by this CA",
+  "Master 位址": "Master address",
+  "Master 位址格式不對，要像 https://192.168.1.10:47331（同一台測試用 https://127.0.0.1:47331）": "Invalid Master address — it should look like https://192.168.1.10:47331 (https://127.0.0.1:47331 for testing on the same computer)",
   "Master 執行中": "Master running",
   "Master 已啟用": "Master enabled",
   "Master 已關閉（所有節點連線切斷）": "Master stopped (all node connections closed)",
@@ -26,6 +32,8 @@
   "SRT（最通用）": "SRT (works everywhere)",
   "VTT（網頁、手機）": "VTT (web, phones)",
   "Video Helper 備份": "Video Helper backup",
+  "Video Helper 節點": "Video Helper node",
+  "Video Helper 節點（Worker）v": "Video Helper node (Worker) v",
   "Video Helper 電腦版": "Video Helper Desktop",
   "Worker 版本太舊，請更新": "Worker version too old — please update",
   "params 必須是物件": "params must be an object",
@@ -47,6 +55,7 @@
   "▶ 繼續全部下載": "▶ Resume all downloads",
   "○ 未啟用": "○ Off",
   "● 瀏覽器已連動": "● Browser linked",
+  "⚠ Master 的憑證變了，已停止（不會自動信任）": "⚠ The Master's certificate changed — stopped (it's never trusted automatically)",
   "⚠ 找不到 Chrome，會改用預設瀏覽器打開。這個工具是為 Chrome 設計的。": "⚠ Chrome not found — your default browser will be used instead. This tool is designed for Chrome.",
   "⚠ 撤銷不能復原：連線立刻切斷、憑證永久作廢，就算它拿舊憑證也進不來；要再用得重新配對（新身分）。": "⚠ Revoking can't be undone: the connection is cut right away and the certificate is invalidated forever — even the old certificate won't get in. To use it again, pair it again (new identity).",
   "⚠ 無法啟動（連接埠都被占用）": "⚠ Can't start (all ports are in use)",
@@ -74,6 +83,8 @@
   "一鍵下載": "download in one click",
   "上一個網址還在讀取": "The previous link is still being read",
   "上一批網址還在讀取，等一下再加": "The previous batch is still being read — try again in a moment",
+  "上限沒有套用成功": "limits couldn't be applied",
+  "下次打開節點時換語言": "The language changes the next time the node starts",
   "下載中": "Downloading",
   "下載中才詢問": "Ask only while downloading",
   "下載任務": "Downloads",
@@ -83,6 +94,7 @@
   "下載完傳回這台": "Send back to this computer",
   "下載完成，但轉檔失敗；檔案還是可以播放（建議用 VLC）": "Downloaded, but converting failed; the file still plays (VLC recommended)",
   "下載完成：": "Downloaded: ",
+  "下載影片": "Download video",
   "下載影片（節點）": "Download video (node)",
   "下載日期 標題 [畫質]": "Date Title [quality]",
   "下載時不想卡到別人上網就設一下（Mbps，馬上生效）": "Set this so downloads don't slow down others on your network (Mbps, applies right away)",
@@ -100,6 +112,7 @@
   "不支援的方法": "Method not supported",
   "不支援這個任務類型或版本": "Task type or version not supported",
   "不明錯誤": "Unknown error",
+  "不是 Windows": "not Windows",
   "不確定": "Unsure",
   "不要": "No",
   "不認得的任務類型": "Unknown task type",
@@ -115,11 +128,14 @@
   "佇列是空的": "The queue is empty",
   "佇列裡的影片都處理完了": "Everything in the queue is done",
   "你": "You",
+  "例：https://192.168.1.10:47331（照 Master 畫面上的；同一台測試用 https://127.0.0.1:47331）": "e.g. https://192.168.1.10:47331 (as shown on the Master; https://127.0.0.1:47331 for testing on the same computer)",
   "依網站分資料夾/標題 [畫質]": "Folder per site/Title [quality]",
   "保存下載紀錄": "Keep download history",
   "借別人用過電腦時可以按；之後要重新配對": "Useful after someone else used your computer; you'll need to pair again",
   "備份": "Backup",
   "傳回": "send back",
+  "傳回 Master": "Send back to Master",
+  "傳回 Master 之後，這台也留一份（不勾＝Master 確認收到才刪）": "Keep a copy here after sending it back (unticked = deleted once the Master confirms)",
   "傳回中": "Sending back",
   "傳回中（這台空間不夠，清出空間後自動繼續）": "Sending back (not enough space here — continues once you free some)",
   "傳回失敗（檔案留在節點）": "Send-back failed (file stays on the node)",
@@ -190,6 +206,7 @@
   "右鍵：狀態、暫停、貼上網址下載、打開下載資料夾": "Right-click: status, pause, download from clipboard, open download folder",
   "合格": "Eligible",
   "同一個 idempotency key 已用在內容不同的任務": "The same idempotency key was used for a different task",
+  "同時下載": "Downloads at once",
   "問太快了或額度用完，等一下再試": "Too many requests or out of credit — try again later",
   "問題排查": "Troubleshooting",
   "啟動失敗：": "Failed to start: ",
@@ -231,6 +248,8 @@
   "完成": "Done",
   "完成 ": "Done ",
   "尚未建立": "Not created yet",
+  "尚未配對": "Not paired",
+  "已停止": "Stopped",
   "已儲存": "Saved",
   "已取消": "Cancelled",
   "已取消這個瀏覽器的配對": "This browser was unpaired",
@@ -252,7 +271,10 @@
   "已經在佇列裡": "Already in the queue",
   "已經在佇列裡了": "Already in the queue",
   "已經有字幕的影片跳過": "Skip videos that already have subtitles",
+  "已被 Master 暫停，等待恢復": "Suspended by the Master — waiting to be resumed",
+  "已被撤銷，請重新配對": "Revoked — please pair again",
   "已送出，排程器會選一台節點": "Submitted — the scheduler will pick a node",
+  "已連線（心跳正常）": "Connected (heartbeat OK)",
   "已選節點": "Node chosen",
   "平台不符": "Platform mismatch",
   "平均速度": "Avg speed",
@@ -273,6 +295,7 @@
   "影片／圖片伺服器": "Video/image server",
   "從清單移除": "Remove from list",
   "心跳延遲": "Heartbeat late",
+  "心跳正常": "Heartbeat OK",
   "心跳超過 30 秒沒來": "No heartbeat for over 30 seconds",
   "快速功能": "Quick actions",
   "快（small，約 190 MB）": "Fast (small, about 190 MB)",
@@ -282,6 +305,7 @@
   "憑證已過期，請重新配對": "Certificate expired — please pair again",
   "憑證身分與請求的裝置不符": "Certificate identity doesn't match the device",
   "憑證過期": "Certificate expired",
+  "憑證過期，請重新配對": "Certificate expired — please pair again",
   "成功": "Succeeded",
   "所有網卡（不建議）": "All network adapters (not recommended)",
   "所有配對過的瀏覽器下次「送到電腦版」時都要重新輸入配對碼。": "Every paired browser will have to enter a pairing code again the next time it uses \"Send to Desktop\".",
@@ -312,6 +336,7 @@
   "排程器": "Scheduler",
   "排除": "Excluded",
   "排隊中": "Queued",
+  "接收 Master 派來的任務（下載影片、測試任務）": "Accept tasks from the Master (video downloads, test tasks)",
   "換電腦、重灌時用；更新版本時也會自動備份一份": "For moving to a new PC or reinstalling; a backup is also made automatically when updating",
   "撤銷節點": "Revoke node",
   "播放": "Play",
@@ -356,6 +381,7 @@
   "有節點在等核准": "A node is waiting for approval",
   "未啟動": "Not running",
   "未知錯誤": "Unknown error",
+  "核准前請跟 Master 那邊核對「Master 指紋」前 8 碼是否一致，一樣才按核准。": "Before approving, check that the first 8 characters of the \"Master fingerprint\" match on both sides; only approve if they do.",
   "核准後這台節點會拿到憑證、可以跟 Master 心跳。\n請先核對節點畫面上的 Master 指紋前 8 碼。": "Once approved, the node gets a certificate and can send heartbeats to the Master.\nFirst check the first 8 characters of the Master fingerprint shown on the node.",
   "核准節點": "Approve node",
   "核准節點前，核對前 8 碼跟節點畫面上的一樣": "Before approving a node, check that the first 8 characters match what the node shows",
@@ -396,6 +422,7 @@
   "沒有進行中的任務": "No active tasks",
   "沒有配對過的瀏覽器": "No paired browsers",
   "沒開 Nexus 節點": "Nexus nodes off",
+  "沙箱：基本（程序限制＋只准連支援的網站，不是完全隔離）": "Sandbox: basic (process limits + only supported sites allowed; not full isolation)",
   "派送": "Dispatch",
   "派送已過期，任務已收回": "Assignment expired; the task was taken back",
   "深色": "Dark",
@@ -411,7 +438,9 @@
   "清除金鑰": "Remove key",
   "測試": "Test",
   "測試中…": "Testing…",
+  "測試檔": "Test file",
   "測試檔（測傳回）": "Test file (send-back)",
+  "測試程序結束後還有殘留": "processes were left behind after the test",
   "準備中": "Preparing",
   "準（large-v3-turbo，約 550 MB）": "Accurate (large-v3-turbo, about 550 MB)",
   "瀏覽器未連動": "Browser not linked",
@@ -422,6 +451,7 @@
   "照樣送出": "Submit anyway",
   "照順序按下面 3 個「打開」，每個都會在 Chrome 打開正確的頁面。": "Press the 3 \"Open\" buttons below in order; each one opens the right page in Chrome.",
   "版本": "Version",
+  "版本不相容，請更新程式": "Incompatible version — please update",
   "狀態": "Status",
   "狀態不明（節點失聯）": "Unknown (node lost)",
   "猜錯太多次，配對碼已作廢，請在電腦版重新按「配對」": "Too many wrong guesses — the code is void. Press \"Pair\" in the desktop app again",
@@ -452,6 +482,8 @@
   "等 N 秒、每秒回報進度，可取消（測取消、逾時）": "Waits N seconds reporting progress each second, cancellable (tests cancel, timeout)",
   "等幾秒": "Seconds to wait",
   "等待": "Wait",
+  "等待 Master 核准…": "Waiting for the Master to approve…",
+  "等待 Master 那邊核准": "Waiting for the Master to approve",
   "等待中": "Waiting",
   "等待核准": "Waiting for approval",
   "等核准": "Awaiting approval",
@@ -481,6 +513,7 @@
   "約 ": "about ",
   "累積 3 次以上就會開始校正預估": "Estimates start being corrected after 3+ downloads",
   "結束": "Quit",
+  "結束節點": "Quit node",
   "結果": "Result",
   "結果不通過": "Result rejected",
   "統計已清除，預估回到沒有校正的狀態": "Stats cleared; estimates are uncorrected again",
@@ -520,6 +553,7 @@
   "記錄下載統計": "Record download stats",
   "設定": "Settings",
   "設定資料夾：": "Settings folder: ",
+  "註冊被拒絕或已過期，請重新配對": "Registration rejected or expired — please pair again",
   "語言 Language": "Language",
   "誤差＝原本的預估跟實際差多少（中位數）。同一個網站下載 3 次以上，之後的預估會自動校正。只記網站名稱和數字。": "Error = how far the estimate was from reality (median). After 3+ downloads from the same site, later estimates are corrected automatically. Only site names and numbers are stored.",
   "說明": "Notes",
@@ -530,6 +564,8 @@
   "請求太頻繁": "Too many requests",
   "請求太頻繁（429）": "Too many requests (429)",
   "請貼影片網址": "Paste a video link",
+  "請輸入 Master 位址與配對碼": "Enter the Master address and pairing code",
+  "請重新配對（會用新的身分）": "Please pair again (a new identity will be used)",
   "讀取": "Read",
   "讀取中…": "Reading…",
   "讀取影片的聲音…": "Reading the video's audio…",
@@ -550,6 +586,7 @@
   "載入更多": "Load more",
   "追蹤": "Tracking",
   "送出": "Submit",
+  "送出註冊中…": "Registering…",
   "這一類目前沒有": "Nothing here right now",
   "這不是 Video Helper 的備份檔": "This isn't a Video Helper backup file",
   "這個任務沒有派給你": "This task wasn't assigned to you",
@@ -560,10 +597,14 @@
   "這個已經不在下載了": "This isn't downloading anymore",
   "這個檔案不是你可以傳的（不是派給你的任務，或現在不收）": "You can't send this file (not your task, or not accepting now)",
   "這個瀏覽器之後就不能再送影片過來，要用得重新配對。": "This browser won't be able to send videos anymore unless you pair it again.",
+  "這個節點已經配對過了。\n\n重新配對會換一個全新身分，Master 名單上舊的那筆不會自己消失，配對完要到 Master 的「🖧 節點」把舊的撤銷。\n\n確定要重新配對嗎？": "This node is already paired.\n\nPairing again creates a brand-new identity. The old entry on the Master's list won't disappear by itself — revoke it under Nexus on the Master afterwards.\n\nPair again?",
+  "這個節點（profile）已經開著了": "This node (profile) is already running",
   "這個網站要從瀏覽器交": "This site must be sent from the browser",
   "這個資料夾不能用": "That folder can't be used",
   "這個金鑰沒有權限": "This key has no permission",
   "這台之前拒收過這個任務": "This node refused this task before",
+  "這台電腦的名稱": "This computer's name",
+  "這台電腦要當別台 Video Helper 的節點：跟 Master 連線、心跳、被管理；勾下面那格才會接 Master 派來的任務。": "This computer acts as a node for another Video Helper: it connects to the Master, sends heartbeats and can be managed. Tick the box below to accept tasks from the Master.",
   "這把金鑰已經註冊過（每次配對都要用新的身分）": "This key is already registered (every pairing needs a new identity)",
   "這次傳回已經放棄（逾時或連續驗證失敗），檔案留在節點": "This send-back was given up (timeout or repeated check failures); the file stays on the node",
   "這段資料不對，請重傳這段": "This part is corrupted — please resend it",
@@ -580,6 +621,7 @@
   "進行中": "Active",
   "進行中下載": "Active downloads",
   "逾時": "Timed out",
+  "選…": "Choose…",
   "選下載資料夾": "Choose download folder",
   "選取": "Select",
   "選的影片裡沒有「下載完成、檔案還在」的": "None of the selected videos is downloaded with its file still present",
@@ -602,6 +644,8 @@
   "還沒連過任何網站": "No sites contacted yet",
   "還沒量過": "Not measured yet",
   "部": "videos",
+  "配對": "Pair",
+  "配對失敗": "Pairing failed",
   "配對瀏覽器": "Pair browser",
   "配對瀏覽器腳本": "Pair the browser script",
   "配對碼": "Pairing code",
@@ -610,7 +654,11 @@
   "配對碼已過期，請在 Master 重新產生": "Pairing code expired — create a new one on the Master",
   "配對碼已過期，請在電腦版重新按「配對」": "The pairing code expired. Press \"Pair\" in the desktop app again",
   "配對碼猜錯太多次已作廢，請在 Master 重新產生": "Too many wrong guesses — code void; create a new one on the Master",
+  "配對碼要是 6 位數字": "The pairing code must be 6 digits",
+  "配對碼（Master 畫面上的 6 位數）": "Pairing code (the 6 digits on the Master)",
   "重新下載": "Download again",
+  "重新連線中…": "Reconnecting…",
+  "重新配對？": "Pair again?",
   "重複的訊息": "Duplicate message",
   "金鑰已儲存（用 Windows 加密存在這台電腦）": "Key saved (encrypted by Windows on this computer)",
   "金鑰已清除": "Key removed",
@@ -638,11 +686,13 @@
   "類型": "Type",
   "首頁": "Home",
   "驗證結果": "Verifying result",
+  "（Master 空間不夠，等一下）": "(Master is out of space — waiting)",
   "（中途取消）": "(cancelled midway)",
   "（原始碼執行）": "(running from source)",
   "（目前有其他影片在下載，會排在後面）": "(Other videos are downloading; this one will wait its turn)",
   "（舊版配對，沒有紀錄）": "(old pairing, no record)",
   "（要先在 ⚙ 進階設定 填 AI 金鑰）": "(enter an AI key in Settings first)",
+  "（連不上，重試中）": "(can't connect — retrying)",
   "＋ 新增任務": "+ New task",
   "，下載會繼續": ", downloads continue",
   "，也沒填 AI 金鑰：完全不會連到 AI": ", and no AI key is set: AI is never contacted",
@@ -652,6 +702,8 @@
   "；Master 開著：關掉再打開才會換位址": "; the Master is on: turn it off and on to switch address",
   "；這一版的發布頁還查不到": "; this version's release page isn't available yet",
   "［只觀察］": "[observe only]",
+  "🌐 English": "🌐 English",
+  "🌐 中文": "🌐 中文",
   "🌐 這次開著時連過的網站": "🌐 Sites contacted since start",
   "🎨 外觀與視窗": "🎨 Appearance & window",
   "💾 備份、更新、問題排查": "💾 Backup, updates, troubleshooting",
@@ -1536,6 +1588,86 @@
   [
    "影片標題 {a}",
    "Video title {a}"
+  ],
+  [
+   "{a} 有回應，但沒有 Master 在聽。\n請到主程式「⚙ 進階設定 → 🖧 節點」勾「啟用 Master」，並確認埠號跟這裡一樣。",
+   "{a} responds, but no Master is listening.\nOn the main app, open Nexus and turn on Enable, and check the port matches this one."
+  ],
+  [
+   "等了很久 {a} 都沒有回應。\n請檢查：\n・位址是不是 Master 畫面上顯示的那個（同一台測試用 127.0.0.1）\n・兩台是不是在同一個網路\n・Master 那台的 Windows 防火牆有沒有允許 VideoHelper.exe（私人網路）",
+   "{a} didn't respond for a long time.\nPlease check:\n· the address is the one shown on the Master (127.0.0.1 for the same computer)\n· both computers are on the same network\n· the Master's Windows firewall allows VideoHelper.exe (private networks)"
+  ],
+  [
+   "找不到 {a} 這台電腦，請改用 Master 畫面上顯示的 IP 位址。",
+   "Can't find the computer {a} — use the IP address shown on the Master."
+  ],
+  [
+   "連上了但加密握手失敗（{a}）。對方可能不是 Video Helper 的 Master。",
+   "Connected, but the encrypted handshake failed ({a}). It may not be a Video Helper Master."
+  ],
+  [
+   "連不上 Master：{a}",
+   "Can't reach the Master: {a}"
+  ],
+  [
+   "Video Helper 節點（Worker）v{a}",
+   "Video Helper node (Worker) v{a}"
+  ],
+  [
+   "沙箱：不能用（{a}）→ 不會接下載任務",
+   "Sandbox: unavailable ({a}) → won't take download tasks"
+  ],
+  [
+   "憑證到期：{a}",
+   "Certificate expires: {a}"
+  ],
+  [
+   "我的指紋：{a}　Master 指紋：{b}",
+   "My fingerprint: {a}  Master fingerprint: {b}"
+  ],
+  [
+   "目前任務：{a}",
+   "Current tasks: {a}"
+  ],
+  [
+   "狀態：{a}",
+   "Status: {a}"
+  ],
+  [
+   "{a}。\n要再開一個節點，請用不同的 --profile 名稱。",
+   "{a}.\nTo run another node, use a different --profile name."
+  ],
+  [
+   "Master 回覆：{a}",
+   "Master replied: {a}"
+  ],
+  [
+   "{a}　[{b}]",
+   "{a}  [{b}]"
+  ],
+  [
+   "狀態：{a}　{b}",
+   "Status: {a}  {b}"
+  ],
+  [
+   "Video Helper 節點（Worker）v{a}　[{b}]",
+   "Video Helper node (Worker) v{a}  [{b}]"
+  ],
+  [
+   "{a} {b}%{c}",
+   "{a} {b}%{c}"
+  ],
+  [
+   "{a} {b}%",
+   "{a} {b}%"
+  ],
+  [
+   "偵測失敗：{a}",
+   "detection failed: {a}"
+  ],
+  [
+   "建立沙箱失敗：{a}",
+   "couldn't create the sandbox: {a}"
   ]
  ],
  "ignore": [

@@ -31,7 +31,9 @@ APP_FUNCS = re.compile(r"^(_?web_|on_web|_web|notify$|start_tray|update_tray|hid
                        r"site_of|bridge_status|_bridge|do_POST|do_GET|_reply|status_text|state_text|error_text|friendly|reason_text)")
 APP_SKIP_CONST = {"TIPS", "HOME_CARDS", "NAV_ITEMS",             # 只有舊視窗用
                   "HALLU_PHRASES", "HALLU_EXACT"}                # AI 字幕要刪掉的雜訊字，不是畫面上的字
-NEXUS_ALL = ["nexus/tasks/scheduler.py", "nexus/tasks/states.py", "nexus/core/errors.py", "nexus/tasks/adapters.py"]
+NEXUS_ALL = ["nexus/tasks/scheduler.py", "nexus/tasks/states.py", "nexus/core/errors.py", "nexus/tasks/adapters.py",
+             "nexus/worker/tray.py", "nexus/worker/agent.py"]
+NEXUS_GUI_EXTRA = {"nexus/worker/executor.py": r"^(sandbox_status)$", "nexus/sandbox/jobs.py": r"^(probe)$"}   # 沙箱不能用的原因          # 節點小視窗（--worker）也翻
 NEXUS_GUI = {"nexus/gui/devices_tab.py": re.compile(r"^(_ago|_local|_isolation)$"),
              "nexus/gui/tasks_tab.py": re.compile(r"^(summary_of|fmt_size|local|_who|_download_result|_result_text|_why)$")}
 
@@ -130,7 +132,7 @@ def py_strings():
         c = Collect(lambda fn: True)
         c.visit(ast.parse(open(os.path.join(ROOT, f), encoding="utf-8").read()))
         out += [(f, s) for s in c.found]
-    for f, rx in NEXUS_GUI.items():
+    for f, rx in {**NEXUS_GUI, **{k: re.compile(v) for k, v in NEXUS_GUI_EXTRA.items()}}.items():
         c = Collect(lambda fn, rx=rx: fn is None or bool(rx.match(fn)))
         c.visit(ast.parse(open(os.path.join(ROOT, f), encoding="utf-8").read()))
         out += [(f, s) for s in c.found]
