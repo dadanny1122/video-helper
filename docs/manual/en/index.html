@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Helper manual</title>
+<style>
+  :root { --bg:#fafaf7; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#e4e3dc; --accent:#c62828; --blue:#1565c0; --tip:#eef5ee; --warn:#fff6e5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#151514; --fg:#ecebe6; --muted:#a3a29b; --card:#1f1f1d; --line:#33332f; --accent:#ef5350; --blue:#64b5f6; --tip:#1d2a1f; --warn:#2e2715; }
+  }
+  * { box-sizing:border-box; }
+  figure { margin:14px 0 18px; } figure img { width:100%; border-radius:12px; border:1px solid var(--line); display:block; } figcaption { font-size:.92em; color:var(--muted); margin-top:6px; line-height:1.6; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.7 Inter,"Segoe UI",system-ui,sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:32px 16px 80px; }
+  h1 { font-size:30px; margin:0 0 4px; }
+  h2 { font-size:21px; margin:44px 0 10px; padding-top:12px; border-top:1px solid var(--line); }
+  h3 { font-size:17px; margin:24px 0 6px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  .lang { float:right; font-size:14px; }
+  nav { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 16px; }
+  nav a { display:inline-block; margin:2px 12px 2px 0; }
+  a { color:var(--blue); }
+  .parts { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:14px 0; }
+  @media (max-width:560px) { .parts { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .card .t { display:block; font-size:17px; font-weight:700; margin-bottom:4px; }
+  ol, ul { padding-left:22px; } li { margin:4px 0; }
+  .tip, .warn { border-radius:8px; padding:10px 14px; margin:12px 0; }
+  .tip { background:var(--tip); } .warn { background:var(--warn); }
+  .k { display:inline-block; padding:0 7px; border-radius:5px; font-size:14px; color:#fff; background:var(--accent); white-space:nowrap; }
+  .k.b { background:#1565c0; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  td, th { border-bottom:1px solid var(--line); padding:8px 6px; text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  details { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:8px 14px; margin:8px 0; }
+  summary { cursor:pointer; font-weight:600; }
+  footer { margin-top:48px; color:var(--muted); font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+<a class="lang" href="../">中文說明書</a>
+<h1>Video Helper manual</h1>
+<p class="sub">A small toolkit that blocks ads and malicious links on video sites and downloads videos in one click. Reading this takes about 5 minutes.</p>
+
+<nav>
+  <a href="#what">1. What it is</a><a href="#install">2. Install</a><a href="#browser">3. In the browser</a>
+  <a href="#download">4. Downloading</a><a href="#app">5. The desktop app</a><a href="#update">6. Updates</a>
+  <a href="#faq">7. FAQ</a><a href="#safe">8. Safety &amp; privacy</a>
+</nav>
+
+<h2 id="what">1. What it is</h2>
+<p>Video Helper has two parts. You can install just the first one, or use both together:</p>
+<div class="parts">
+  <div class="card"><span class="t">① Script (in your browser)</span>Works in the background while you watch: blocks pop-up ads, sneaky redirects and suspicious downloads, skips pre-roll ads and shows how long a video will take to load. It can also download small videos right in the browser.</div>
+  <div class="card"><span class="t">② Desktop app (VideoHelper.exe)</span>A Windows program just for <b>downloading</b>: high quality, big files, many videos in a queue, keeps going after you close the page, and saves plain MP4 files.</div>
+</div>
+<p>Once the two are paired, one button on the video page sends the video to the desktop app.</p>
+<p><b>Full support (including downloads):</b> Pornhub, XVideos, XNXX, YouPorn, RedTube, xHamster, Tube8, YouJizz, SpankBang.</p>
+<p><b>Ad blocking and load estimates only (no downloads):</b> MissAV, Jable, Hanime1, Eporner, HQporner, Beeg, YourPorn, XMoviesForYou, PornTrex, PornOne, 3Movs, PornDig, CumLouder, TXXX, PornDoe.</p>
+<div class="tip"><b>Language:</b> both parts follow your system language — Chinese if your Windows / browser is in Chinese, English otherwise. You can switch any time (see <a href="#lang">Language</a>).</div>
+
+<h2 id="install">2. Install</h2>
+<h3>Option A: let the desktop app set things up (easiest)</h3>
+<ol>
+  <li>Download <b>VideoHelper.exe</b> from the <a href="https://github.com/dadanny1122/video-helper/releases/latest">release page</a> and double-click it</li>
+  <li>If Windows says "Windows protected your PC", click "More info" → "Run anyway" (the program isn't signed with a paid certificate — see <a href="#faq">FAQ 7</a>)</li>
+  <li>The first time, it opens the <b>Install ad blocker</b> page: press the 3 "Open" buttons in order — install Violentmonkey → turn on its required setting → install the script</li>
+</ol>
+<h3>Option B: browser part only</h3>
+<ol>
+  <li>Install the <a href="https://violentmonkey.github.io/">Violentmonkey</a> extension in Chrome</li>
+  <li>Open the <a href="https://greasyfork.org/en/scripts/601901-video-helper">script page on Greasy Fork</a> (adult scripts are only listed when you're signed in) or install straight from <a href="https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js">GitHub</a>, then confirm in Violentmonkey</li>
+  <li>In newer Chrome: open <code>chrome://extensions</code> → Violentmonkey "Details" → turn on <b>Allow user scripts</b></li>
+</ol>
+<div class="tip">When it works, a 🛡 shield with a block counter appears in the bottom-left corner of supported sites.</div>
+
+<h2 id="browser">3. In the browser</h2>
+<table>
+  <tr><th>What you'll see</th><th>What it does</th></tr>
+  <tr><td>🛡 shield, bottom left</td><td>How many ads were blocked. Click it to see what was blocked recently and why</td></tr>
+  <tr><td>Estimate box next to the video</td><td>Current speed, how soon playback starts, how long the whole video takes to load, and the playback status (loading / playing / stalling)</td></tr>
+  <tr><td>Small labels on video lists</td><td>Estimated load time for each video</td></tr>
+  <tr><td><span class="k">⬇ Download</span>, bottom right</td><td>Pick a quality and download (the 9 fully supported sites)</td></tr>
+</table>
+<h3>If something was blocked by mistake</h3>
+<ul>
+  <li>Shield → "<b>⏸ Pause ad blocking on this tab</b>": only this tab, resumes when you close it</li>
+  <li>Shield → "<b>Blocked by mistake?</b>": copies a report you can send to the author</li>
+  <li>Shield → "<b>🩺 Health check</b>": shows whether every part is working</li>
+  <li>Shield → "<b>⚙ Features</b>", or the Violentmonkey icon: switch each feature on or off</li>
+  <li>Shield → "<b>🔍 Check whether these are ads</b>": compares the sites this page connects to with a free public ad list; red ones can be blocked with one click. Never block the site's own video server (green, e.g. phncdn.com)</li>
+</ul>
+<h3 id="privacy">🚨 Panic key and tab disguise (off by default)</h3>
+<p>Turn them on under shield → "<b>⚙ Features</b>":</p>
+<ul>
+  <li><b>Panic key</b>: press <span class="k">Esc</span> twice quickly → the video mutes and pauses, and the tab jumps to Google. "Back" won't return to the video. To choose another page: Violentmonkey icon → "🚨 Panic key destination…". Earlier pages in the tab history can't be erased by a script, so use an Incognito window if that matters</li>
+  <li><b>Tab disguise</b>: the tab title becomes "Untitled document" and the icon becomes a document icon</li>
+</ul>
+
+<h2 id="download">4. Downloading</h2>
+<p>Press <span class="k">⬇ Download</span> to list each quality with its size and estimated time. Each line has two (or three) ways to download:</p>
+<table>
+  <tr><th>How</th><th>Good for</th><th>Notes</th></tr>
+  <tr><td>Click the line itself</td><td>Small files</td><td>Downloads in the browser. Keep the tab open until it finishes; big files use a lot of memory</td></tr>
+  <tr><td><span class="k b">🖥 Send to Desktop</span></td><td><b>Recommended</b>, big / high quality</td><td>The desktop app downloads it in the background; you can close the page</td></tr>
+  <tr><td><span class="k b">🖧 Send to node</span></td><td>A second computer</td><td>Another computer downloads it and sends it back (see <a href="#nodes">Nexus</a>)</td></tr>
+</table>
+<h3>First time using "Send to Desktop": pair (once per browser)</h3>
+<ol>
+  <li>In the desktop app, open <b>Settings → Browser link → 🔗 Pair browser</b>. A 6-digit code appears (valid for 5 minutes)</li>
+  <li>Back on the video page, press <span class="k b">🖥 Send to Desktop</span>; a box asks for the code</li>
+  <li>Enter the 6 digits — done. From now on it sends straight away, even after updates</li>
+</ol>
+<div class="tip">Pairing means only <b>your</b> paired browser can send videos to your desktop app. Websites and other computers can't.</div>
+<h3>Every time after that</h3>
+<ol>
+  <li>Keep the desktop app running (minimized to the tray is fine)</li>
+  <li>Video page → <span class="k">⬇ Download</span> → <span class="k b">🖥 Send to Desktop</span> next to the quality you want</li>
+  <li>The panel shows: Reading → Queued → Downloading xx% → ✅ Done</li>
+  <li>In the desktop app, <b>Downloads</b> → press ▶ to play</li>
+</ol>
+
+<h2 id="app">5. The desktop app</h2>
+<p>Use the menu on the left to switch pages. The new interface needs Microsoft WebView2 (included in Windows 11 and most Windows 10 PCs); without it the app falls back to the older window, which is Chinese only. The pictures use demo data.</p>
+<figure><img src="img/ui-home.jpg" alt="Home" loading="lazy"><figcaption><b>Home</b>: paste links at the top and press "⬇ Download" (one per line adds several, with the default quality). Four stat cards, the download list with filters, ▶ play and 📂 open folder, Nexus status, what's new and quick actions. 🔔 at the top right holds notifications; clicking one takes you to the related page.</figcaption></figure>
+<figure><img src="img/ui-dl.jpg" alt="Downloads" loading="lazy"><figcaption><b>Downloads</b>: paste one link and press "Read" to see every quality with its size and time, then pick one. Several lines become "Add all" with a maximum quality. History can be searched and filtered; right-click a record for play, show in folder, copy link, AI subtitles, download again or delete record. Tick several videos to make AI subtitles for all of them.</figcaption></figure>
+<figure><img src="img/ui-set.jpg" alt="Settings" loading="lazy"><figcaption><b>Settings</b>: downloads, appearance &amp; window (including language), browser link, history &amp; stats, ad detection, and backup / updates / troubleshooting. Changes are saved right away.</figcaption></figure>
+<figure><img src="img/ui-sec.jpg" alt="Security &amp; stats" loading="lazy"><figcaption><b>Security &amp; stats</b>: paired browsers (unpair any one), AI usage, sites contacted since the app started (unusual ones are marked), error log, download stats, components and their fingerprints, and "🔍 Check this EXE is an official build".</figcaption></figure>
+<figure><img src="img/ui-setup.jpg" alt="Install ad blocker" loading="lazy"><figcaption><b>Install ad blocker</b>: press the 3 "Open" buttons in order; finished steps get a tick.</figcaption></figure>
+
+<h3 id="lang">🌐 Language</h3>
+<ul>
+  <li><b>Desktop app</b>: Settings → Appearance &amp; window → Language: <b>System</b> (Chinese if Windows is in Chinese, otherwise English), 繁體中文 or English. It switches instantly, including the tray menu, notifications and dialogs</li>
+  <li><b>Browser script</b>: shield → "🌐 中文 / 🌐 English" at the bottom, or the same item in the Violentmonkey menu (the page reloads). Only the script's own panels are translated; the website itself is never changed</li>
+  <li>Not translated: video titles, names you gave your nodes, the release notes (written in Chinese — your browser can translate the release page), the older fallback window and the node window (<code>--worker</code>)</li>
+</ul>
+
+<h3>Tray icon, pause, speed limit, duplicates</h3>
+<ul>
+  <li><b>Tray icon</b>: while the app runs there's an icon in the tray (inside "^" on the taskbar). Right-click it for status, pause / resume all, download from clipboard, open download folder and quit. Drag it out of "^" onto the taskbar to keep it visible</li>
+  <li><b>Pause all / Resume all</b>: downloaded parts are kept and the download continues where it stopped (quitting the app deletes paused partial files)</li>
+  <li><b>Speed limit</b> (Settings, Mbps): applies immediately — handy so downloads don't slow down others at home</li>
+  <li><b>Duplicates</b>: if you download a video again you're asked first; batches and browser sends skip it automatically (can be turned off)</li>
+  <li><b>When closing the window</b>: ask only while downloading, always minimize to tray, or quit</li>
+</ul>
+
+<h3>🔁 Automatic failure handling</h3>
+<ul>
+  <li><b>Retrying soon</b>: site busy (429), server error, disconnect → waits and retries automatically, up to 3 times</li>
+  <li><b>Needs attention</b>: video removed, access refused, bad link → retrying won't help; the app tells you what to check. Then press "🔁 Retry failed"</li>
+  <li><b>Disk full</b>: the queue pauses and finished files are kept; free up space and press "▶ Resume all"</li>
+  <li>If one site says "too many requests", only that site waits; other sites keep downloading</li>
+</ul>
+
+<h3>🧠 Smart segments</h3>
+<p>MP4 downloads normally use 6 connections at once. On an unstable network that causes errors. Settings → Smart segments: <b>Observe only</b> (default: keeps 6, but logs what it would change), <b>Auto</b> (picks 1 / 2 / 4 / 6 per site from recent results) or <b>Off</b>. "📊 Report" compares the modes — switch to Auto once the report shows it helps.</p>
+
+<h3 id="subtitle">📝 AI subtitles</h3>
+<ol>
+  <li>Downloads → right-click a finished video → "📝 AI subtitles" (tick several videos to do them one after another)</li>
+  <li>Choose the spoken language (or auto-detect) and a model: <b>Fast</b> is fine for most PCs, <b>Accurate</b> is 3–5× slower</li>
+  <li>Optional: translate to Traditional Chinese (needs an AI key in Settings) and also make a bilingual file</li>
+  <li>Subtitles are saved next to the video with the same name; VLC and PotPlayer load them automatically. Formats: SRT, VTT or both</li>
+</ol>
+<div class="tip">Transcribing runs entirely on your computer — video and audio are <b>never uploaded</b>. The first run downloads the transcriber and model (about 190–550 MB). Translation sends only the subtitle text to the AI.</div>
+
+<h3 id="nodes">🖧 Nexus: a second computer that downloads for you</h3>
+<p>Another computer at home (same local network, or a VPN such as Tailscale) can act as a <b>node</b>: it downloads in a sandbox and sends the file back to your main computer (the <b>Master</b>). With only one computer you don't need this — "Send to Desktop" is enough.</p>
+<figure><img src="img/ui-nodes.jpg" alt="Nexus" loading="lazy"><figcaption><b>Nexus</b>: enable the Master, create a pairing code, approve / suspend / revoke nodes (each needs a reason, recorded in the audit log), watch node tasks and send-back progress, add tasks, and see why a node was chosen.</figcaption></figure>
+<ol>
+  <li><b>On the Master</b>: Nexus → turn on <b>Enable</b>. Pick the local-network address (e.g. 192.168.x.x); when Windows asks about the firewall, allow "Private networks"</li>
+  <li>Press <b>Create pairing code</b> (6 digits, 5 minutes, single use) and note the first 8 characters of the <b>Master fingerprint</b></li>
+  <li><b>On the node</b>: run the same <code>VideoHelper.exe --worker</code> (e.g. a shortcut with <code>--worker</code> added to the target). Enter the Master address (<code>https://192.168.x.x:47331</code>), a name and the code, then pair. <i>The node window is currently Chinese only.</i></li>
+  <li>The node shows the Master fingerprint — continue <b>only if the first 8 characters match</b></li>
+  <li>Back on the Master, approve the node that's waiting. It shows "Connected" when it works</li>
+</ol>
+<ul>
+  <li><b>Giving it work</b>: on a video page use "⬇ Download" → "🖧 Send to node" (works for Pornhub too), or Nexus → "+ New task" → Download video (node). Pornhub blocks programs that aren't browsers, so for Pornhub always send from the browser</li>
+  <li><b>Send back</b>: with "Send back to this computer" ticked (the default), the node sends the file back in 8 MB parts, each checked with SHA-256, then the whole file is checked; only an exact match lands in your download folder and history (🖧 before the title). Interrupted transfers resume where they stopped. The node deletes its copy only after the Master confirms</li>
+  <li><b>Sandbox</b>: the node downloads in a restricted child process — limited memory, CPU, processes, time and file size; it can't read your settings, keys or browser cookies and can only reach the supported sites. <b>Honestly</b>: this is basic process isolation, not a full sandbox; it stops buggy code and malicious links, not malware already running under the same Windows account</li>
+  <li><b>Unknown (node lost)</b>: if a node disappears mid-task, the task is never re-run automatically; once you're sure it stopped, press "Mark as failed"</li>
+  <li>Suspend cuts the connection at once; revoke is permanent (to use that computer again, pair it again). Nothing is opened to the network until you enable the Master</li>
+</ul>
+
+<h3 id="security">🔒 Security</h3>
+<p>Security &amp; stats shows paired browsers, AI usage, sites contacted, the error log (clear it or auto-delete after N days), and component fingerprints. <b>🔍 Check this EXE is an official build</b> computes the EXE's fingerprint and asks GitHub whether this project has a signed build record for it (only the fingerprint is sent, only when you press it). Details: <a href="https://github.com/dadanny1122/video-helper/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+
+<h2 id="update">6. Updates</h2>
+<ul>
+  <li><b>Script</b>: Violentmonkey checks daily. To update now: Violentmonkey dashboard → Video Helper → 🔄</li>
+  <li><b>Desktop app</b>: Settings → "Check for updates", or download the new EXE from the <a href="https://github.com/dadanny1122/video-helper/releases/latest">release page</a>, close the old one and start the new one. Settings, history and pairing are kept</li>
+  <li>Keep both up to date — some features need both sides updated</li>
+</ul>
+
+<h2 id="faq">7. FAQ</h2>
+<p>Everything runs on your own computer; there's no server that can go down. Most problems are one of these, most common first:</p>
+<details><summary>1. Ads came back or downloading stopped working</summary>Sites change their pages every few months. Update both parts first. If it's still broken, press F12 → "Console", copy the log and report it with the site name.</details>
+<details><summary>2. Download failed (especially after the page was open a long time)</summary>Video links expire. <b>Reload the video page</b> and send it again. For network drops, press "🔁 Retry failed". HTTP 410 or 403 means the site blocks programs — send from the browser instead of pasting the link into the desktop app.</details>
+<details><summary>3. The page says "Desktop app not found"</summary>The desktop app isn't running (minimized to the tray is fine). Check Settings → Browser link shows "Running".</details>
+<details><summary>4. A new ad domain shows up</summary>Shield → "🔍 Check whether these are ads", block the red ones, reload the page.</details>
+<details><summary>5. No shield appears (the script isn't running)</summary>Check the Violentmonkey icon is on and Video Helper is ticked. In newer Chrome turn on "Allow user scripts" for Violentmonkey in <code>chrome://extensions</code> (some versions need "Developer mode" first). Reload the page.</details>
+<details><summary>6. No ad blocking in Incognito</summary><code>chrome://extensions</code> → Violentmonkey "Details" → turn on "Allow in Incognito".</details>
+<details><summary>7. Windows or antivirus warns about VideoHelper.exe</summary>The program isn't signed with a paid certificate, so Windows warns about "unfamiliar" programs. Click "More info" → "Run anyway". Only download from the <a href="https://github.com/dadanny1122/video-helper/releases/latest">official release page</a>; the EXE is built automatically by GitHub from the public source code, and you can verify it in Security &amp; stats.</details>
+<details><summary>8. The page asks for a pairing code again</summary>You switched browsers, cleared Violentmonkey data, or pressed "Unpair all". Just pair again.</details>
+<details><summary>Why can't I download from MissAV, Jable or Hanime1?</summary>Their videos are mostly unauthorized reuploads of commercial work, so Video Helper only blocks ads there.</details>
+<details><summary>Does "check whether these are ads" cost money?</summary>No. The desktop app compares against a free public list (about 70,000 known ad, tracking and malware domains) on your computer. Only if you add an Anthropic API key (paid, optional) are unknown domains sent to the AI — just the domain and site name.</details>
+<details><summary>What should I include when reporting a problem?</summary>The site and video link, a screenshot, for missed ads the F12 → Console log, and for desktop errors the content of Settings → "📄 Error log".</details>
+
+<h2 id="safe">8. Safety &amp; privacy</h2>
+<ul>
+  <li>The script only runs on the supported sites</li>
+  <li>The desktop app's browser link only listens on <b>this computer</b> (127.0.0.1) and only accepts paired browsers</li>
+  <li>It only accepts video links from the 9 download sites and their own video servers</li>
+  <li>Your viewing history is never uploaded. Stats only store site names and numbers, and can be turned off</li>
+  <li>All source code is public on <a href="https://github.com/dadanny1122/video-helper">GitHub</a></li>
+</ul>
+<div class="warn">Downloaded videos are for personal viewing only — please don't redistribute them.</div>
+
+<footer>Video Helper · <a href="https://github.com/dadanny1122/video-helper">GitHub</a> · <a href="../">中文說明書</a></footer>
+</main>
+</body>
+</html>

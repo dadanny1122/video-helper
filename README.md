@@ -2,7 +2,7 @@
 
 影片網站輔助腳本（使用者腳本 / userscript）。　*English: [see below](#english)*
 
-📖 **[說明書（第一次用請看這裡）](https://dadanny1122.github.io/video-helper/manual/)**
+📖 **[說明書（第一次用請看這裡）](https://dadanny1122.github.io/video-helper/manual/)**　·　[English manual](https://dadanny1122.github.io/video-helper/manual/en/)
 
 ## 功能
 - 安全防護：擋彈出視窗、自動跳轉、危險檔案下載（.exe / .apk 等）、通知權限請求，左下角顯示攔截次數
@@ -72,16 +72,24 @@
 
 ## English
 
-A userscript (Violentmonkey / Tampermonkey) that makes adult video sites safer and cleaner. Everything runs locally in your browser — no server, no tracking. **The on-page interface is in Traditional Chinese**; this section explains what each part does.
+📖 **[English manual](https://dadanny1122.github.io/video-helper/manual/en/)**
 
-**Features**
-- **Protection** — blocks pop-ups, forced redirects, dangerous file downloads (.exe / .apk …) and notification prompts. The shield in the bottom-left corner shows how many were blocked.
+Two parts that work alone or together. Everything runs on your own computer — no server, no tracking. **Both parts have an English interface** and follow your system / browser language automatically (switch any time: shield panel → 🌐 in the browser, Settings → Language in the desktop app).
+
+**① Browser script** (Violentmonkey / Tampermonkey)
+- **Protection** — blocks pop-ups, forced redirects, dangerous file downloads (.exe / .apk …) and notification prompts. The 🛡 shield in the bottom-left corner shows how many were blocked and why.
 - **Data saver** — known ad networks are blocked before they download, so bandwidth goes to the video.
 - **Ad hiding & skipping** — hides third-party ad boxes and invisible click layers; skips pre-roll ads.
-- **Status & estimates** — current speed, time until playback starts / full video loaded, buffering count; estimated load time on listing pages.
-- **One-click download** (supported sites only) — pick a quality, see file size and estimated time; HLS streams are converted to MP4. Encrypted videos are not supported.
-- **Boss key** (off by default) — press Esc twice quickly to mute and leave the page (target URL configurable; default Google).
-- **Settings** — click the Violentmonkey icon to switch each feature on or off.
+- **Status & estimates** — current speed, time until playback starts / full video loaded, stalls; load time on listing pages.
+- **One-click download** (supported sites) — pick a quality, see size and time; HLS is converted to MP4. Encrypted videos aren't supported.
+- **Send to Desktop / Send to node** — hand the video to the desktop app (or a second computer) to download in the background.
+- **Panic key & tab disguise** (off by default) — Esc twice mutes and leaves the page; the tab can look like an untitled document.
+
+**② Desktop app** (`VideoHelper.exe`, Windows) — [download](https://github.com/dadanny1122/video-helper/releases/latest)
+- Download queue with pause / resume, speed limit, duplicate detection and automatic retries; plain MP4 output
+- AI subtitles made on your own PC (whisper.cpp), optional translation
+- Nexus: let a second computer download in a sandbox and send files back, with SHA-256 checks
+- Security page: paired browsers, contacted sites, component fingerprints, one-click check that the EXE is an official GitHub build
 
 **Supported sites**
 - Full features incl. download: Pornhub, XVideos, XNXX, YouPorn, RedTube, xHamster, Tube8, YouJizz, SpankBang
@@ -89,21 +97,9 @@ A userscript (Violentmonkey / Tampermonkey) that makes adult video sites safer a
 
 Downloads are deliberately not offered on pirated re-upload sites or paid platforms.
 
-**Install** — install [Violentmonkey](https://violentmonkey.github.io/), then open [`video-helper.user.js`](https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js) (raw) or install from [Greasy Fork](https://greasyfork.org/scripts/601901-video-helper).
+**Install** — easiest: run `VideoHelper.exe` and follow the "Install ad blocker" page. Or install [Violentmonkey](https://violentmonkey.github.io/), then open [`video-helper.user.js`](https://raw.githubusercontent.com/dadanny1122/video-helper/main/video-helper.user.js) (raw) or install from [Greasy Fork](https://greasyfork.org/scripts/601901-video-helper).
 
-**Common labels you will see**
-
-| Chinese | English |
-|---|---|
-| 安全防護 | Protection |
-| 省流模式 | Data saver |
-| 隱藏廣告 / 自動略過廣告 | Hide ads / Auto-skip ads |
-| 載入時間評估 | Load-time estimate |
-| 下載 / 選擇畫質 | Download / Choose quality |
-| 送到電腦版 | Send to desktop app (optional Windows companion app) |
-| 狀態檢查 | Health check |
-| 這是誤擋？ | Wrongly blocked? (report) |
-| 老闆鍵 | Boss key |
+The changelog and commit messages are written in Chinese.
 
 Questions or bugs: [GitHub Issues](https://github.com/dadanny1122/video-helper/issues) (English is fine).
 
