@@ -99,7 +99,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.49.1"
+VERSION = "1.50.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -180,7 +180,7 @@ DEFAULT_SETTINGS = {
     "auto_download_update": False,    # v1.47.0 D1：有新版時先在背景下載好（還是要按才換）
     "fb_tokens": [],                  # v1.49.0 意見回饋拿到的代碼（Worker 簽的；docs/infra/04-…）
     "fb_pub": "",                     # Worker 的簽名公鑰（程式裡沒寫死時，第一次送回饋時記下來）
-    "fb_theme": "",                   # 回饋解鎖的限定配色：""／aurora／dusk（只影響新介面）
+    "fb_theme": "",                   # 回饋解鎖的限定配色：""／aurora／dusk／blackgold（10 則）（只影響新介面）
     "beta_features": False,           # 回饋 3 則以上才能開：搶先試用新功能
     "last_version": "",               # 上次執行的版本（版本變了就自動備份）
     "bridge_enabled": False,          # 瀏覽器連動（配對後才會打開）

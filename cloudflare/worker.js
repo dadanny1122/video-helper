@@ -140,6 +140,15 @@ async function handleFeedback(req, env) {
   return fbJson({ ok: true, token: await fbSign(env, { v: 1, id, t: Math.floor(now.getTime() / 1000) }), pub: k.pub });
 }
 
+// 回饋等級（docs/infra/06-回饋等級規格.md）：兌換過幾組不同代碼 → 銅 1／銀 3／金 10；1 小時內只算 1 組
+const FB_LEVELS = [[10, 'FEEDBACK_ROLE_GOLD', '🥇 金牌回饋者'], [3, 'FEEDBACK_ROLE_SILVER', '🥈 銀牌回饋者'], [1, 'FEEDBACK_ROLE_ID', '🥉 銅牌回饋者']];
+const FB_GAP = 3600;
+
+function fbLevelOf(env, n) {
+  // 有設定身分組的等級裡，n 夠的最高那個
+  return FB_LEVELS.find(([need, key]) => n >= need && env[key]) || null;
+}
+
 async function cmdFeedbackRole(i, env) {
   const eph = (content) => json({ type: 4, data: { content, flags: 64 } });
   if (!env.FEEDBACK_KV || !env.FEEDBACK_ROLE_ID) return eph('回饋者身分組還沒設定好，等開發者設定。');
@@ -150,19 +159,57 @@ async function cmdFeedbackRole(i, env) {
   if (!d) return eph('❌ 代碼不對。請到電腦版「💬 意見回饋」或腳本盾牌面板複製完整的代碼（VH1. 開頭）。');
   const usedBy = await env.FEEDBACK_KV.get(`used:${d.id}`);
   if (usedBy && usedBy !== user.id) return eph('❌ 這組代碼已經被別人用過了。');
-  const r = await fetch(`https://discord.com/api/v10/guilds/${i.guild_id}/members/${user.id}/roles/${env.FEEDBACK_ROLE_ID}`, {
-    method: 'PUT', headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, 'X-Audit-Log-Reason': 'Video Helper feedback reward' } });
-  if (!r.ok) return eph(`給身分組失敗（${r.status}）：請開發者確認機器人的身分組排在「回饋者」上面、而且有「管理身分組」權限。`);
-  await env.FEEDBACK_KV.put(`used:${d.id}`, user.id);
-  return eph('🎭 你拿到「回饋者」身分組了，謝謝你的意見！');
+  let list = [];
+  try { list = JSON.parse(await env.FEEDBACK_KV.get(`user:${user.id}`) || '[]'); } catch (e) { list = []; }
+  if (!Array.isArray(list)) list = [];
+  let note = '';
+  if (!list.some((x) => x.id === d.id)) {
+    await env.FEEDBACK_KV.put(`used:${d.id}`, user.id);          // 不算也綁給這個人，不能轉給別人
+    await env.FEEDBACK_KV.put(`who:${d.id.slice(0, 6)}`, user.id);
+    if (list.some((x) => Math.abs((x.t || 0) - (d.t || 0)) < FB_GAP)) note = '⏳ 這組跟你算過的另一組相差不到 1 小時，1 小時內只算 1 組。\n';
+    else {
+      list.push({ id: d.id, t: d.t || 0 });
+      await env.FEEDBACK_KV.put(`user:${user.id}`, JSON.stringify(list.slice(-50)));
+    }
+  } else note = '這組你已經用過了。\n';
+  const n = list.length, lv = fbLevelOf(env, n);
+  if (!lv) return eph(note + '還沒有可以給的身分組。');
+  const base = `https://discord.com/api/v10/guilds/${i.guild_id}/members/${user.id}/roles/`;
+  const hdr = { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, 'X-Audit-Log-Reason': 'Video Helper feedback reward' };
+  const r = await fetch(base + env[lv[1]], { method: 'PUT', headers: hdr });
+  if (!r.ok) return eph(`給身分組失敗（${r.status}）：請開發者確認機器人的身分組排在「回饋者」身分組上面、而且有「管理身分組」權限。`);
+  for (const [, key] of FB_LEVELS) {                              // 只留最高的
+    if (key !== lv[1] && env[key] && env[key] !== env[lv[1]]) await fetch(base + env[key], { method: 'DELETE', headers: hdr });
+  }
+  const up = FB_LEVELS.slice().reverse().find(([need, key]) => n < need && env[key]);
+  return eph(`${note}🎭 你現在是 ${lv[2]}（算了 ${n} 則）${up ? `，再 ${up[0] - n} 則升${up[2].slice(3, 4)}` : ''}，謝謝你的意見！`);
+}
+
+// /感謝 編號：管理員在 #進度 謝謝提出這則回饋的人（只有自己兌換過代碼的人會被 tag）
+async function cmdThanks(i, env) {
+  const eph = (content) => json({ type: 4, data: { content, flags: 64 } });
+  const perms = BigInt((i.member && i.member.permissions) || '0');
+  if (!(perms & 0x20n) && !(perms & 0x8n)) return eph('只有伺服器管理員可以用。');
+  if (!env.FEEDBACK_KV || !env.DISCORD_PROGRESS_WEBHOOK) return eph('還沒設定好（缺 #進度 的 Webhook）。');
+  const code = String(opt(i, 'code') || '').replace(/^#/, '').trim().toLowerCase();
+  if (!/^[0-9a-f]{6}$/.test(code)) return eph('編號是回饋訊息最下面 # 後面的 6 個字，例如 #a1b2c3。');
+  const uid = await env.FEEDBACK_KV.get(`who:${code}`);
+  const content = uid ? `🙏 這次更新有用到 <@${uid}> 的回饋（#${code}），謝謝！` : `🙏 感謝匿名回饋 #${code}，這次更新有用到！`;
+  const r = await fetch(env.DISCORD_PROGRESS_WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, username: 'Video Helper', allowed_mentions: { users: uid ? [uid] : [] } }) });
+  return eph(r.ok ? `✅ 已貼到 #進度${uid ? '（有 tag 他）' : '（這則沒人兌換代碼，寫匿名）'}` : `❌ 貼不上去（${r.status}）`);
 }
 
 // 指令清單（英文名字給程式用，zh-TW 是 Discord 上看到的名字）
 const COMMANDS = [
   { name: 'feedback-role', name_localizations: { 'zh-TW': '回饋者' }, type: 1,
-    description: 'Get the Feedback role with your feedback code', description_localizations: { 'zh-TW': '輸入意見回饋拿到的代碼，領「回饋者」身分組' },
+    description: 'Get the Feedback role with your feedback code', description_localizations: { 'zh-TW': '輸入意見回饋拿到的代碼，領回饋者身分組（1 則銅、3 則銀、10 則金）' },
     options: [{ type: 3, name: 'code', name_localizations: { 'zh-TW': '代碼' }, description: 'Your code (starts with VH1.)',
                 description_localizations: { 'zh-TW': '回饋代碼（VH1. 開頭）' }, required: true, max_length: 400 }] },
+  { name: 'thanks', name_localizations: { 'zh-TW': '感謝' }, type: 1, default_member_permissions: '32', dm_permission: false,
+    description: 'Thank the person behind a feedback in #progress', description_localizations: { 'zh-TW': '在 #進度 謝謝提出這則回饋的人（管理員）' },
+    options: [{ type: 3, name: 'code', name_localizations: { 'zh-TW': '編號' }, description: 'Feedback number, e.g. #a1b2c3',
+                description_localizations: { 'zh-TW': '回饋訊息最下面的編號，例如 #a1b2c3' }, required: true, max_length: 12 }] },
   { name: 'snapshot', name_localizations: { 'zh-TW': '快照' }, type: 1,
     description: 'Take a snapshot of the live dashboard now', description_localizations: { 'zh-TW': '馬上截一張「即時介面」的圖（約 1～2 分鐘）' } },
   { name: 'exchange', name_localizations: { 'zh-TW': '換匯' }, type: 1,
@@ -377,7 +424,7 @@ export default {
         headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(COMMANDS),
       });
-      return text(r.ok ? '✅ 指令註冊成功！回 Discord 打 / 看看：快照、換匯、匯率、排行榜、狀態、天氣、回饋者' : `❌ 註冊失敗（${r.status}）：${await r.text()}`);
+      return text(r.ok ? '✅ 指令註冊成功！回 Discord 打 / 看看：快照、換匯、匯率、排行榜、狀態、天氣、回饋者、感謝' : `❌ 註冊失敗（${r.status}）：${await r.text()}`);
     }
     // 意見回饋（電腦版、腳本送來的；不是 Discord，不驗 Discord 簽章）
     if (url.pathname === '/feedback/pubkey' && req.method === 'GET') {
@@ -419,6 +466,7 @@ export default {
       if (i.type === 2 && i.data.name === 'status') return await cmdStatus(env);
       if (i.type === 2 && i.data.name === 'weather') return await cmdWeather(i);
       if (i.type === 2 && i.data.name === 'feedback-role') return await cmdFeedbackRole(i, env);
+      if (i.type === 2 && i.data.name === 'thanks') return await cmdThanks(i, env);
     } catch (e) {
       return json({ type: 4, data: { content: `出錯了：${e.message}`, flags: 64 } });
     }

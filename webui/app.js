@@ -73,7 +73,7 @@ function renderFb(f) {
   if (!f.ready) { res.hidden = false; res.classList.add('bad'); res.textContent = '意見回饋還沒設定好（開發者還沒填 Worker 網址）'; }
   $('#fblevel').textContent = f.badge ? `${f.badge}（回饋 ${f.count} 則）` : '還沒有回饋';
   $('#fbthemes').hidden = !f.themes.length;
-  $('#fbthemebtn').innerHTML = [['', '預設'], ...f.themes_all].map(([v, l]) => `<button data-fbtheme="${esc(v)}" class="${v === f.theme ? 'on' : ''}">${esc(l)}</button>`).join('');
+  $('#fbthemebtn').innerHTML = [['', '預設'], ...f.themes_all.filter(([v]) => (f.themes || []).includes(v))].map(([v, l]) => `<button data-fbtheme="${esc(v)}" class="${v === f.theme ? 'on' : ''}">${esc(l)}</button>`).join('');
   $('#fbbeta').hidden = !f.beta;
   $('#s-beta').checked = !!f.beta_on;
   fbCount();
