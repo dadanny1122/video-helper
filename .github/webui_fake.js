@@ -36,6 +36,9 @@ function state(theme, extra = {}) {
       notify_mode: 'off', notify_modes: [['off', '關閉'], ['all_done', '佇列全部做完時']], notify_has: false, recycle_ok: true },
     lock_on: false, lock_idle_min: 15, later_ver: 1, later_n: 2, sched: '',
     setup: { chrome: true, done: ['1'] },
+    fb: { count: 1, level: 'bronze', badge: '🥉 銅牌支持者', themes: ['aurora', 'dusk'], beta: false, next: 3, theme: '', beta_on: false,
+      kinds: [['suggest', '💡 建議'], ['bug', '🐞 問題'], ['praise', '👍 稱讚'], ['other', '💬 其他']], ready: true,
+      themes_all: [['aurora', '極光'], ['dusk', '夕暮']], busy: false, result: null },
   }, extra);
 }
 

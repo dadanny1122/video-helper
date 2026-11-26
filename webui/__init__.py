@@ -36,12 +36,14 @@ ACTIONS = {
     "lock": None, "unlock": 12, "lock_set": "dict", "lock_clear": 12,
     "later_dl": 20, "later_open": 20, "later_rm": 20, "later_all": None, "later_clear": None,
     "sched_now": None, "dup_scan": None, "dup_delete": "keys", "notify_set": 300, "notify_test": None,
+    # v1.49.0 意見回饋
+    "feedback_send": "dict", "feedback_code": 400, "feedback_clear": None,
 }
 LOCKED_OK = ("unlock",)      # 鎖住時只收這些（電腦版那邊也會再擋一次）
 SETTING_KEYS = ("default_quality", "rate_limit", "skip_downloaded", "tray_always", "keep_history", "keep_stats",
                 "smart_segments", "filename_template", "close_action", "theme", "log_keep_days", "lang",
                 "auto_download_update", "lock_idle_min", "sched_mode", "sched_start", "sched_end", "sched_day_mbps",
-                "organize", "notify_mode")
+                "organize", "notify_mode", "fb_theme", "beta_features")
 MAX_KEYS = 500
 QUALITIES = ("最高", "2160", "1440", "1080", "720", "480", "360")
 LOAD_TIMEOUT = 25            # 秒：網頁這麼久還沒說「好了」→ 改開舊介面

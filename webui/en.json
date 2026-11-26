@@ -868,7 +868,46 @@
   "這個網站擋程式，會用瀏覽器打開、腳本自動送過來": "This site blocks programs, so it opens in your browser and the script sends it over",
   "舊密碼": "Old PIN",
   "新密碼（4～12 位數字）": "New PIN (4–12 digits)",
-  "再輸入一次": "Enter it again"
+  "再輸入一次": "Enter it again",
+  "意見回饋": "Feedback",
+  "寫意見給開發者": "Write to the developer",
+  "會貼到開發者的 Discord 頻道。只送類型、內容和電腦版版本，不會送你下載的影片或網址；內容裡的網址會自動刪掉。": "Posted to the developer's Discord channel. Only the type, your text and the app version are sent — never your downloads or links; links in your text are removed automatically.",
+  "中文 16 個字以上，或英文 20 個單字以上": "At least 20 English words (or 16 Chinese characters)",
+  "回饋獎勵": "Feedback rewards",
+  "回饋 1 則：🥉 徽章＋🎨 限定配色；3 則：🥈＋🧪 搶先試用；10 則：🥇。拿到的代碼也可以在 Discord 打 /回饋者 領「回饋者」身分組。": "1 feedback: 🥉 badge + 🎨 exclusive colors; 3: 🥈 + 🧪 early access; 10: 🥇. You can also use your code with the Discord command /feedback-role to get the Feedback role.",
+  "🎨 限定配色": "🎨 Exclusive colors",
+  "只改新介面的顏色": "Changes the app's accent colors only",
+  "🧪 搶先試用新功能": "🧪 Try new features early",
+  "新功能會先標成「搶先版」只給打開的人用": "New features marked \"early access\" are only shown to people who turn this on",
+  "加入回饋代碼": "Add a feedback code",
+  "在瀏覽器腳本拿到的代碼貼這裡，好處兩邊都算": "Paste a code you got from the browser script — rewards count on both sides",
+  "告訴開發者哪裡好用、哪裡要改；回饋有獎勵": "Tell the developer what works and what doesn't — feedback earns rewards",
+  "✅ 可以送出了": "✅ Ready to send",
+  "可以送出了": "Ready to send",
+  "送出中…": "Sending…",
+  "🎉 謝謝！你的回饋代碼（腳本、Discord /回饋者 可以用）：": "🎉 Thank you! Your feedback code (works in the browser script and with the Discord command /feedback-role):",
+  "意見回饋還沒設定好（開發者還沒填 Worker 網址）": "Feedback isn't set up yet (the developer hasn't configured it)",
+  "還沒有回饋": "No feedback yet",
+  "上一則還在送": "The previous one is still sending",
+  "代碼不對（要完整複製 VH1. 開頭那一串）": "Invalid code (copy the whole string starting with VH1.)",
+  "這組代碼已經加過了": "This code was already added",
+  "已加入，好處更新了": "Added — rewards updated",
+  "💡 建議": "💡 Suggestion",
+  "🐞 問題": "🐞 Problem",
+  "👍 稱讚": "👍 Praise",
+  "💬 其他": "💬 Other",
+  "🥇 金牌支持者": "🥇 Gold supporter",
+  "🥈 銀牌支持者": "🥈 Silver supporter",
+  "🥉 銅牌支持者": "🥉 Bronze supporter",
+  "極光": "Aurora",
+  "夕暮": "Dusk",
+  "預設": "Default",
+  "類型不對": "Invalid type",
+  "回應怪怪的，等一下再試": "Unexpected response — try again later",
+  "謝謝你的意見回饋！": "Thanks for your feedback!",
+  "🎨 限定配色、": "🎨 Exclusive colors, ",
+  "🧪 搶先試用": "🧪 Early access",
+  "加入": "Add"
  },
  "patterns": [
   [
@@ -1958,12 +1997,46 @@
   [
    "Discord 回應 {a}",
    "Discord replied {a}"
+  ],
+  [
+   "太長了（最多 {a} 字）",
+   "Too long (max {a} characters)"
+  ],
+  [
+   "還差 {a} 個中文字，或 {b} 個英文單字",
+   "{b} more English words (or {a} more Chinese characters) needed"
+  ],
+  [
+   "拿到：{a}",
+   "Unlocked: {a}"
+  ],
+  [
+   "{a}（回饋 {b} 則）",
+   "{a} ({b} feedback)"
+  ],
+  [
+   "送不出去（{a}），等一下再試",
+   "Couldn't send ({a}) — try again later"
+  ],
+  [
+   "連不到意見回饋服務（{a}），等一下再試",
+   "Can't reach the feedback service ({a}) — try again later"
+  ],
+  [
+   "意見回饋沒送出：{a}",
+   "Feedback not sent: {a}"
+  ],
+  [
+   "謝謝你的意見回饋！拿到：{a}",
+   "Thanks for your feedback! Unlocked: {a}"
   ]
  ],
  "ignore": [
   "每個狀態都要在轉移表裡",
   "VideoHelper-備份-{a}.json",
   "{a}.雙語",
-  "繁體中文"
+  "繁體中文",
+  "[網址已移除]",
+  "[぀-ヿ㐀-䶿一-鿿가-힯豈-﫿]"
  ]
 }

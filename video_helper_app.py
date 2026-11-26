@@ -99,7 +99,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.48.0"
+VERSION = "1.49.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -178,6 +178,10 @@ DEFAULT_SETTINGS = {
     "filename_template": DEFAULT_TEMPLATE,
     "close_action": "下載中才詢問",   # 關閉視窗時：下載中才詢問 / 一律縮到系統匣 / 直接結束
     "auto_download_update": False,    # v1.47.0 D1：有新版時先在背景下載好（還是要按才換）
+    "fb_tokens": [],                  # v1.49.0 意見回饋拿到的代碼（Worker 簽的；docs/infra/04-…）
+    "fb_pub": "",                     # Worker 的簽名公鑰（程式裡沒寫死時，第一次送回饋時記下來）
+    "fb_theme": "",                   # 回饋解鎖的限定配色：""／aurora／dusk（只影響新介面）
+    "beta_features": False,           # 回饋 3 則以上才能開：搶先試用新功能
     "last_version": "",               # 上次執行的版本（版本變了就自動備份）
     "bridge_enabled": False,          # 瀏覽器連動（配對後才會打開）
     "bridge_tokens": [],              # 已配對的瀏覽器（只存雜湊值，不存原本的密碼）
@@ -5086,6 +5090,7 @@ class App:
             "lock_on": VX.has_pin(self.settings["lock_pin"]), "lock_idle_min": self.settings["lock_idle_min"],
             "later_ver": self.later.version, "later_n": len(self.later.items), "sched": self._sched_hint(),
             "start_page": "setup" if getattr(self, "_first_run", False) else "",
+            "fb": self._web_fb(),
         }
         # Nexus 管理頁開著（網頁 5 秒內問過）才讀資料庫，2 秒一次；在 Tk 執行緒做（資料庫連線不跨執行緒）
         if now - self.web.want_nexus < 5 and now - getattr(self, "_web_nx_full_t", 0) >= 2:
@@ -5373,6 +5378,10 @@ class App:
                     self.start_tray()
                 elif self.tray and not self.is_hidden():          # 縮在系統匣時不能拿掉，不然找不回來
                     self._stop_tray()
+        elif k == "fb_theme" and v in ([""] + self._fb_rewards()["themes"]):
+            st[k] = v
+        elif k == "beta_features" and isinstance(v, bool) and (not v or self._fb_rewards()["beta"]):
+            st[k] = v
         elif k == "smart_segments" and v in SMART_MODES.values():
             st[k] = v
         elif k == "filename_template" and v in FILENAME_TEMPLATES:
@@ -6181,6 +6190,85 @@ class App:
 
     def web_pair(self, _):
         self.pair_browser()
+
+    # ---- v1.49.0 意見回饋＋回饋獎勵（docs/infra/04-意見回饋與回饋獎勵規格.md；邏輯在 vh_feedback.py）----
+    def _fb_pub(self):
+        import vh_feedback
+        return vh_feedback.FB_PUBKEY or str(self.settings["fb_pub"] or "")
+
+    def _fb_rewards(self):
+        """好處（驗證代碼要一點時間，手上的代碼沒變就用上次算的）"""
+        import vh_feedback
+        key = (tuple(self.settings["fb_tokens"] or []), self._fb_pub())
+        if getattr(self, "_fb_cache", (None,))[0] != key:
+            self._fb_cache = (key, vh_feedback.rewards(key[0], key[1]))
+        return self._fb_cache[1]
+
+    def _web_fb(self):
+        import vh_feedback
+        r = self._fb_rewards()
+        theme = self.settings["fb_theme"] if self.settings["fb_theme"] in r["themes"] else ""
+        return dict(r, theme=theme, beta_on=bool(self.settings["beta_features"]) and r["beta"],
+                    kinds=[[k, v] for k, v in vh_feedback.KINDS.items()], ready=bool(vh_feedback.FEEDBACK_URL),
+                    themes_all=[[k, v] for k, v in vh_feedback.THEMES.items()], busy=getattr(self, "_fb_busy", False),
+                    result=getattr(self, "_fb_result", None))
+
+    def web_feedback_send(self, arg):
+        import vh_feedback
+        kind, text = str(arg.get("kind") or ""), str(arg.get("text") or "")
+        r = vh_feedback.fb_rule(text)
+        if not r["ok"]:
+            return {"ok": False, "msg": vh_feedback.need_text(r)}
+        if getattr(self, "_fb_busy", False):
+            return {"ok": False, "msg": "上一則還在送"}
+        self._fb_busy, self._fb_result = True, None
+        lang = I18N.LANG if I18N else "zh"
+
+        def work():
+            res = vh_feedback.send(kind, text, "desktop", VERSION, lang)
+            self.q.put(("fb_sent", res))
+        threading.Thread(target=work, daemon=True).start()
+        return {"ok": True, "msg": "送出中…"}
+
+    def on_fb_sent(self, res):
+        import vh_feedback
+        self._fb_busy = False
+        if not res.get("ok"):
+            self._fb_result = {"ok": False, "msg": res.get("msg", "")}
+            self.add_notice("⚠", f"意見回饋沒送出：{res.get('msg', '')}")
+            return
+        before = self._fb_rewards()["count"]
+        if res.get("pub") and not vh_feedback.FB_PUBKEY and not self.settings["fb_pub"]:
+            self.settings["fb_pub"] = res["pub"]                 # 第一次：記下 Worker 的公鑰（之後手動貼的代碼都用它驗）
+        toks = [t for t in (self.settings["fb_tokens"] or []) if t != res["token"]] + [res["token"]]
+        self.settings["fb_tokens"] = toks[-50:]
+        self.settings.save()
+        after = self._fb_rewards()
+        got = []
+        if after["count"] > before:
+            if before < 1 <= after["count"]:
+                got.append("🎨 限定配色")
+            if before < vh_feedback.BETA_AT <= after["count"]:
+                got.append("🧪 搶先試用")
+            if after["badge"]:
+                got.append(after["badge"])
+        self._fb_result = {"ok": True, "token": res["token"], "got": got}
+        self.add_notice("💬", "謝謝你的意見回饋！" + ("拿到：" + "、".join(got) if got else ""))
+
+    def web_feedback_code(self, code):
+        import vh_feedback
+        code = str(code or "").strip()
+        if not vh_feedback.verify_token(code, self._fb_pub()):
+            return {"ok": False, "msg": "代碼不對（要完整複製 VH1. 開頭那一串）"}
+        if code in (self.settings["fb_tokens"] or []):
+            return {"ok": False, "msg": "這組代碼已經加過了"}
+        self.settings["fb_tokens"] = ((self.settings["fb_tokens"] or []) + [code])[-50:]
+        self.settings.save()
+        return {"ok": True, "msg": "已加入，好處更新了"}
+
+    def web_feedback_clear(self, _):
+        self._fb_result = None
+        return {"ok": True}
 
     def web_check_update(self, _):
         threading.Thread(target=check_update, args=(self.q, True), daemon=True).start()
@@ -7479,6 +7567,9 @@ def selftest(out_path):
     try:                                            # v1.47.0 一鍵更新的程式有打包進來、EXE 資料夾能不能寫入
         import vh_updater
         r["updater"] = {"watch_seconds": vh_updater.WATCH_SECONDS, "supported": update_supported()[0]}
+        import vh_feedback                          # v1.49.0 意見回饋：規則、代碼驗證（要 cryptography）有打包進來
+        r["feedback"] = {"rule_ok": vh_feedback.fb_rule("這個工具很好用但是希望可以多一點")["ok"], "url": bool(vh_feedback.FEEDBACK_URL)}
+        ok &= r["feedback"]["rule_ok"]
     except Exception as e:
         r["updater_error"] = repr(e)
         ok = False
