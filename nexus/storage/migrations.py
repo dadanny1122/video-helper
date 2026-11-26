@@ -173,5 +173,9 @@ MIGRATIONS = {
     );
     CREATE INDEX idx_uploads_task ON uploads(task_id);
     """,
+    # APEX（借 Temporal 的重試政策）：自動重試要等到這個時間才能再排程；NULL＝不用等
+    4: """
+    ALTER TABLE tasks ADD COLUMN retry_at TEXT;
+    """,
 }
 LATEST = max(MIGRATIONS)

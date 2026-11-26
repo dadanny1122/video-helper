@@ -104,7 +104,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.51.1"
+VERSION = "1.52.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -5892,7 +5892,7 @@ class App:
         if ts:
             for t in ts.list(active_only=False, limit=100):
                 st = t["status"]
-                text = nd.TASK_STATE_NAME.get(st, st)
+                text = nd.task_text(t)
                 prog = None
                 if st == "UPLOADING":
                     pr = svc.upload_progress(t["task_id"])
@@ -6111,7 +6111,7 @@ class App:
         rows = [[nd.local(r[0]), *r[1:]] for r in sorted(rows, key=lambda x: x[0])][-200:]
         good = bool(t["result_json"]) and t["status"] in ("SUCCEEDED", "UPLOADING", "VERIFYING")
         return {"ok": True, "detail": {
-            "head": f"{nd.TYPE_NAME.get(t['type'], t['type'])}｜{nd.TASK_STATE_NAME.get(t['status'], t['status'])}"
+            "head": f"{nd.TYPE_NAME.get(t['type'], t['type'])}｜{nd.task_text(t)}"
                     f"｜節點：{names.get(t['assigned_device_id'], '—')}"
                     f"｜嘗試 {t['attempt_count']}/{t['max_attempts']}｜{nd.summary_of(t)}",
             "result": res, "good": good, "note": note, "why": why, "timeline": rows}}

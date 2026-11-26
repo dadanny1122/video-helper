@@ -313,3 +313,13 @@ def test_at023_inbox_rate_limited(tmp_path):
         assert codes[:3] == ["ok"] * 3 and "RATE_LIMITED" in codes
     finally:
         m.stop()
+
+
+def test_queue_expired_has_own_error_code(master, monkeypatch):
+    """APEX：排隊太久（一直沒有節點接）跟執行太久分開：CANCELLED＋QUEUE_EXPIRED"""
+    from nexus.tasks import dispatch
+    t = master.tasks.create("test.echo", {"text": "沒人接"})
+    monkeypatch.setattr(dispatch.manifest, "expired", lambda m: True)     # 過期判斷看 manifest 的 expires_at＋現在時間
+    master.dispatcher.sweep()
+    cur = master.tasks.get(t["task_id"])
+    assert cur["status"] == "CANCELLED" and cur["error_code"] == "QUEUE_EXPIRED"

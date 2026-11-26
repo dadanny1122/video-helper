@@ -135,7 +135,9 @@ class Scheduler:
 
     def run_once(self) -> list[tuple[str, str | None]]:
         """把 QUEUED 的任務分給合格節點；回傳 [(task_id, 選中的 device_id 或 None)]"""
-        queued = self.tr.list_tasks([S.QUEUED.value])
+        now = utcnow()
+        # 自動重試還沒到時間的先不排（retry_at 是同一種 UTC 字串格式，可以直接比大小）
+        queued = [t for t in self.tr.list_tasks([S.QUEUED.value]) if not t.get("retry_at") or t["retry_at"] <= now]
         if not queued:
             return []
         devices, caps, busy, history = self._inputs()

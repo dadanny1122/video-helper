@@ -9,7 +9,7 @@ import tkinter as tk
 import uuid
 from tkinter import messagebox, simpledialog, ttk
 
-from nexus.display import FILE_TYPES, RETURN_ERRORS, SCORE_NAME, TAG, TYPE_NAME, download_result, fmt_size, local, summary_of
+from nexus.display import FILE_TYPES, RETURN_ERRORS, SCORE_NAME, TAG, TYPE_NAME, download_result, fmt_size, local, summary_of, task_text
 from nexus.display import TASK_STATE_NAME as STATE_NAME
 from nexus.display import who as _who
 from nexus.tasks import adapters
@@ -121,7 +121,7 @@ class TasksTab:
         self._update_buttons()
 
     def _state_text(self, t: dict) -> str:
-        st = STATE_NAME.get(t["status"], t["status"])
+        st = task_text(t)
         if t["status"] == "UPLOADING":
             prog = self.svc.upload_progress(t["task_id"]) if hasattr(self.svc, "upload_progress") else None
             if prog and prog.get("disk_full"):

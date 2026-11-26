@@ -6,6 +6,7 @@ TaskService：任務狀態唯一的修改入口（規格 §11.2）。
   ・失敗：照 retry policy 決定重試（新 attempt）或停在 FAILED（規格 §13.2）
 GUI 與派送層都只呼叫這裡，不直接改資料庫。
 """
+import datetime as dt
 import json
 import logging
 
@@ -171,9 +172,19 @@ class TaskService:
         """Attempt 失敗：先到 FAILED；能重試就再回 QUEUED（新 attempt 由排程器建立）"""
         t = self._transition(c, t, S.FAILED, actor, message[:300], error_code=error_code[:64], error_message=message[:1000])
         if self.should_retry(t, error_code):
-            t = self._transition(c, t, S.QUEUED, actor, f"自動重試（第 {t['attempt_count'] + 1} 次）",
-                                 assigned_device_id=None, current_attempt_id=None)
+            wait = self.retry_delay(t, error_code)
+            at = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=wait)).isoformat(timespec="seconds").replace("+00:00", "Z")
+            note = f"，{wait:g} 秒後" if wait > 0 else ""
+            t = self._transition(c, t, S.QUEUED, actor, f"自動重試（第 {t['attempt_count'] + 1} 次{note}）",
+                                 assigned_device_id=None, current_attempt_id=None, retry_at=at if wait > 0 else None)
         return t
+
+    @staticmethod
+    def retry_delay(t: dict, error_code: str) -> float:
+        """照 Adapter 的重試政策算要等幾秒（第幾次重試＝已經跑過幾次）"""
+        spec = adapters.get(t["type"])
+        policy = spec.retry if spec else adapters.RetryPolicy()
+        return policy.delay(max(1, int(t["attempt_count"])), error_code)
 
     @staticmethod
     def should_retry(t: dict, error_code: str) -> bool:
