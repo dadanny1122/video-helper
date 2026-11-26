@@ -39,6 +39,7 @@ WORKER_DEFAULTS = {
     "download_dir": "",                  # V3：節點下載的影片放哪（空白＝「下載\VideoHelper 節點」）
     "keep_after_return": False,          # V4：傳回 Master 驗證成功後，節點這份要不要留著（預設刪，D3）
     "named_resources": {},               # APEX（借 Dask）：自己取名字的資源，例 {"gpu": 1, "pysam": 1}
+    "pysam_python": "",                  # APEX sim.pvwatts：裝了 PySAM 的 python.exe（空白＝這台不跑模擬）
     "lang": "auto",                      # 英文版：節點小視窗的語言 auto（跟 Windows）／zh／en
 }
 _PROFILE = None                          # `--worker --profile 名稱`：同一台電腦開好幾個獨立節點

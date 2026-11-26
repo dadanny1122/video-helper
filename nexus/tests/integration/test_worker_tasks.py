@@ -128,3 +128,32 @@ def test_worker_checks_manifest_and_version(m, agents):
     a.executor.versions = {"test.echo": "2.0"}
     assert a.executor.check(msg) == "ADAPTER_UNSUPPORTED"
     assert a.capabilities()["adapters"] == {"test.echo": "2.0"}           # 心跳也照實回報 → 排程器會排除它
+
+
+def test_sim_pvwatts_end_to_end(m, agents, monkeypatch):
+    """APEX：Master 派 sim.pvwatts → 節點抓氣象（假的 NASA POWER）→ 子程序跑 PySAM → Master 驗證 → SUCCEEDED"""
+    import json
+    import sys
+
+    pytest.importorskip("PySAM.Pvwattsv8")
+    from nexus.sim import power
+    from nexus.tests.unit.test_sim_pvwatts import fake_power
+    from nexus.worker import executor
+    monkeypatch.setattr(power, "download", lambda lat, lon, year, opener=None: fake_power(year, lat, lon))
+    monkeypatch.setattr(executor, "sandbox_status", lambda: {"isolation": "basic"})     # Linux 沒有 Job Object：跳過沙箱偵測
+    a = agents("pc-sim", pysam_python=sys.executable)
+    did = a.store.state["device_id"]
+    assert wait_for(lambda: "sim.pvwatts" in (m.registry.tr.capabilities(did) or {}).get("adapters", {}), 10)
+    t = m.tasks.create("sim.pvwatts", {"lat": 25.04, "lon": 121.56, "year": 2023, "capacity_kw": 500})
+    assert wait_for(lambda: st(m, t["task_id"]) in ("SUCCEEDED", "FAILED"), 60), st(m, t["task_id"])
+    cur = m.tasks.get(t["task_id"])
+    assert cur["status"] == "SUCCEEDED", cur["error_message"]
+    r = json.loads(cur["result_json"])
+    assert 400_000 < r["annual_kwh"] < 1_250_000 and r["weather"]["source"] == "NASA POWER"
+
+
+def test_sim_pvwatts_not_offered_without_pysam_python(m, agents, monkeypatch):
+    from nexus.worker import executor
+    monkeypatch.setattr(executor, "sandbox_status", lambda: {"isolation": "basic"})
+    a = agents("pc-nosim")
+    assert "sim.pvwatts" not in m.registry.tr.capabilities(a.store.state["device_id"])["adapters"]

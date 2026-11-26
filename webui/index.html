@@ -254,6 +254,11 @@
             <select id="nf-q"><option value="best">最高</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></div></div>
         <div class="srow nf" data-for="test.file"><div><b>檔案大小（MB）</b></div><input id="nf-size" type="number" min="1" max="2048" value="20" class="search num"></div>
         <div class="srow nf" data-for="video.download test.file"><div><b>下載完傳回這台</b><div class="muted small">不勾＝檔案留在節點那台</div></div><label class="sw"><input type="checkbox" id="nf-ret" checked><span></span></label></div>
+        <div class="srow nf" data-for="sim.pvwatts"><div><b>位置（緯度、經度）、年份</b><div class="muted small">例：台北 25.04, 121.56；年份要是過完的一整年</div></div>
+          <div class="sbtns"><input id="nf-lat" type="number" step="0.0001" min="-90" max="90" value="25.04" class="search num"><input id="nf-lon" type="number" step="0.0001" min="-180" max="180" value="121.56" class="search num"><input id="nf-year" type="number" min="2001" max="2100" value="2025" class="search num"></div></div>
+        <div class="srow nf" data-for="sim.pvwatts"><div><b>容量（kW）、傾角、方位角、損失（%）</b><div class="muted small">方位角 180＝朝南；損失 PVWatts 預設 14</div></div>
+          <div class="sbtns"><input id="nf-cap" type="number" step="0.1" min="0.1" value="1000" class="search num"><input id="nf-tilt" type="number" min="0" max="90" value="20" class="search num"><input id="nf-az" type="number" min="0" max="360" value="180" class="search num"><input id="nf-loss" type="number" min="-5" max="99" value="14" class="search num"></div></div>
+        <div class="srow nf" data-for="sim.pvwatts"><div><b>架設方式</b></div><select id="nf-arr"><option value="0">固定（開放式支架）</option><option value="1">固定（屋頂）</option><option value="2">單軸追日</option><option value="3">單軸追日（回溯）</option><option value="4">雙軸追日</option></select></div>
         <div class="srow nf" data-for="test.echo"><div><b>文字</b></div><input id="nf-text" class="search wide" value="哈囉 Nexus"></div>
         <div class="srow nf" data-for="test.sleep"><div><b>等幾秒</b></div><input id="nf-sec" type="number" min="1" max="600" value="10" class="search num"></div>
         <div class="srow nf" data-for="test.fail"><div><b>失敗原因</b></div><select id="nf-code"><option>ADAPTER_ERROR</option><option>RESOURCE_LIMIT</option><option>INVALID_INPUT</option></select></div>

@@ -1,0 +1,4 @@
+# 只給 nexus.yml 的 Windows 測試用（不進 EXE）：sim.pvwatts 在 Job Object 沙箱裡真的跑 PySAM
+# 換版本：pip download --no-deps --only-binary :all: --platform win_amd64 --python-version 3.12 nrel-pysam==X → sha256sum
+nrel-pysam==7.1.1.post1 \
+    --hash=sha256:e135acafd1102fc6c7f1101657d2479f3d6e60dc895e0ef7a8c89df55998feaa

@@ -919,7 +919,24 @@
   "例：gpu=1, pysam=1（沒有就空白）": "e.g. gpu=1, pysam=1 (leave blank if none)",
   "已存：沒有": "Saved: none",
   "強隔離：可以用（還沒啟用）": "strong isolation: available (not enabled yet)",
-  "；強隔離：可以用（還沒啟用）": "; strong isolation: available (not enabled yet)"
+  "；強隔離：可以用（還沒啟用）": "; strong isolation: available (not enabled yet)",
+  "位置（緯度、經度）、年份": "Location (latitude, longitude), year",
+  "例：台北 25.04, 121.56；年份要是過完的一整年": "e.g. Taipei 25.04, 121.56; the year must be fully over",
+  "容量（kW）、傾角、方位角、損失（%）": "Capacity (kW), tilt, azimuth, losses (%)",
+  "方位角 180＝朝南；損失 PVWatts 預設 14": "Azimuth 180 = facing south; PVWatts default losses are 14",
+  "架設方式": "Mounting",
+  "固定（開放式支架）": "Fixed (open rack)",
+  "固定（屋頂）": "Fixed (roof mount)",
+  "單軸追日": "1-axis tracking",
+  "單軸追日（回溯）": "1-axis tracking (backtracking)",
+  "雙軸追日": "2-axis tracking",
+  "year 要是已經過完的年份（NASA POWER 要整年的資料）": "year must be a finished year (NASA POWER needs a full year of data)",
+  "用 PySAM pvwattsv8 算太陽光電年發電量（氣象：NASA POWER 逐時；節點要設定 PySAM 的 Python）": "Annual solar PV output with PySAM pvwattsv8 (weather: NASA POWER hourly; the node needs a Python with PySAM)",
+  "PySAM 的 Python": "Python with PySAM",
+  "沒設定：這台不跑模擬": "Not set: this node won't run simulations",
+  "選 python.exe": "Choose python.exe",
+  "太陽光電模擬（PySAM）": "Solar PV simulation (PySAM)",
+  "（用快取）": " (cached)"
  },
  "patterns": [
   [
@@ -2077,6 +2094,30 @@
   [
    "；資源：{a}",
    "; resources: {a}"
+  ],
+  [
+   "可以用（PySAM {a}）",
+   "OK (PySAM {a})"
+  ],
+  [
+   "{a}月 {b}",
+   "{a}: {b}"
+  ],
+  [
+   "年發電量 {a} MWh（每 kW {b} kWh，容量因數 {c}%）",
+   "Annual output {a} MWh ({b} kWh per kW, capacity factor {c}%)"
+  ],
+  [
+   "各月（MWh）：{a}",
+   "Monthly (MWh): {a}"
+  ],
+  [
+   "氣象：{a}",
+   "Weather: {a}"
+  ],
+  [
+   "日照缺值 {a} 小時（當 0 算）",
+   "{a} hours of missing sunlight data (counted as 0)"
   ]
  ],
  "ignore": [

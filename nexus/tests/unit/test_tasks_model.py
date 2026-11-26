@@ -56,12 +56,16 @@ def test_on_worker_states_can_go_unknown_and_cancellable_ok():
 # ---------- Adapter ----------
 def test_only_known_adapters_and_no_shell():
     # V3 起多一個 video.download（有副作用：連網＋寫檔，只在沙箱跑）；永遠不會有 shell／python 類
-    assert set(adapters.ADAPTERS) == {"test.echo", "test.sleep", "test.fail", "test.file", "video.download"}
+    # APEX 多 sim.pvwatts（固定的 PySAM 模擬，只收數字參數）
+    assert set(adapters.ADAPTERS) == {"test.echo", "test.sleep", "test.fail", "test.file", "video.download", "sim.pvwatts"}
     for name, spec in adapters.ADAPTERS.items():
-        want = {"video.download": "network,files", "test.file": "test-file"}.get(name, "none")   # V4 test.file：只寫測試檔
+        want = {"video.download": "network,files", "test.file": "test-file", "sim.pvwatts": "compute"}.get(name, "none")
         assert spec.side_effects == want
         assert not any(w in name for w in ("shell", "python", "powershell", "cmd", "exec"))
     assert adapters.needs_sandbox("video.download") and not adapters.needs_sandbox("test.file")
+    assert adapters.needs_sandbox("sim.pvwatts")
+    # 受控運算只收數字：沒有任何字串參數（字串才可能夾帶程式碼、路徑、網址）
+    assert all(p.type is not str for p in adapters.get("sim.pvwatts").params.values())
 
 
 def test_video_download_params_checked_on_master():

@@ -15,6 +15,7 @@ on:
       - 'ruff.toml'
       - 'pytest.ini'
       - '.github/workflows/nexus.yml'
+      - '.github/sim/**'
   pull_request:
     paths:
       - 'nexus/**'
@@ -49,6 +50,8 @@ jobs:
           python-version: '3.12'
       - run: pip install --require-hashes -r requirements-dev.txt
       - run: pip install --require-hashes -r requirements.txt
+      - name: PySAM（只給 sim.pvwatts 測試；不進 EXE）
+        run: pip install --require-hashes --no-deps -r .github/sim/requirements-pysam.txt
       - name: 整合與安全測試
         shell: pwsh
         run: |

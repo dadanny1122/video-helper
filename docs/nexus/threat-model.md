@@ -118,3 +118,17 @@ V2 的測試 Adapter 不開子程序、不碰檔案、不連網，所以**還不
 | T45 | 節點關機就把傳回中的任務判成「狀態不明」、或節點關閉時偷偷再開傳回 | UPLOADING 離線不判 UNKNOWN（撤銷才判）；節點關閉後路上回來的 inbox 訊息不處理 | `test_at031_worker_restart_resumes`、`test_d7_expire_then_retry_return` |
 
 **V4 接受的殘餘風險**：SHA-256 只保證「收到的跟節點送的一樣」，不保證影片內容安全（來源仍只限 `sites.json`）；檔案傳回時在兩台各存一份一段時間；同一台電腦測試測不出真實網路斷線（用程式模擬）。
+
+
+## 9. 受控運算：sim.pvwatts（v1.54.0，nexus 0.8.0）
+
+| 威脅 | 對策 | 驗證 |
+|---|---|---|
+| 任務夾帶程式碼 | Adapter 寫死；參數全部是數字（沒有字串參數）；不認得的參數拒絕 | `unit/test_tasks_model.py::test_only_known_adapters_and_no_shell`、`unit/test_sim_pvwatts.py::test_params` |
+| 叫節點連到別的地方（SSRF） | 氣象網址寫死 `power.larc.nasa.gov`、只走 https、不跟轉址、解析後必須是公開 IP；參數只能改經緯度和年份 | `test_url_is_fixed_host_and_params` |
+| 模擬程序被打進去後連網 | 子程序一開始就換掉 `connect`／`connect_ex`／`sendto`／`bind`／`create_connection`／`getaddrinfo`；跑在 Job Object 裡 | `test_child_has_no_network`（`_socket` 低階繞過仍是 §8 G3 的已知缺口） |
+| 節點回報假結果 | Master 檢查格式、各月加總＝全年（1% 內）、全年 ≤ 容量×8760×1.05 | `test_master_verify_physical_limit` |
+| 惡意氣象資料 | 只認得 NASA POWER JSON 格式、40 MB 上限、缺值超過 5% 拒絕 | `test_missing_values` |
+
+**殘餘風險**：用的是節點主人自己安裝的 Python 和 PySAM（不在我們的供應鏈控制內）；隔離程度跟下載一樣是基本沙箱（§8）。
+

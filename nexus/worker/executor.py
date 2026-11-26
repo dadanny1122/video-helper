@@ -114,6 +114,36 @@ def run_video_download(params, ctx):
     return {"files": files, **{k: v for k, v in r.result.items() if k in ("title", "site", "id", "height")}}
 
 
+def run_sim_pvwatts(params, ctx):
+    """APEX：PySAM pvwattsv8。氣象在這個程序抓（只准 NASA POWER），模擬在沙箱子程序裡跑（不能連網）"""
+    from nexus.sim import power, pvwatts
+    cfg = getattr(ctx, "cfg", None) or {}
+    py = cfg.get("pysam_python") if hasattr(cfg, "get") else ""
+    ok, why = pvwatts.probe_python(py or "")
+    if not ok:
+        raise AdapterFailure("SANDBOX_UNAVAILABLE", f"這台不能跑 PySAM：{why}")
+    base = os.path.dirname(cfg.path) if getattr(cfg, "path", None) else mode_dir("worker")
+    ctx.check()
+    ctx.progress(0.05)
+    try:
+        res, cached = power.load(float(params["lat"]), float(params["lon"]), int(params["year"]), os.path.join(base, "sim_cache"))
+    except power.WeatherError as e:
+        raise AdapterFailure(e.code, e.message) from e
+    ctx.check()
+    ctx.progress(0.4)
+    try:
+        r = pvwatts.run(dict(params), res, py, os.path.join(base, "sandbox"), cancel=ctx.cancel,
+                        timeout=max(1.0, ctx.deadline - time.monotonic()), use_job=sys.platform == "win32")
+    except pvwatts.SimError as e:
+        if e.code == "CANCELLED":
+            raise Cancelled() from e
+        if e.code == "TIMED_OUT":
+            raise TimedOut() from e
+        raise AdapterFailure(e.code, e.message) from e
+    ctx.progress(1.0)
+    return {**r, "weather": {"source": "NASA POWER", "cached": cached, "missing_hours": res.get("missing_hours", 0)}}
+
+
 def node_download_dir(cfg) -> str:
     return (cfg.get("download_dir") if hasattr(cfg, "get") else "") or default_download_dir(worker_profile())
 
@@ -145,8 +175,21 @@ def run_test_file(params, ctx):
 
 
 RUNNERS = {"test.echo": run_echo, "test.sleep": run_sleep, "test.fail": run_fail, "test.file": run_test_file,
-           "video.download": run_video_download}
-SANDBOXED = {"video.download"}          # 要沙箱的任務：這台的沙箱不能用就不宣稱支援（D6，不降級）
+           "video.download": run_video_download, "sim.pvwatts": run_sim_pvwatts}
+SANDBOXED = {"video.download", "sim.pvwatts"}     # 要沙箱的任務：這台的沙箱不能用就不宣稱支援（D6，不降級）
+
+
+def offered_versions(cfg=None) -> dict:
+    """這台宣稱支援哪些任務：沙箱不能用 → 拿掉要沙箱的；sim.pvwatts 還要設定好裝了 PySAM 的 Python"""
+    versions = {n: a.version for n, a in adapters.ADAPTERS.items() if n in RUNNERS}
+    if sandbox_status().get("isolation") != "basic":
+        versions = {n: v for n, v in versions.items() if n not in SANDBOXED}
+    if "sim.pvwatts" in versions:
+        from nexus.sim.pvwatts import probe_python
+        py = cfg.get("pysam_python") if cfg is not None and hasattr(cfg, "get") else ""
+        if not probe_python(py or "")[0]:
+            versions.pop("sim.pvwatts")
+    return versions
 
 
 def sandbox_status() -> dict:
@@ -196,11 +239,8 @@ def _run_hardening_probe(probe_dir: str):
 class Executor:
     def __init__(self, agent, versions: dict | None = None, poll_wait: int = 25):
         self.agent = agent
-        if versions is None:
-            versions = {n: a.version for n, a in adapters.ADAPTERS.items() if n in RUNNERS}
-            if sandbox_status().get("isolation") != "basic":
-                versions = {n: v for n, v in versions.items() if n not in SANDBOXED}
-        self.versions = versions
+        self._auto_versions = versions is None
+        self.versions = offered_versions(getattr(agent, "cfg", None)) if versions is None else versions
         self.poll_wait = poll_wait
         self.running = {}                          # task_id → {"attempt_id", "cancel": Event, "thread", "type", "progress"}
         self.uploads = {}                          # V4：傳回中的 task_id → 同上（不佔下載名額）
@@ -211,6 +251,13 @@ class Executor:
         self._client_key = None
 
     # ---- 對外 ----
+    def refresh_versions(self):
+        """節點設定改了（例如 PySAM 的 Python）→ 重新決定宣稱支援哪些任務，下一次心跳就生效"""
+        if self._auto_versions:
+            from nexus.sim import pvwatts
+            pvwatts._PROBE.clear()
+            self.versions = offered_versions(getattr(self.agent, "cfg", None))
+
     def start(self):
         if self._thread and self._thread.is_alive():
             return
