@@ -127,6 +127,8 @@ EXE 裡的密碼學元件：`cryptography`（v1.28.4 起，給之後的「節點
 
 - **電腦版一鍵更新（v1.47.0 起，`vh_updater.py`）**：只有你按「⬆ 更新」才會換（可選先在背景下載好）。只從 `api.github.com`、`github.com`、`*.githubusercontent.com` 下載（轉址到別的網站就停止）；換檔前三關核對：① 大小和 SHA-256 等於發布頁上 GitHub 記的指紋 ② GitHub 查得到本專案 `build.yml` 對這個指紋的打包簽章紀錄（attestation）③ 發布頁的 `components.lock.json`（自己的指紋也要對）寫的 EXE 指紋一樣。任何一關不過就刪掉、不換。新版 60 秒內沒回報「啟動成功」就由舊版小幫手換回舊版。這不是完整的 Sigstore 密碼學驗證，前提是 GitHub 帳號沒被盜（跟手動從發布頁下載一樣），但多了指紋和簽章紀錄比對。自動測試：`.github/updater_test.py`（各種核對失敗都不換）、`.github/update_e2e.py`（Windows 真的 EXE：正常更新、新版打不開 → 換回）。
 
+- **意見回饋（電腦版 v1.49.0、腳本 v3.26.0 起）**：只有你按「送出」才會連到開發者的 Cloudflare Worker（`*.workers.dev`），送出內容只有類型、你寫的文字（網址會先刪掉）、版本、介面語言；Worker 轉到 Discord 時不帶 IP、不會 @ 任何人。防灌水只存「IP＋日期」的 SHA-256，48 小時內自動刪。回饋代碼是 Worker 用 Ed25519 簽的（私鑰只在 Cloudflare KV、自己產生），電腦版和腳本用公鑰驗；腳本的代碼只存在暴力猴裡，網站的 localStorage 拿不到。測試：`.github/feedback_test.py`、`.github/feedback_test.js`（Worker：轉送、不 @ 人、不存 IP、限流、重複、簽章、身分組）、`.github/userscript_feedback_test.js`。
+
 ## 5. 自動安全測試（每次發布都跑，結果公開）
 
 在 GitHub 的「Actions」頁面可以看到每次的結果：

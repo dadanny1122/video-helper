@@ -1,0 +1,110 @@
+[
+ {
+  "text": "這個工具很好用但是希望可以多一點",
+  "cjk": 16,
+  "words": 0,
+  "ok": true
+ },
+ {
+  "text": "這個工具很好用但是希望可以多",
+  "cjk": 14,
+  "words": 0,
+  "ok": false
+ },
+ {
+  "text": "這個工具很好用，但是希望可以多一。",
+  "cjk": 15,
+  "words": 0,
+  "ok": false
+ },
+ {
+  "text": "好好好好好好好好好好好好好好好好好好好",
+  "cjk": 1,
+  "words": 0,
+  "ok": false
+ },
+ {
+  "text": "好好好好好這個工具真的很好用耶謝謝你",
+  "cjk": 18,
+  "words": 0,
+  "ok": true
+ },
+ {
+  "text": "I really like this tool because it blocks ads well and the download button is simple to use every day",
+  "cjk": 0,
+  "words": 20,
+  "ok": true
+ },
+ {
+  "text": "I really like this tool because it blocks ads well and the download button is simple to use",
+  "cjk": 0,
+  "words": 18,
+  "ok": false
+ },
+ {
+  "text": "good good good good good good good good good good good good good good good good good good good good",
+  "cjk": 0,
+  "words": 1,
+  "ok": false
+ },
+ {
+  "text": "看 https://www.pornhub.com/view_video.php?viewkey=abcdefghijklmnopqrstuvwxyz 這個網址都抓不到影片",
+  "cjk": 11,
+  "words": 0,
+  "ok": false
+ },
+ {
+  "text": "下載 XVideos 的影片時 progress bar 一直卡在 99% 不會動請幫忙",
+  "cjk": 16,
+  "words": 4,
+  "ok": true
+ },
+ {
+  "text": "It's great, don't change the panic key please, it saves me every single time my roommate walks in!!",
+  "cjk": 0,
+  "words": 18,
+  "ok": false
+ },
+ {
+  "text": "",
+  "cjk": 0,
+  "words": 0,
+  "ok": false
+ },
+ {
+  "text": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+  "cjk": 0,
+  "words": 0,
+  "ok": false
+ },
+ {
+  "text": "ありがとうございます、とても便利なツールです。毎日使っています",
+  "cjk": 29,
+  "words": 0,
+  "ok": true
+ },
+ {
+  "text": "LONG",
+  "repeat": 1001,
+  "unit": "好",
+  "cjk": 1,
+  "words": 0,
+  "ok": false,
+  "too_long": true
+ },
+ {
+  "text": "LONG",
+  "repeat": 400,
+  "unit": "好用",
+  "cjk": 800,
+  "words": 0,
+  "ok": true,
+  "too_long": false
+ },
+ {
+  "text": "下載 XVideos 的影片時 progress bar 一直卡在 99% 不會動",
+  "cjk": 13,
+  "words": 4,
+  "ok": false
+ }
+]

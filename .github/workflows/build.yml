@@ -20,6 +20,7 @@ on:
       - 'vh_extras.py'
       - '.github/extras_test.py'
       - '.github/extras_app_test.py'
+      - 'vh_feedback.py'
       - '.github/updater_test.py'
       - '.github/update_e2e.py'
       - 'requirements.txt'
@@ -208,7 +209,7 @@ jobs:
           --add-binary "ffmpeg_bin/ffmpeg.exe;ffmpeg" --add-binary "ffmpeg_bin/ffprobe.exe;ffmpeg"
           --add-data "nexus/net/sites.json;nexus/net"
           --add-data "webui;webui" --add-data "CHANGELOG.md;."
-          --hidden-import webui --hidden-import webui.i18n --hidden-import vh_updater --hidden-import vh_extras --hidden-import webview.platforms.winforms --hidden-import webview.platforms.edgechromium
+          --hidden-import webui --hidden-import webui.i18n --hidden-import vh_updater --hidden-import vh_extras --hidden-import vh_feedback --hidden-import webview.platforms.winforms --hidden-import webview.platforms.edgechromium
           --exclude-module webview.platforms.gtk --exclude-module webview.platforms.qt --exclude-module webview.platforms.cocoa
           --exclude-module webview.platforms.android --exclude-module webview.platforms.cef --exclude-module webview.platforms.mshtml
           --exclude-module PIL._avif --exclude-module PIL.AvifImagePlugin
@@ -235,6 +236,7 @@ jobs:
           PYTHONIOENCODING: utf-8
         run: |
           python -I .github/updater_test.py
+          python -I .github/feedback_test.py
           python -I .github/update_e2e.py dist/VideoHelper.exe
 
       # S1：components.lock.json＝這版每個元件的版本＋SHA-256（電腦版、腳本、Nexus、ffmpeg、whisper、模型、Python 套件）

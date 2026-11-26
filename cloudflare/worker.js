@@ -6,12 +6,18 @@
 //   /排行榜 → 前 10 名＋可下載的網站
 //   /狀態   → 各個機器人最後一次跑的時間、成功或失敗
 //   /天氣   → 某個地點、某個時間會不會下雨（讀 GitHub 上的 weather_state.json）
+//   /回饋者 → 輸入回饋代碼，拿「回饋者」身分組
+//   POST /feedback（電腦版、腳本送意見回饋）、GET /feedback/pubkey（簽名公鑰）
 //
 // 要在 Cloudflare 設定的變數（Settings → Variables and Secrets，全部選 Secret）：
 //   DISCORD_PUBLIC_KEY  Discord 開發者網站 → General Information → Public Key
 //   DISCORD_APP_ID      Discord 開發者網站 → General Information → Application ID
 //   DISCORD_BOT_TOKEN   Discord 開發者網站 → Bot → Reset Token（只在註冊指令時用）
 //   GITHUB_TOKEN        GitHub 的 fine-grained token（只給 video-helper 的 Actions 讀寫）
+//   ── 意見回饋（v1.49.0，docs/infra/04-意見回饋與回饋獎勵規格.md）──
+//   DISCORD_FEEDBACK_WEBHOOK  Discord #意見回饋 頻道的 Webhook 網址
+//   GUILD_ID / FEEDBACK_ROLE_ID  你的伺服器 ID、「回饋者」身分組 ID（/回饋者 指令給身分組用）
+//   FEEDBACK_KV（KV 綁定，不是 Secret）：記防灌水次數、重複內容、簽名金鑰（第一次用自己產生，私鑰只在這裡）
 //
 // 第一次設定好、或改了指令之後，用瀏覽器打開「你的 Worker 網址/register」註冊指令
 
@@ -30,8 +36,133 @@ const reply = (embed, flags) => json({ type: 4, data: { embeds: [{ color: 0xF57C
 const opt = (i, n) => ((i.data.options || []).find(o => o.name === n) || {}).value;
 const midOf = r => r.spot_buy && r.spot_sell ? (r.spot_buy + r.spot_sell) / 2 : (r.cash_buy + r.cash_sell) / 2;
 
+// FB-RULE-START 意見回饋字數規則（跟電腦版 vh_feedback.py、腳本、新介面、Worker 同一套；.github/feedback_test.* 會比對）
+const FB_CJK = /[぀-ヿ㐀-䶿一-鿿가-힯豈-﫿]/;
+const FB_URL = /(?:https?:\/\/|www\.)\S+/gi;
+const FB_WORD = /[A-Za-z0-9]+(?:'[A-Za-z]+)?/g;
+const FB_NEED_CJK = 16, FB_NEED_WORDS = 20, FB_MAX = 1000;
+function fbRuns(items, keep) {
+  let n = 0;
+  for (let i = 0; i < items.length;) {
+    let j = i;
+    while (j < items.length && items[j] === items[i]) j++;
+    if (!keep || keep(items[i])) n += j - i > 5 ? 1 : j - i;
+    i = j;
+  }
+  return n;
+}
+function fbRule(text) {
+  const raw = text == null ? '' : String(text);
+  const clean = raw.replace(FB_URL, ' ');
+  const cjk = fbRuns(Array.from(clean), (c) => FB_CJK.test(c));
+  const words = fbRuns((clean.match(FB_WORD) || []).map((w) => w.toLowerCase()));
+  const tooLong = Array.from(raw).length > FB_MAX;
+  return { cjk, words, too_long: tooLong, ok: (cjk >= FB_NEED_CJK || words >= FB_NEED_WORDS) && !tooLong };
+}
+function fbMask(text) { return String(text).replace(FB_URL, '[網址已移除]'); }
+// FB-RULE-END
+
+// ---- 意見回饋 ----
+const FB_KINDS = { suggest: '💡 建議', bug: '🐞 問題', praise: '👍 稱讚', other: '💬 其他' };
+const FB_PER_HOUR = 3, FB_PER_DAY = 10, FB_DUP_DAYS = 30;           // F2
+const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64u = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - s.length % 4) % 4)), (c) => c.charCodeAt(0));
+const sha256hex = async (t) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)))].map((b) => b.toString(16).padStart(2, '0')).join('');
+const fbJson = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json; charset=utf-8' } });
+
+async function fbKeys(env) {
+  // 簽名金鑰：第一次用時自己產生、存在 KV（私鑰不離開 Cloudflare，也不會經過任何對話或 GitHub）
+  let k = await env.FEEDBACK_KV.get('fb:key', 'json');
+  if (!k) {
+    const pair = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+    k = { priv: b64u(await crypto.subtle.exportKey('pkcs8', pair.privateKey)), pub: b64u(await crypto.subtle.exportKey('raw', pair.publicKey)) };
+    await env.FEEDBACK_KV.put('fb:key', JSON.stringify(k));
+    k = (await env.FEEDBACK_KV.get('fb:key', 'json')) || k;          // 兩個請求同時產生時，以先存進去的為準
+  }
+  return k;
+}
+
+async function fbSign(env, payload) {
+  const k = await fbKeys(env);
+  const key = await crypto.subtle.importKey('pkcs8', unb64u(k.priv), { name: 'Ed25519' }, false, ['sign']);
+  const p = b64u(new TextEncoder().encode(JSON.stringify(payload)));
+  return `VH1.${p}.${b64u(await crypto.subtle.sign({ name: 'Ed25519' }, key, new TextEncoder().encode(p)))}`;
+}
+
+async function fbVerify(env, token) {
+  try {
+    const [tag, p, s] = String(token || '').trim().split('.');
+    if (tag !== 'VH1' || !p || !s || token.length > 400) return null;
+    const k = await fbKeys(env);
+    const key = await crypto.subtle.importKey('raw', unb64u(k.pub), { name: 'Ed25519' }, false, ['verify']);
+    if (!await crypto.subtle.verify({ name: 'Ed25519' }, key, unb64u(s), new TextEncoder().encode(p))) return null;
+    const d = JSON.parse(new TextDecoder().decode(unb64u(p)));
+    return d.v === 1 && /^[0-9a-f]{16}$/.test(d.id) ? d : null;
+  } catch (e) { return null; }
+}
+
+async function handleFeedback(req, env) {
+  if (!env.FEEDBACK_KV || !env.DISCORD_FEEDBACK_WEBHOOK) return fbJson({ ok: false, msg: '意見回饋還沒設定好，等開發者設定' }, 503);
+  const raw = await req.text();
+  if (raw.length > 8000) return fbJson({ ok: false, msg: '內容太長' }, 413);
+  let b;
+  try { b = JSON.parse(raw); } catch (e) { return fbJson({ ok: false, msg: '格式不對' }, 400); }
+  const kind = String(b.kind || ''), text = typeof b.text === 'string' ? b.text : '';
+  const app = b.app === 'script' ? '瀏覽器腳本' : b.app === 'desktop' ? '電腦版' : '';
+  const ver = /^[\w.\-]{1,20}$/.test(String(b.ver || '')) ? String(b.ver) : '?';
+  const lang = b.lang === 'en' ? 'en' : 'zh';
+  if (!FB_KINDS[kind] || !app) return fbJson({ ok: false, msg: '類型不對' }, 400);
+  const r = fbRule(text);
+  if (!r.ok) return fbJson({ ok: false, msg: r.too_long ? `太長了（最多 ${FB_MAX} 字）` : `字數不夠：中文要 ${FB_NEED_CJK} 字以上，或英文 ${FB_NEED_WORDS} 個單字以上` }, 400);
+  // 防灌水：同一個 IP 每小時 3 則、每天 10 則（只存雜湊，24～48 小時自動刪）；一樣的內容 30 天不收
+  const now = new Date(), day = now.toISOString().slice(0, 10), hour = now.toISOString().slice(0, 13);
+  const who = await sha256hex((req.headers.get('CF-Connecting-IP') || '') + '|' + day);
+  const hKey = `rl:h:${who}:${hour}`, dKey = `rl:d:${who}:${day}`;
+  const [h, d] = await Promise.all([env.FEEDBACK_KV.get(hKey), env.FEEDBACK_KV.get(dKey)]);
+  if (+h >= FB_PER_HOUR || +d >= FB_PER_DAY) return fbJson({ ok: false, msg: `送太多次了：每小時最多 ${FB_PER_HOUR} 則、每天最多 ${FB_PER_DAY} 則，晚一點再寫` }, 429);
+  const masked = fbMask(text);
+  const dup = `dup:${await sha256hex(masked.replace(/\s+/g, ' ').trim().toLowerCase())}`;
+  if (await env.FEEDBACK_KV.get(dup)) return fbJson({ ok: false, msg: '這段內容已經送過了' }, 409);
+  const id = [...crypto.getRandomValues(new Uint8Array(8))].map((x) => x.toString(16).padStart(2, '0')).join('');
+  const post = await fetch(env.DISCORD_FEEDBACK_WEBHOOK, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'Video Helper 意見回饋', allowed_mentions: { parse: [] },
+      embeds: [{ title: FB_KINDS[kind], description: masked.slice(0, 3900), color: 0x8B7CFF,
+                 footer: { text: `${app} v${ver}｜${lang === 'en' ? 'English' : '中文'}｜#${id.slice(0, 6)}` }, timestamp: now.toISOString() }] }),
+  });
+  if (!post.ok) return fbJson({ ok: false, msg: `Discord 沒收到（${post.status}），等一下再試` }, 502);
+  await Promise.all([
+    env.FEEDBACK_KV.put(hKey, String(+h + 1), { expirationTtl: 7200 }),
+    env.FEEDBACK_KV.put(dKey, String(+d + 1), { expirationTtl: 172800 }),
+    env.FEEDBACK_KV.put(dup, '1', { expirationTtl: FB_DUP_DAYS * 86400 }),
+  ]);
+  const k = await fbKeys(env);
+  return fbJson({ ok: true, token: await fbSign(env, { v: 1, id, t: Math.floor(now.getTime() / 1000) }), pub: k.pub });
+}
+
+async function cmdFeedbackRole(i, env) {
+  const eph = (content) => json({ type: 4, data: { content, flags: 64 } });
+  if (!env.FEEDBACK_KV || !env.FEEDBACK_ROLE_ID) return eph('回饋者身分組還沒設定好，等開發者設定。');
+  const user = (i.member && i.member.user) || i.user;
+  if (!i.guild_id || !user) return eph('請在伺服器的頻道裡打這個指令（不能用私訊）。');
+  if (env.GUILD_ID && i.guild_id !== env.GUILD_ID) return eph('這個伺服器不能用。');
+  const d = await fbVerify(env, opt(i, 'code'));
+  if (!d) return eph('❌ 代碼不對。請到電腦版「💬 意見回饋」或腳本盾牌面板複製完整的代碼（VH1. 開頭）。');
+  const usedBy = await env.FEEDBACK_KV.get(`used:${d.id}`);
+  if (usedBy && usedBy !== user.id) return eph('❌ 這組代碼已經被別人用過了。');
+  const r = await fetch(`https://discord.com/api/v10/guilds/${i.guild_id}/members/${user.id}/roles/${env.FEEDBACK_ROLE_ID}`, {
+    method: 'PUT', headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, 'X-Audit-Log-Reason': 'Video Helper feedback reward' } });
+  if (!r.ok) return eph(`給身分組失敗（${r.status}）：請開發者確認機器人的身分組排在「回饋者」上面、而且有「管理身分組」權限。`);
+  await env.FEEDBACK_KV.put(`used:${d.id}`, user.id);
+  return eph('🎭 你拿到「回饋者」身分組了，謝謝你的意見！');
+}
+
 // 指令清單（英文名字給程式用，zh-TW 是 Discord 上看到的名字）
 const COMMANDS = [
+  { name: 'feedback-role', name_localizations: { 'zh-TW': '回饋者' }, type: 1,
+    description: 'Get the Feedback role with your feedback code', description_localizations: { 'zh-TW': '輸入意見回饋拿到的代碼，領「回饋者」身分組' },
+    options: [{ type: 3, name: 'code', name_localizations: { 'zh-TW': '代碼' }, description: 'Your code (starts with VH1.)',
+                description_localizations: { 'zh-TW': '回饋代碼（VH1. 開頭）' }, required: true, max_length: 400 }] },
   { name: 'snapshot', name_localizations: { 'zh-TW': '快照' }, type: 1,
     description: 'Take a snapshot of the live dashboard now', description_localizations: { 'zh-TW': '馬上截一張「即時介面」的圖（約 1～2 分鐘）' } },
   { name: 'exchange', name_localizations: { 'zh-TW': '換匯' }, type: 1,
@@ -246,7 +377,16 @@ export default {
         headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(COMMANDS),
       });
-      return text(r.ok ? '✅ 指令註冊成功！回 Discord 打 / 看看：快照、換匯、匯率、排行榜、狀態、天氣' : `❌ 註冊失敗（${r.status}）：${await r.text()}`);
+      return text(r.ok ? '✅ 指令註冊成功！回 Discord 打 / 看看：快照、換匯、匯率、排行榜、狀態、天氣、回饋者' : `❌ 註冊失敗（${r.status}）：${await r.text()}`);
+    }
+    // 意見回饋（電腦版、腳本送來的；不是 Discord，不驗 Discord 簽章）
+    if (url.pathname === '/feedback/pubkey' && req.method === 'GET') {
+      if (!env.FEEDBACK_KV) return fbJson({ ok: false }, 503);
+      return fbJson({ ok: true, pub: (await fbKeys(env)).pub });
+    }
+    if (url.pathname === '/feedback') {
+      if (req.method !== 'POST') return fbJson({ ok: false, msg: '要用 POST' }, 405);
+      try { return await handleFeedback(req, env); } catch (e) { console.log('feedback error', e && e.stack); return fbJson({ ok: false, msg: '出錯了，等一下再試' }, 500); }
     }
     if (req.method !== 'POST') return text('🤖 Video Helper 指令機器人：運作中');
 
@@ -278,6 +418,7 @@ export default {
       if (i.type === 2 && i.data.name === 'oil') return await cmdOil();
       if (i.type === 2 && i.data.name === 'status') return await cmdStatus(env);
       if (i.type === 2 && i.data.name === 'weather') return await cmdWeather(i);
+      if (i.type === 2 && i.data.name === 'feedback-role') return await cmdFeedbackRole(i, env);
     } catch (e) {
       return json({ type: 4, data: { content: `出錯了：${e.message}`, flags: 64 } });
     }

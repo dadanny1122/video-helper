@@ -38,6 +38,7 @@ ALLOWED = ("github.com", "githubusercontent.com",        # 檢查更新、廣告
            "huggingface.co", "hf.co", "hf-mirror.com",   # AI 模型（Hugging Face 會轉到自己的下載伺服器）
            "anthropic.com",                              # AI（只有填金鑰才會）
            "discord.com",                                # v1.48.0 下載完成通知手機（只有自己貼了 Webhook 才會）
+           "workers.dev",                                # 意見回饋（只有按送出才會；開發者的 Cloudflare Worker）
            "localhost", "127.0.0.1")                     # 電腦版自己的連線服務
 
 
