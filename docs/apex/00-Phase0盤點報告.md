@@ -295,3 +295,10 @@ whisper 的「固定版本＋指紋」做法以後可以直接當 Model Registry
 實作（分支 `apex/phase1-pr1-pr2`）：
 - PR1：`nexus/tests/security/test_sandbox_escape.py`、威脅模型 §6 更正＋§8
 - PR2（v1.51.0、nexus 0.5.0、協定 1.4）：`nexus/sandbox/appcontainer.py`（只偵測）、心跳 `hardening` 欄位（只送給 1.4 以上的 Master）、節點分頁顯示結果
+
+## 10. PR2 結果與決定（2026-11-27）
+
+- GitHub Windows（nexus.yml frozen）：`appcontainer`
+- 使用者自己的電腦（v1.51.0，`VideoHelper.exe --nexus-probe-strong`）：`appcontainer`；run ✅、讀節點資料夾被擋、連 127.0.0.1 被擋（curl 等到逾時，exit 28；測試埠沒收到任何連線）
+- **決定：選 B，Phase 1 先停在 PR2**。理由：只有一台電腦、平常用「送到電腦版」不開節點，沙箱只保護節點下載 → 現在做 PR3～PR7 幾乎沒有實際效益。
+- 什麼時候重新考慮 PR3：有第二台電腦當節點，或要讓節點跑「不只是下載」的工作（APEX-05）
