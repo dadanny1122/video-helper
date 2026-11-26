@@ -242,3 +242,18 @@ button.small { font-size: 12px; }
 .res { white-space: pre-line; padding: 8px 10px; border-radius: 10px; background: var(--card2); margin: 8px 0; font-size: 13px; }
 .res.good { color: var(--ok); } .res.bad { color: var(--bad); }
 .verify { margin: 8px 0 12px; } .verify .res { word-break: break-all; }
+/* v1.48.0 密碼鎖、稍後清單、找重複 */
+.lockscr { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: radial-gradient(circle at 30% 20%, rgba(87,200,255,.18), transparent 45%), radial-gradient(circle at 70% 80%, rgba(139,124,255,.18), transparent 45%), var(--bg); }
+.lockbox { width: min(380px, 90vw); text-align: center; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 28px 26px; box-shadow: var(--shadow); display: grid; gap: 10px; }
+.lockbox .lk { font-size: 42px; } .lockbox h2 { margin: 0; font-size: 20px; }
+.lockbox input { text-align: center; font-size: 20px; letter-spacing: 6px; }
+.lockbox .bad { color: var(--bad); min-height: 16px; } .lockbox .forgot { margin-top: 6px; line-height: 1.5; }
+body.locked > aside, body.locked > main { visibility: hidden; }
+.lrow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; }
+.lrow:hover { background: var(--card2); } .lrow .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dupg { border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; margin: 8px 0; }
+.dupg label { display: flex; gap: 8px; align-items: center; padding: 3px 0; font-size: 13px; }
+.duplist { max-height: 50vh; overflow: auto; text-align: left; }
+.lockbox input { width: 100%; box-sizing: border-box; padding: 10px 14px; }
+.lockbox button { padding: 10px 14px; font-size: 15px; }
+#x-lockset, #x-lockoff { white-space: nowrap; }

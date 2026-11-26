@@ -28,13 +28,15 @@ APP_FUNCS = re.compile(r"^(_?web_|on_web|_web|notify$|start_tray|update_tray|hid
                        r"parallel_download|run_download|play_file|open_path|on_quit|quit_app|ask_close|show_window|_install_setup|setup_step|"
                        r"clean_old_logs|clear_logs|reset_stats|unpair|stop_bridge|update_blocklist|test_ai|clear_ai_cache|reset_speed|"
                        r"smart_learn|due_retries|pump$|cancel$|has_subtitles|ai_classify|classify_domains|retry_wait|human_|describe_|"
-                       r"site_of|bridge_status|_bridge|do_POST|do_GET|_reply|status_text|state_text|error_text|friendly|reason_text)")
+                       r"site_of|bridge_status|_bridge|do_POST|do_GET|_reply|status_text|state_text|error_text|friendly|reason_text|"
+                       r"_later_start|on_later_added|on_notify_failed|_sched_hint|_classic_lock_prompt)")
 APP_SKIP_CONST = {"TIPS", "HOME_CARDS", "NAV_ITEMS",             # 只有舊視窗用
                   "HALLU_PHRASES", "HALLU_EXACT"}                # AI 字幕要刪掉的雜訊字，不是畫面上的字
 NEXUS_ALL = ["nexus/tasks/scheduler.py", "nexus/tasks/states.py", "nexus/core/errors.py", "nexus/tasks/adapters.py",
              "nexus/worker/tray.py", "nexus/worker/agent.py",
              "nexus/display.py",            # S5：節點畫面的名稱、時間、大小（新介面和舊視窗共用）
-             "vh_updater.py"]               # v1.47.0 一鍵更新的錯誤原因（會顯示在首頁更新卡）
+             "vh_updater.py",               # v1.47.0 一鍵更新的錯誤原因（會顯示在首頁更新卡）
+             "vh_extras.py"]                # v1.48.0 密碼鎖、定時下載、整理、通知手機的選項和訊息
 NEXUS_GUI_EXTRA = {"nexus/worker/executor.py": r"^(sandbox_status)$", "nexus/sandbox/jobs.py": r"^(probe)$"}   # 沙箱不能用的原因          # 節點小視窗（--worker）也翻
 NEXUS_GUI = {"nexus/gui/devices_tab.py": re.compile(r"^(_ago|_local|_isolation)$"),
              "nexus/gui/tasks_tab.py": re.compile(r"^(summary_of|fmt_size|local|_who|_download_result|_result_text|_why)$")}

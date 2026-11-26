@@ -780,7 +780,95 @@
   "② 這個檔案不是本專案 build.yml 打包的（沒有對應的簽章紀錄）": "② This file wasn't built by this project's build.yml (no matching signed record)",
   "③ 元件清單的指紋跟發布頁不一樣": "③ The component list's fingerprint doesn't match the release page",
   "③ 元件清單寫的版本或 EXE 指紋對不上": "③ The component list's version or EXE fingerprint doesn't match",
-  "③ 元件清單讀不懂": "③ The component list can't be read"
+  "③ 元件清單讀不懂": "③ The component list can't be read",
+  "鎖定": "Lock",
+  "⭐ 稍後下載": "⭐ Download later",
+  "在影片網站的下載面板按「⭐ 稍後下載」就會出現在這裡": "Press \"⭐ Download later\" in the download panel on a video site and it shows up here",
+  "⬇ 全部下載": "⬇ Download all",
+  "同一部影片下載了好幾個檔案": "The same video was downloaded into several files",
+  "🧹 找重複": "🧹 Find duplicates",
+  "🧩 隱私與自動化": "🧩 Privacy & automation",
+  "🔒 密碼鎖": "🔒 PIN lock",
+  "打開電腦版、看下載紀錄都要先輸入密碼（防別人順手打開，不是加密）": "Enter a PIN before opening the app or the download history (stops casual snooping; it is not encryption)",
+  "設定密碼": "Set PIN",
+  "閒置多久自動鎖": "Auto-lock after idle",
+  "縮到系統匣也會鎖": "Also locks when minimized to the tray",
+  "🌙 定時下載": "🌙 Scheduled downloads",
+  "不在你要用網路的時候搶頻寬": "Don't hog bandwidth while you need the internet",
+  "時段": "Time window",
+  "可以跨半夜，例如 23 → 7": "Can cross midnight, e.g. 23 → 7",
+  "時段外的速度上限": "Speed limit outside the window",
+  "🗂 自動整理資料夾": "🗂 Auto-organize folders",
+  "新下載的影片依網站（和月份）分資料夾；舊檔不會搬": "New downloads go into folders by site (and month); existing files aren't moved",
+  "📱 下載完成通知手機": "📱 Phone notification when done",
+  "用你自己 Discord 頻道的 Webhook；只傳「完成幾部、多大」，不寫標題": "Uses a webhook for your own Discord channel; it only sends how many videos and how big — never titles",
+  "貼上 Discord 頻道的 Webhook 網址": "Paste your Discord channel webhook URL",
+  "傳一則測試": "Send a test",
+  "Video Helper 已上鎖": "Video Helper is locked",
+  "輸入密碼解鎖；下載會在背景繼續": "Enter your PIN to unlock; downloads keep going in the background",
+  "密碼": "PIN",
+  "解鎖": "Unlock",
+  "忘記密碼：關掉電腦版，用記事本打開 %APPDATA%\\VideoHelper\\settings.json，刪掉 lock_pin 那一行": "Forgot the PIN? Close the app, open %APPDATA%\\VideoHelper\\settings.json in Notepad and delete the lock_pin line",
+  "清單是空的": "The list is empty",
+  "找重複": "Find duplicates",
+  "沒有找到重複的檔案。": "No duplicate files found.",
+  "好": "OK",
+  "（保留：畫質最高）": " (kept: best quality)",
+  "只有 Windows 能丟到資源回收筒，這裡只能看。": "Only Windows has a Recycle Bin, so you can only look here.",
+  "丟到資源回收筒": "Move to Recycle Bin",
+  "改密碼": "Change PIN",
+  "打開電腦版、閒置太久、縮到系統匣時會鎖住。這是防別人順手打開，不是加密：影片檔還是在資料夾裡。": "Locks when the app opens, after being idle, and when minimized to the tray. It stops casual snooping; it is not encryption — the video files are still in the folder.",
+  "兩次輸入的密碼不一樣": "The two PINs don't match",
+  "關閉密碼鎖": "Turn off PIN lock",
+  "輸入現在的密碼：": "Enter your current PIN:",
+  "已開啟：打開、閒置太久、縮到系統匣時會鎖住": "On: locks when opened, after being idle, and when minimized to the tray",
+  "不自動鎖": "Never",
+  "已設定 Webhook；只傳「完成幾部、多大」，不寫標題": "Webhook set; it only sends how many videos and how big — never titles",
+  "清除 Webhook": "Clear webhook",
+  "清除後不會再通知手機。": "Your phone won't be notified anymore.",
+  "現在就開始下載這一批嗎？（下載完、佇列空了以後又照時段）": "Start downloading this batch now? (The schedule applies again once the queue is empty)",
+  "▶ 現在就下載": "▶ Download now",
+  "清空稍後清單": "Clear the later list",
+  "只清掉清單，不會刪任何影片。": "Only the list is cleared; no videos are deleted.",
+  "✅ 下載完成 1 部": "✅ 1 download finished",
+  "❌ 1 部下載失敗": "❌ 1 download failed",
+  "🔒 已上鎖": "🔒 Locked",
+  "還沒設定密碼（設定 → 🔒 密碼鎖）": "No PIN set yet (Settings → 🔒 PIN lock)",
+  "舊密碼不對": "The old PIN is wrong",
+  "密碼要 4～12 位數字": "The PIN must be 4–12 digits",
+  "密碼已設定；下次打開、閒置太久、縮到系統匣都會鎖住": "PIN set; the app locks when opened, after being idle, and when minimized to the tray",
+  "密碼不對": "Wrong PIN",
+  "密碼鎖已關閉": "PIN lock turned off",
+  "請輸入密碼：": "Enter your PIN:",
+  "（沒有標題）": "(no title)",
+  "上一批網址還在讀取，等一下再按": "The previous batch is still loading — press again in a moment",
+  "剩下的等一下再按一次": "press again in a moment for the rest",
+  "清單裡找不到這部": "That video isn't in the list",
+  "稍後清單已清空": "Later list cleared",
+  "這一批下載完之前不管時段": "The schedule is ignored until this batch finishes",
+  "▶ 這一批先不管時段": "▶ Ignoring the schedule for this batch",
+  "只有 Windows 能丟到資源回收筒": "Only Windows has a Recycle Bin",
+  "檔案已刪除（在資源回收筒）": "File deleted (in the Recycle Bin)",
+  "已清除 Webhook": "Webhook cleared",
+  "網址不對：要是 https://discord.com/api/webhooks/… 開頭": "Wrong URL: it must start with https://discord.com/api/webhooks/…",
+  "已儲存（用 Windows 加密），按「傳一則測試」試試看": "Saved (encrypted by Windows) — press \"Send a test\" to try it",
+  "先貼上 Webhook 網址": "Paste a webhook URL first",
+  "🔔 Video Helper：測試通知，收到就設定好了": "🔔 Video Helper: test notification — if you got this, you're all set",
+  "已送出，看看手機 Discord 有沒有收到": "Sent — check Discord on your phone",
+  "🔒 先打開視窗解鎖": "🔒 Open the window and unlock first",
+  "已解鎖": "Unlocked",
+  "只在時段內下載": "Only download in the window",
+  "時段內全速、其他時間限速": "Full speed in the window, limited otherwise",
+  "不整理": "Don't organize",
+  "依網站分資料夾": "Folders by site",
+  "依網站＋月份": "Folders by site + month",
+  "只有 Windows 有資源回收筒": "Only Windows has a Recycle Bin",
+  "佇列全部做完時": "When the whole queue is done",
+  "Webhook 網址不對": "Wrong webhook URL",
+  "這個網站擋程式，會用瀏覽器打開、腳本自動送過來": "This site blocks programs, so it opens in your browser and the script sends it over",
+  "舊密碼": "Old PIN",
+  "新密碼（4～12 位數字）": "New PIN (4–12 digits)",
+  "再輸入一次": "Enter it again"
  },
  "patterns": [
   [
@@ -1798,6 +1886,78 @@
   [
    "打開後馬上結束（代碼 {a}）",
    "closed right after starting (code {a})"
+  ],
+  [
+   "共 {a} 部",
+   "{a} videos"
+  ],
+  [
+   "找到 {a} 部影片有好幾個檔案。勾選的會丟到資源回收筒（可以救回）；每一部至少留一個。",
+   "{a} videos have several files. Checked files go to the Recycle Bin (recoverable); at least one is kept for each video."
+  ],
+  [
+   "打錯太多次，請等 {a} 秒再試",
+   "Too many wrong tries — wait {a} s and try again"
+  ],
+  [
+   "時段外 {a} Mbps",
+   "{a} Mbps outside the window"
+  ],
+  [
+   "{a}（可以按「▶ 現在就下載」）",
+   "{a} (press \"▶ Download now\" to start anyway)"
+  ],
+  [
+   "加入稍後下載：{a}",
+   "Added to Download later: {a}"
+  ],
+  [
+   "用瀏覽器打開 {a} 頁（腳本會自動送過來）",
+   "opened {a} pages in the browser (the script sends them over automatically)"
+  ],
+  [
+   "已把 {a} 個檔案丟到資源回收筒{b}",
+   "Moved {a} files to the Recycle Bin{b}"
+  ],
+  [
+   "，{a} 個刪不掉（可能正在播放）",
+   ", {a} couldn't be deleted (maybe playing)"
+  ],
+  [
+   "通知手機失敗（{a}）：到設定檢查 Webhook",
+   "Phone notification failed ({a}): check the webhook in Settings"
+  ],
+  [
+   "密碼不對，請等 {a} 秒再試",
+   "Wrong PIN — wait {a} s and try again"
+  ],
+  [
+   "密碼不對（再錯 {a} 次要等一下）",
+   "Wrong PIN ({a} more wrong tries and you'll have to wait)"
+  ],
+  [
+   "🌙 定時下載：{a}:00～{b}:00 才下載",
+   "🌙 Scheduled: downloads only {a}:00–{b}:00"
+  ],
+  [
+   "🌙 定時下載：{a}:00～{b}:00 限速 {c} Mbps",
+   "🌙 Scheduled: {a}:00–{b}:00 limited to {c} Mbps"
+  ],
+  [
+   "丟到資源回收筒失敗（{a}）",
+   "Couldn't move to the Recycle Bin ({a})"
+  ],
+  [
+   "✅ Video Helper：下載完成 {a} 部，共 {b}",
+   "✅ Video Helper: {a} downloads finished, {b} total"
+  ],
+  [
+   "❌ Video Helper：{a} 部下載失敗，打開電腦版看原因",
+   "❌ Video Helper: {a} downloads failed — open the app to see why"
+  ],
+  [
+   "Discord 回應 {a}",
+   "Discord replied {a}"
   ]
  ],
  "ignore": [

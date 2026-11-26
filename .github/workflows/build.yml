@@ -17,6 +17,9 @@ on:
       - '.github/components_lock.py'
       - '.github/discord_notify.py'
       - 'vh_updater.py'
+      - 'vh_extras.py'
+      - '.github/extras_test.py'
+      - '.github/extras_app_test.py'
       - '.github/updater_test.py'
       - '.github/update_e2e.py'
       - 'requirements.txt'
@@ -149,6 +152,16 @@ jobs:
           python .github/webui_host_test.py
           python .github/webui_host_test.py --real
 
+      # v1.48.0 密碼鎖、稍後清單、定時下載、自動整理（Windows 真的丟資源回收筒）、通知手機
+      - name: New features test (lock, later, schedule, organize, notify)
+        timeout-minutes: 5
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+        run: |
+          python -I .github/extras_test.py
+          python .github/extras_app_test.py
+
       - name: Upload new UI screenshot
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
@@ -195,7 +208,7 @@ jobs:
           --add-binary "ffmpeg_bin/ffmpeg.exe;ffmpeg" --add-binary "ffmpeg_bin/ffprobe.exe;ffmpeg"
           --add-data "nexus/net/sites.json;nexus/net"
           --add-data "webui;webui" --add-data "CHANGELOG.md;."
-          --hidden-import webui --hidden-import webui.i18n --hidden-import vh_updater --hidden-import webview.platforms.winforms --hidden-import webview.platforms.edgechromium
+          --hidden-import webui --hidden-import webui.i18n --hidden-import vh_updater --hidden-import vh_extras --hidden-import webview.platforms.winforms --hidden-import webview.platforms.edgechromium
           --exclude-module webview.platforms.gtk --exclude-module webview.platforms.qt --exclude-module webview.platforms.cocoa
           --exclude-module webview.platforms.android --exclude-module webview.platforms.cef --exclude-module webview.platforms.mshtml
           --exclude-module PIL._avif --exclude-module PIL.AvifImagePlugin

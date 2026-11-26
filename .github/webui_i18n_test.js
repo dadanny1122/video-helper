@@ -112,6 +112,17 @@ async function leftovers(page) {
   await page.waitForTimeout(300);
   await page.screenshot({ path: path.join(out, 'setup-en.png') });
   await check('安裝擋廣告');
+  // v1.48.0 稍後清單、找重複、密碼對話框、鎖住畫面
+  await page.click('#nav a[data-page="dl"]'); await page.waitForTimeout(500); await check('稍後清單');
+  await page.click('#dupbtn'); await page.waitForSelector('#modal:not([hidden]) .dupck'); await check('找重複'); await modalClose();
+  await page.click('#nav a[data-page="set"]'); await page.waitForTimeout(400);
+  await page.click('#x-lockset'); await check('設定密碼對話框'); await modalClose();
+  extra.locked = true; extra.lock = { wait: 30 };
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: path.join(out, 'locked-en.png') });
+  await check('鎖住畫面');
+  delete extra.locked; delete extra.lock;
+  await page.waitForTimeout(800);
 
   // 切回中文：畫面上的字要回到中文
   extra.lang = 'zh';

@@ -99,7 +99,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.47.1"
+VERSION = "1.48.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -199,6 +199,16 @@ DEFAULT_SETTINGS = {
     "sub_format": "SRT（最通用）",
     "sub_dual": False,           # 另外做一份「中文＋原文」雙語字幕
     "sub_skip_done": True,       # 批次：已經有字幕的跳過
+    # v1.48.0 五個新功能（docs/infra/05-五個新功能規格.md）
+    "lock_pin": None,            # 🔒 密碼鎖：PBKDF2 雜湊（不存原本的數字）；None＝沒設定
+    "lock_idle_min": 15,         # 閒置幾分鐘自動鎖（0＝不會自己鎖）
+    "sched_mode": "off",         # 🌙 定時下載：off／window 只在時段內／fast_night 時段內全速、其他時間限速
+    "sched_start": 1,            # 時段開始（整點）
+    "sched_end": 7,              # 時段結束（整點，可以跨半夜）
+    "sched_day_mbps": 5,         # fast_night：時段外的速度上限
+    "organize": "off",           # 🗂 自動整理：off／site 依網站／site_month 依網站＋月份
+    "notify_mode": "off",        # 📱 通知手機：off／all_done 佇列全部做完時
+    "notify_webhook": "",        # 你自己的 Discord Webhook（DPAPI 加密、不匯出、不再顯示）
 }
 
 
@@ -259,7 +269,7 @@ def clean_old_logs(days):
 
 # ---- 祕密資料（AI 金鑰）加密：用 Windows 內建的 DPAPI，只有「這台電腦的這個 Windows 帳號」解得開 ----
 #      設定檔被複製走、或同台電腦的其他帳號都讀不到；不是 Windows 時就照原樣存
-SECRET_KEYS = ("ai_key",)
+SECRET_KEYS = ("ai_key", "notify_webhook")
 
 
 def _dpapi(data, encrypt):
@@ -494,7 +504,8 @@ class Stats:
 
 BACKUP_KIND = "VideoHelper-backup"
 # 不放進備份檔的：自動產生的值，以及配對密碼（不能跟著備份檔到處跑）
-NOT_EXPORTED = ("mbps", "last_version", "bridge_enabled", "bridge_tokens", "bridge_meta", "ai_key", "ai_cache", "ai_usage")
+NOT_EXPORTED = ("mbps", "last_version", "bridge_enabled", "bridge_tokens", "bridge_meta", "ai_key", "ai_cache", "ai_usage",
+                "lock_pin", "notify_webhook")
 CLOSE_CHOICES = ["下載中才詢問", "一律縮到系統匣", "直接結束"]
 
 
@@ -749,6 +760,7 @@ BRIDGE_PORTS = list(range(47321, 47326))
 BRIDGE_API = 1        # 腳本和電腦版溝通的「語言版本」：改了請求格式才 +1
 # 支援下載的網站：唯一來源是 nexus/net/sites.json（電腦版、節點下載、安卓 vh_mobile.py 共用）
 from nexus.net import sites as _sites  # noqa: E402, I001
+import vh_extras as VX  # noqa: E402, I001  v1.48.0 密碼鎖、稍後清單、定時、整理、通知手機
 BRIDGE_HOSTS = _sites.page_hosts()
 # 瀏覽器送來的「影片真正的位址」只接受這些網站自己的影片伺服器
 BRIDGE_MEDIA_HOSTS = _sites.media_hosts()
@@ -931,7 +943,7 @@ def hash_token(t):
 
 
 class Bridge:
-    def __init__(self, settings, on_enqueue, get_status, on_classify=None, on_node=None):
+    def __init__(self, settings, on_enqueue, get_status, on_classify=None, on_node=None, on_later=None):
         """
         on_enqueue(ticket, url, height)：收到「加入下載」時呼叫（在連線服務的執行緒裡，要自己轉回主畫面）
         get_status(ticket)：回傳 {"status":…, "progress":…, "title":…} 或 None
@@ -941,6 +953,7 @@ class Bridge:
         self.get_status = get_status
         self.on_classify = on_classify             # AI 判斷網域（可以沒有）
         self.on_node = on_node                     # V3.1：瀏覽器「交給節點」（可以沒有）
+        self.on_later = on_later                   # v1.48.0：瀏覽器「⭐ 稍後下載」（可以沒有）
         self.server = None
         self.port = None
         self.pair_code = None
@@ -1100,7 +1113,7 @@ class Bridge:
                 path, _, qs = self.path.partition("?")
                 if path == "/ping":                 # 能力協商：告訴腳本「我是哪一版、會做哪些事、收哪些網站」
                     feats = (["enqueue", "media", "status"] + (["classify"] if bridge.on_classify else [])
-                             + (["node"] if bridge.on_node else []))
+                             + (["node"] if bridge.on_node else []) + (["later"] if bridge.on_later else []))
                     return self.send(200, {"app": "VideoHelper", "version": VERSION, "api": BRIDGE_API,
                                            "features": feats, "sites": list(BRIDGE_HOSTS)})
                 if path == "/status":
@@ -1141,6 +1154,18 @@ class Bridge:
                     bridge.on_enqueue(ticket, url, h, media or None)
                     log.info("瀏覽器送來：%s（%s）", log_url(url), quality_label(h) if h else "預設畫質")
                     return self.send(200, {"ok": True, "ticket": ticket})
+                if self.path == "/later":           # v1.48.0：⭐ 稍後下載（只收網頁網址和標題）
+                    if not bridge.token_ok(self.headers.get("X-VH-Token")):
+                        return self.send(401, {"error": "需要重新配對"})
+                    if not bridge.on_later:
+                        return self.send(404, {"error": "not found"})
+                    url = data.get("url", "")
+                    if not (isinstance(url, str) and len(url) < 2000 and bridge_url_allowed(url)):
+                        return self.send(400, {"error": "只接受支援下載的 9 個網站的影片網址"})
+                    if not bridge.rate_ok():
+                        return self.send(429, {"error": "太頻繁了，等一分鐘再試"})
+                    added = bridge.on_later(url, str(data.get("title") or "")[:200])
+                    return self.send(200, {"ok": True, "added": bool(added)})
                 if self.path == "/node":            # V3.1：交給節點下載（瀏覽器把影片真正的位址一起給）
                     if not bridge.token_ok(self.headers.get("X-VH-Token")):
                         return self.send(401, {"error": "需要重新配對"})
@@ -3405,6 +3430,13 @@ class App:
         global AI_USAGE_HOOK
         AI_USAGE_HOOK = self.note_ai_usage
         self.history = History()
+        self.later = VX.LaterList(os.path.join(data_dir(), "later.json"), video_key)   # v1.48.0 ⭐ 稍後下載
+        self.lock = VX.Lock()                                                       # v1.48.0 🔒 密碼鎖
+        self.lock.locked = VX.has_pin(self.settings["lock_pin"])                    # 有設密碼：一打開就鎖著
+        self.sched_override = False      # 🌙「現在就下載」：這一批做完前不管時段
+        self.sched_paused = set()        # 時段結束時被定時下載暫停的任務
+        self._sched_lim = None
+        self.batch = VX.Batch()          # 📱 這一批完成／失敗幾部
         self._start_time = time.time()
         self.stats = Stats()
         self.auto_backup = auto_backup_on_upgrade(self.settings, self.history)
@@ -3442,7 +3474,8 @@ class App:
                              on_enqueue=self.remote_register,
                              get_status=self.remote_status,
                              on_classify=self.classify_domains,
-                             on_node=self.node_enqueue)
+                             on_node=self.node_enqueue,
+                             on_later=self.later_add)
         self.ai_fn = ai_classify
         self.blocklist = BlockList()
 
@@ -3475,6 +3508,8 @@ class App:
         self.build_settings(tabs["set"])
         self.init_nexus()                     # S5：Nexus Master 由 App 建（新介面、原本視窗共用）
         self.build_advanced()                 # 進階設定（另一個視窗，平常藏起來）
+        if self.lock.locked:
+            self.root.after(300, self._classic_lock_prompt)
         first_run = self._first_run = not self.settings["setup_seen"]
         if not self.settings["setup_seen"]:   # 第一次打開：先帶去裝擋廣告
             self.nb.select(self.tab_setup)
@@ -3647,6 +3682,11 @@ class App:
                 self.refresh_queue()
             if not self.queue.running() and (self.queue.next_waiting() or None) is not None:
                 self.pump()
+        if self._tick % 50 == 0:                       # 約每 5 秒：定時下載
+            try:
+                self.sched_tick()
+            except Exception:
+                log.exception("定時下載")
         self.root.after(100, self.poll)
 
     # ------------------------------------------------------------------
@@ -4206,6 +4246,17 @@ class App:
             self.home.hide()
             self.nb.select(0)
         f = task["fmt"]
+        mode = self.settings["organize"]
+        same = lambda x: os.path.normcase(os.path.normpath(x or ""))  # noqa: E731
+        if mode != "off" and same(task.get("out")) == same(self.settings.download_dir):
+            d = VX.organize_dir(task["out"], mode, _sites.site_name(VX.host_of(task["url"])) or site_of(task["url"]))
+            try:
+                os.makedirs(d, exist_ok=True)
+                task["out"] = d
+            except OSError:
+                log.exception("自動整理：建不了資料夾")
+        if self.later.remove_key(task["url"]):
+            log.info("稍後清單：已加入佇列，從清單拿掉")
         task.setdefault("est_bytes", f.get("size") or 0)       # 原始預估（沒校正過的），之後拿來跟實際比
         task.setdefault("est_exact", bool(f.get("exact")))
         task.setdefault("est_seconds", (f.get("size") or 0) * 8 / (self.mbps * 1e6) if self.mbps and f.get("size") else 0)
@@ -4227,6 +4278,11 @@ class App:
                 s0 = site_of(cool[0]["url"])
                 self.status.config(text=f"🧊 {s0} 冷卻中（{HOSTS.h.get(s0, {}).get('why', '')}），"
                                         f"{int(HOSTS.cooling(s0))} 秒後再下載這個網站")
+            self.set_buttons()
+            return
+        ok, _lim, why = VX.sched_state(self._sched_cfg())
+        if not ok and not self.sched_override:
+            self.status.config(text=why + "（可以按「▶ 現在就下載」）")
             self.set_buttons()
             return
         hold = NET.holding()
@@ -4405,6 +4461,14 @@ class App:
                                  status=history_status or status, file=file or "", size=t.get("size") or 0,
                                  error=error or "")
                 self.refresh_history()
+        if t and status in (DONE, FAILED, NEEDS_ACTION):
+            nb = 0
+            if status == DONE:
+                try:
+                    nb = os.path.getsize(file) if file else int(t.get("size") or 0)
+                except OSError:
+                    nb = int(t.get("size") or 0)
+            self.batch.add(status == DONE, nb)
         if self.web and t and status in (DONE, FAILED, NEEDS_ACTION):
             self.add_notice("✅" if status == DONE else "❌", ("下載完成：" if status == DONE else "下載失敗：") + t["title"][:60], "dl")
         self.cancel_event = None
@@ -4413,13 +4477,17 @@ class App:
         self.pump()                   # 換下一個
         self.set_buttons()
         if self.is_hidden() and t and status in (DONE, FAILED, NEEDS_ACTION) and not self.quitting:
-            self.notify(("✅ 下載完成：" if status == DONE else "❌ 下載失敗：") + t["title"][:60])
+            if VX.has_pin(self.settings["lock_pin"]):           # 有密碼鎖：通知不寫標題
+                self.notify("✅ 下載完成 1 部" if status == DONE else "❌ 1 部下載失敗")
+            else:
+                self.notify(("✅ 下載完成：" if status == DONE else "❌ 下載失敗：") + t["title"][:60])
             if not self.queue.running() and not self.queue.next_waiting():
                 self.notify("佇列裡的影片都處理完了")
         if self.tray:
             self.tray.title = "Video Helper" + ("：下載中" if self.queue.running() else "")
         if not self.queue.running():
             self.prog["value"] = 100 if status == DONE else 0
+        self.batch_check()
 
     def on_done(self, data):
         tid, (path, warning) = data
@@ -4944,6 +5012,13 @@ class App:
         """把現在的狀態整理成一份 JSON 給網頁（整份換掉，網頁執行緒只讀）"""
         if not self.web:
             return
+        if self.lock.locked:                      # 🔒 鎖住：只送鎖住畫面要的東西（沒有標題、紀錄、通知）
+            self.web.locked = True
+            self.web.hist, self.web.files = None, {}
+            self.web.state = {"locked": True, "version": VERSION, "theme": self.theme, "lang": I18N.LANG if I18N else "zh",
+                              "lock": {"wait": self.lock.wait_left()}, "notices": [], "kpis": [], "tasks": []}
+            return
+        self.web.locked = False
         now = time.time()
         live = self.live[1] if self.live and now - self.live[0] < 3 else None
         tasks = []
@@ -4978,6 +5053,9 @@ class App:
                 urls[k] = r.get("url", "")
             self.web.hist, self.web.files, self._web_urls = hist, files, urls     # 整份換掉（網頁執行緒只讀）
         tasks += self.web.hist[:40]
+        if getattr(self, "_web_lver", None) != self.later.version or self.web.later is None:
+            self._web_lver = self.later.version
+            self.web.later = self._later_rows()
         run, wait = self.queue.count(RUNNING), self.queue.count(WAITING, RETRY_WAIT)
         today = datetime.now().strftime("%Y-%m-%d")
         done = [r for r in self.history.items if r.get("status") == DONE]
@@ -5004,7 +5082,9 @@ class App:
             "hist_ver": ver, "analysis": self._web_an, "batch": self.batch_running,
             "qualities": QUALITY_CHOICES, "default_quality": self.settings["default_quality"],
             "rate_limit": self.settings["rate_limit_mbps"] or 0,
-            "settings": self._web_settings(), "setup": self._web_setup_state(),
+            "settings": dict(self._web_settings(), **self._web_extras()), "setup": self._web_setup_state(),
+            "lock_on": VX.has_pin(self.settings["lock_pin"]), "lock_idle_min": self.settings["lock_idle_min"],
+            "later_ver": self.later.version, "later_n": len(self.later.items), "sched": self._sched_hint(),
             "start_page": "setup" if getattr(self, "_first_run", False) else "",
         }
         # Nexus 管理頁開著（網頁 5 秒內問過）才讀資料庫，2 秒一次；在 Tk 執行緒做（資料庫連線不跨執行緒）
@@ -5019,6 +5099,9 @@ class App:
     def on_web_action(self, data):
         name, arg, box, ev = data
         try:
+            if self.lock.locked and name not in self.LOCKED_OK:      # 🔒 鎖住時：只能解鎖
+                box["reply"] = {"ok": False, "msg": "🔒 已上鎖"}
+                return
             box["reply"] = getattr(self, "web_" + name)(arg) or {"ok": True}
         except Exception as e:
             log.exception("新介面動作 %s", name)
@@ -5280,7 +5363,8 @@ class App:
             st[k] = v
         elif k == "rate_limit" and isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 10000:
             st["rate_limit_mbps"] = float(v)
-            THROTTLE.set_mbps(float(v))
+            self._sched_lim = None
+            self.sched_tick()
             self.refresh_queue()
         elif k in self.WEB_BOOL_SETTINGS and isinstance(v, bool):
             st[k] = v
@@ -5297,6 +5381,18 @@ class App:
             st[k] = v
         elif k == "log_keep_days" and type(v) is int and v in (0, 3, 7, 14, 30):
             st[k] = v
+        elif k == "lock_idle_min" and type(v) is int and v in VX.LOCK_IDLE_CHOICES:
+            st[k] = v
+        elif k == "sched_mode" and v in VX.SCHED_MODES.values():
+            st[k] = v
+        elif k in ("sched_start", "sched_end") and type(v) is int and 0 <= v <= 23:
+            st[k] = v
+        elif k == "sched_day_mbps" and type(v) is int and v in VX.SCHED_DAY_MBPS:
+            st[k] = v
+        elif k == "organize" and v in VX.ORGANIZE_MODES.values():
+            st[k] = v
+        elif k == "notify_mode" and v in VX.NOTIFY_MODES.values():
+            st[k] = v
         elif k == "lang" and I18N and v in I18N.LANGS:
             st[k] = v
             I18N.set_lang(v)
@@ -5308,6 +5404,10 @@ class App:
         else:
             return {"ok": False, "msg": "這個值不能用"}
         st.save()
+        if k.startswith("sched_"):
+            self._sched_lim = None
+            self.sched_tick()
+            self.pump()
         try:
             self.apply_settings_to_ui()
             self.theme_var.set(next((n for n, m in THEMES.items() if m == st["theme"]), "跟系統"))
@@ -5315,6 +5415,291 @@ class App:
         except Exception:
             log.exception("同步原本視窗的設定")
         return {"ok": True, "msg": "已儲存"}
+
+    # ------------------------------------------------------------------
+    # v1.48.0 五個新功能（docs/infra/05-五個新功能規格.md；共用邏輯在 vh_extras.py）
+    # ------------------------------------------------------------------
+
+    LOCKED_OK = ("unlock",)                  # 鎖住時網頁只能做這些
+
+    # ---- 🔒 密碼鎖 ----
+    def lock_now(self):
+        if VX.has_pin(self.settings["lock_pin"]) and not self.lock.locked:
+            self.lock.locked = True
+            log.info("密碼鎖：已鎖住")
+        if self.web:
+            self.web.locked = self.lock.locked
+            self.web.hist, self.web.files = None, {}          # 鎖住時連紀錄的暫存也清掉
+            try:
+                self.web_publish()
+            except Exception:
+                log.exception("鎖住時更新畫面")
+
+    def web_lock(self, _):
+        if not VX.has_pin(self.settings["lock_pin"]):
+            return {"ok": False, "msg": "還沒設定密碼（設定 → 🔒 密碼鎖）"}
+        self.lock_now()
+        return {"ok": True}
+
+    def web_unlock(self, pin):
+        ok, msg = self.lock.try_unlock(self.settings["lock_pin"], pin)
+        if self.web:
+            self.web.locked = self.lock.locked
+        if not ok:
+            log.info("密碼鎖：解鎖失敗")
+        return {"ok": ok, "msg": msg}
+
+    def web_lock_set(self, arg):
+        """設定或改密碼：已經有密碼就要先給舊的"""
+        old, new = arg.get("old") or "", arg.get("pin") or ""
+        rec = self.settings["lock_pin"]
+        if VX.has_pin(rec) and not VX.check_pin(rec, old):
+            return {"ok": False, "msg": "舊密碼不對"}
+        if not VX.pin_ok_format(new):
+            return {"ok": False, "msg": "密碼要 4～12 位數字"}
+        self.settings["lock_pin"] = VX.make_pin(new)
+        self.settings.save()
+        log.info("密碼鎖：已設定")
+        return {"ok": True, "msg": "密碼已設定；下次打開、閒置太久、縮到系統匣都會鎖住"}
+
+    def web_lock_clear(self, old):
+        rec = self.settings["lock_pin"]
+        if VX.has_pin(rec) and not VX.check_pin(rec, old):
+            return {"ok": False, "msg": "密碼不對"}
+        self.settings["lock_pin"] = None
+        self.settings.save()
+        self.lock.locked = False
+        log.info("密碼鎖：已關閉")
+        return {"ok": True, "msg": "密碼鎖已關閉"}
+
+    def _classic_lock_prompt(self):
+        """舊介面（WebView2 打不開時）：打開時問密碼，錯 5 次就關掉"""
+        if self.web and not self.web_fallback or not self.lock.locked:
+            return
+        from tkinter import simpledialog
+        self.root.withdraw()
+        for _ in range(VX.WRONG_FREE):
+            pin = simpledialog.askstring("🔒 Video Helper", "請輸入密碼：", show="*", parent=self.root)
+            if pin is None:
+                break
+            if self.lock.try_unlock(self.settings["lock_pin"], pin.strip())[0]:
+                self.root.deiconify()
+                return
+        self.quit_app()
+
+    # ---- ⭐ 稍後下載清單 ----
+    @staticmethod
+    def _later_key(r):
+        return "l" + hashlib.sha1(video_key(r["url"]).encode("utf-8", "replace")).hexdigest()[:12]
+
+    def later_add(self, url, title):
+        """連線服務的執行緒呼叫（LaterList 自己有鎖）"""
+        added = self.later.add(url, title, _sites.site_name(VX.host_of(url)) or site_of(url))
+        if added:
+            self.q.put(("later_added", title))
+        return added
+
+    def on_later_added(self, title):
+        if self.web:
+            self.add_notice("⭐", "加入稍後下載：" + (title or "（沒有標題）")[:60], "dl")
+        log.info("稍後清單：新增 1 部（共 %d 部）", len(self.later.items))
+
+    def _later_rows(self):
+        return [{"key": self._later_key(r), "title": r.get("title") or r["url"], "site": r.get("site") or site_of(r["url"]),
+                 "time": str(r.get("time", ""))[5:], "browser": _sites.needs_browser(VX.host_of(r["url"]))}
+                for r in self.later.items]
+
+    def _later_find(self, key):
+        return next((r for r in list(self.later.items) if self._later_key(r) == key), None)
+
+    def _later_start(self, items):
+        """一般網站直接加入佇列；擋程式的網站（Pornhub）用瀏覽器打開、讓腳本送過來（一次最多 5 頁）"""
+        direct = [r["url"] for r in items if not _sites.needs_browser(VX.host_of(r["url"]))]
+        browser = [r["url"] for r in items if _sites.needs_browser(VX.host_of(r["url"]))]
+        msg = []
+        if direct:
+            if self.batch_running:
+                return {"ok": False, "msg": "上一批網址還在讀取，等一下再按"}
+            self.start_batch(direct[:50])
+            msg.append(f"已加入 {min(50, len(direct))} 部")
+        for u in browser[:5]:
+            webbrowser.open(VX.later_open_url(u))
+        if browser:
+            msg.append(f"用瀏覽器打開 {min(5, len(browser))} 頁（腳本會自動送過來）")
+            if len(browser) > 5:
+                msg.append("剩下的等一下再按一次")
+        return {"ok": True, "msg": "，".join(msg) or "清單是空的"}
+
+    def web_later_dl(self, key):
+        r = self._later_find(key)
+        return self._later_start([r]) if r else {"ok": False, "msg": "清單裡找不到這部"}
+
+    def web_later_all(self, _):
+        return self._later_start(list(self.later.items))
+
+    def web_later_open(self, key):
+        r = self._later_find(key)
+        if r:
+            webbrowser.open(r["url"])
+        return {"ok": True}
+
+    def web_later_rm(self, key):
+        r = self._later_find(key)
+        if r:
+            self.later.remove_key(r["url"])
+        return {"ok": True}
+
+    def web_later_clear(self, _):
+        self.later.clear()
+        return {"ok": True, "msg": "稍後清單已清空"}
+
+    # ---- 🌙 定時下載 ----
+    def _sched_cfg(self):
+        st = self.settings
+        return {k: st[k] for k in ("sched_mode", "sched_start", "sched_end", "sched_day_mbps", "rate_limit_mbps")}
+
+    def sched_tick(self):
+        """約每 5 秒：調速度上限；時段結束時暫停正在下載的、時段開始時接著下載"""
+        ok, lim, why = VX.sched_state(self._sched_cfg())
+        if lim != self._sched_lim:
+            self._sched_lim = lim
+            THROTTLE.set_mbps(lim)
+        if self.sched_override:
+            return
+        t = self.queue.running()
+        if not ok and t and self.cancel_event and not self.queue_paused:
+            self.sched_paused.add(t["id"])
+            self.stop_mode = "pause"
+            self.cancel_event.set()
+            log.info("定時下載：時段結束，暫停 #%d", t["id"])
+        if ok and self.sched_paused:
+            n = 0
+            for tid in list(self.sched_paused):
+                x = self.queue.get(tid)
+                if x and x["status"] == PAUSED:
+                    x["status"] = WAITING
+                    n += 1
+            self.sched_paused.clear()
+            if n:
+                log.info("定時下載：時段開始，接著下載 %d 部", n)
+                self.refresh_queue()
+                self.pump()
+
+    def web_sched_now(self, _):
+        self.sched_override = True
+        for tid in list(self.sched_paused):
+            x = self.queue.get(tid)
+            if x and x["status"] == PAUSED:
+                x["status"] = WAITING
+        self.sched_paused.clear()
+        self.refresh_queue()
+        self.pump()
+        return {"ok": True, "msg": "這一批下載完之前不管時段"}
+
+    def _sched_hint(self):
+        ok, lim, why = VX.sched_state(self._sched_cfg())
+        if self.sched_override and why:
+            return "▶ 這一批先不管時段"
+        return why
+
+    # ---- 🗂 找重複 ----
+    def _dup_groups(self):
+        return VX.find_duplicates(self.history.items, video_key, done=DONE)
+
+    def web_dup_scan(self, _):
+        groups = []
+        for g in self._dup_groups()[:50]:
+            groups.append([{"key": self._hist_key(r), "title": r.get("title") or r.get("url", ""),
+                            "quality": quality_label(r.get("height")) if r.get("height") else "",
+                            "size": fmt_size(os.path.getsize(r["file"])) if os.path.isfile(r["file"]) else "",
+                            "name": os.path.basename(r["file"]), "keep": j == 0} for j, (_i, r) in enumerate(g)])
+        return {"ok": True, "groups": groups, "can_delete": VX.recycle_supported()}
+
+    def web_dup_delete(self, keys):
+        """只刪「現在還在重複名單裡」的檔，而且每一組至少留一個；丟到資源回收筒"""
+        if not VX.recycle_supported():
+            return {"ok": False, "msg": "只有 Windows 能丟到資源回收筒"}
+        want, n, bad = set(keys), 0, 0
+        for g in self._dup_groups():
+            pick = [r for _i, r in g if self._hist_key(r) in want]
+            if len(pick) >= len(g):
+                pick = pick[1:] if g[0][1] in pick else pick[:-1]    # 整組都勾了 → 留畫質最高的
+            for r in pick:
+                try:
+                    VX.to_recycle_bin(r["file"])
+                    r["error"] = "檔案已刪除（在資源回收筒）"
+                    r["file"] = ""
+                    n += 1
+                except Exception:
+                    log.exception("找重複：刪不掉")
+                    bad += 1
+        if n:
+            self.history.save()
+            self.refresh_history()
+        return {"ok": not bad, "msg": f"已把 {n} 個檔案丟到資源回收筒" + (f"，{bad} 個刪不掉（可能正在播放）" if bad else "")}
+
+    # ---- 📱 下載完成通知手機 ----
+    def web_notify_set(self, url):
+        url = url.strip()
+        if url == "-":
+            self.settings["notify_webhook"] = ""
+            self.settings.save()
+            return {"ok": True, "msg": "已清除 Webhook"}
+        if not VX.webhook_ok(url):
+            return {"ok": False, "msg": "網址不對：要是 https://discord.com/api/webhooks/… 開頭"}
+        self.settings["notify_webhook"] = url
+        if self.settings["notify_mode"] == "off":
+            self.settings["notify_mode"] = "all_done"
+        self.settings.save()
+        return {"ok": True, "msg": "已儲存（用 Windows 加密），按「傳一則測試」試試看"}
+
+    def _notify_send(self, text):
+        url = self.settings["notify_webhook"]
+        if not url:
+            return
+
+        def work():
+            try:
+                VX.send_webhook(url, text)
+                log.info("通知手機：已送出")
+            except Exception as e:
+                log.warning("通知手機失敗：%s", type(e).__name__)
+                self.q.put(("notify_failed", type(e).__name__))
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_notify_failed(self, why):
+        if self.web:
+            self.add_notice("📱", f"通知手機失敗（{why}）：到設定檢查 Webhook", "set")
+
+    def web_notify_test(self, _):
+        if not self.settings["notify_webhook"]:
+            return {"ok": False, "msg": "先貼上 Webhook 網址"}
+        self._notify_send("🔔 Video Helper：測試通知，收到就設定好了")
+        return {"ok": True, "msg": "已送出，看看手機 Discord 有沒有收到"}
+
+    def batch_check(self):
+        """佇列全部處理完 → 傳一則「完成幾部、多大」；「現在就下載」也到此為止"""
+        if self.queue.running() or self.queue.count(WAITING, RETRY_WAIT):
+            return
+        self.sched_override = False
+        if not self.batch:
+            return
+        done, failed, nbytes = self.batch.take()
+        if self.settings["notify_mode"] == "all_done":
+            self._notify_send(VX.notify_text(done, failed, nbytes))
+
+    def _web_extras(self):
+        """設定頁的五個新功能"""
+        st = self.settings
+        return {
+            "lock_on": VX.has_pin(st["lock_pin"]), "lock_idle_min": st["lock_idle_min"], "lock_idles": list(VX.LOCK_IDLE_CHOICES),
+            "sched_mode": st["sched_mode"], "sched_modes": [[v, k] for k, v in VX.SCHED_MODES.items()],
+            "sched_start": st["sched_start"], "sched_end": st["sched_end"],
+            "sched_day_mbps": st["sched_day_mbps"], "sched_days": list(VX.SCHED_DAY_MBPS),
+            "organize": st["organize"], "organize_modes": [[v, k] for k, v in VX.ORGANIZE_MODES.items()],
+            "notify_mode": st["notify_mode"], "notify_modes": [[v, k] for k, v in VX.NOTIFY_MODES.items()],
+            "notify_has": bool(st["notify_webhook"]), "recycle_ok": VX.recycle_supported(),
+        }
 
     class _DialogHost:
         """新介面時原本的視窗藏著：要跳 Windows 對話框（選資料夾、存檔）時，暫時把它變成一個看不見的 1×1 小視窗擺最上面當主人，
@@ -5946,6 +6331,8 @@ class App:
             return False
 
     def hide_to_tray(self):
+        if VX.has_pin(self.settings["lock_pin"]):          # 🔒 縮到系統匣就鎖起來
+            self.lock_now()
         if not self.start_tray():
             self.root.iconify()                  # 系統匣不能用 → 至少縮到工作列
             return
@@ -6011,6 +6398,9 @@ class App:
         self.update_tray()
 
     def on_tray_folder(self, _):
+        if self.lock.locked:
+            self.notify("🔒 先打開視窗解鎖")
+            return
         open_path(self.settings.download_dir)
 
     def on_tray_paste(self, _):
@@ -6039,6 +6429,9 @@ class App:
     def on_show_window(self, _):
         if self.web and not self.web_fallback:
             self.web.show()
+            return
+        if self.lock.locked:                     # 🔒 舊介面：先問密碼
+            self._classic_lock_prompt()
             return
         self.root.deiconify()
         self.root.lift()
@@ -6193,7 +6586,7 @@ class App:
             self.nexus = MasterService()
             # V4：節點傳回的影片放進 ① 下載影片 同一個資料夾、上傳照 ③ 的下載限速、收完寫進 ② 下載紀錄（D4、D5）
             self.nexus.dest_dir = lambda: self.settings.download_dir
-            self.nexus.rate_limit_mbps = lambda: self.settings["rate_limit_mbps"] or 0
+            self.nexus.rate_limit_mbps = lambda: VX.sched_state(self._sched_cfg())[1] or 0      # v1.48.0 定時下載也算
             self.nexus.on_returned = lambda t, r: self.q.put(("node_returned", (t, r)))
             if self.nexus.cfg["enabled"]:
                 try:
@@ -6870,7 +7263,8 @@ class App:
             return
         self.settings["rate_limit_mbps"] = v
         self.settings.save()
-        THROTTLE.set_mbps(v)
+        self._sched_lim = None
+        self.sched_tick()
         self.rate_var.set(f"{v:g}" if v else "不限制")
         self.refresh_queue()
 
@@ -6883,7 +7277,8 @@ class App:
         self.smart_var.set(next((k for k, v in SMART_MODES.items() if v == self.settings["smart_segments"]), next(iter(SMART_MODES))))
         self.settings["seg_state"] = dict(self.settings["seg_state"] or {})   # 不要改到預設值那份
         self.segments = SegmentController(self.settings["seg_state"])
-        THROTTLE.set_mbps(self.settings["rate_limit_mbps"])
+        self._sched_lim = None
+        self.sched_tick()
         self.tpl_var.set(self.settings["filename_template"])
         self.keep_var.set(bool(self.settings["keep_history"]))
         self.keep_stats_var.set(bool(self.settings["keep_stats"]))

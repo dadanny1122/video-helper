@@ -39,8 +39,13 @@ def on_node(*args, **kw):
     return {"task_id": "compat"}
 
 
+def on_later(*args, **kw):
+    rec(kind="later")
+    return True
+
+
 import inspect  # noqa: E402
-extra = {k: f for k, f in (("on_classify", on_classify), ("on_node", on_node))
+extra = {k: f for k, f in (("on_classify", on_classify), ("on_node", on_node), ("on_later", on_later))
          if k in inspect.signature(a.Bridge.__init__).parameters}       # 舊版沒有的參數就不給
 b = a.Bridge(a.Settings(), on_enqueue, get_status, **extra)
 port = b.start()

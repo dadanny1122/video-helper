@@ -219,6 +219,95 @@ function renderHist() {
   askThumbs();
 }
 
+// ---------- v1.48.0 稍後下載清單 ----------
+let LATER = [], laterVer = null;
+async function loadLater() {
+  if (!api || !api.later) return;
+  try { LATER = await api.later() || []; } catch (e) { return; }
+  renderLater();
+}
+function renderLater() {
+  $('#laterlist').innerHTML = LATER.length ? LATER.map((r) => `<div class="lrow" data-key="${esc(r.key)}">
+    <span class="pill">${esc(r.site)}</span><span class="t" translate="no" title="${esc(r.title)}">${esc(r.title)}</span>
+    <span class="muted small">${esc(r.time)}</span>${r.browser ? '<span class="muted small" title="這個網站擋程式，會用瀏覽器打開、腳本自動送過來">🌐</span>' : ''}
+    <button class="ghost small" data-lact="later_dl">⬇ 下載</button><button class="ghost small" data-lact="later_open">🌐 打開</button><button class="ghost small" data-lact="later_rm">✕</button></div>`).join('')
+    : '<div class="empty">清單是空的</div>';
+  $('#latersum').textContent = LATER.length ? `共 ${LATER.length} 部` : '在影片網站的下載面板按「⭐ 稍後下載」就會出現在這裡';
+  $('#laterall').hidden = $('#laterclear').hidden = !LATER.length;
+}
+
+// ---------- v1.48.0 找重複 ----------
+async function findDups() {
+  let r;
+  try { r = await api.act('dup_scan', null); } catch (e) { return; }
+  if (!r || !r.ok) { toast((r && r.msg) || '找不到'); return; }
+  if (!r.groups.length) { modal('找重複', '沒有找到重複的檔案。', [['好', 0, 'accent']]); return; }
+  const html = '<div class="duplist">' + r.groups.map((g) => `<div class="dupg"><div class="small" translate="no"><b>${esc(g[0].title)}</b></div>` + g.map((f) =>
+    `<label><input type="checkbox" class="dupck" value="${esc(f.key)}"${f.keep ? '' : ' checked'}${r.can_delete ? '' : ' disabled'}> ${esc(f.quality)} ${esc(f.size)}${f.keep ? '<span class="muted">（保留：畫質最高）</span>' : ''} <span class="muted" translate="no">${esc(f.name)}</span></label>`).join('') + '</div>').join('') + '</div>';
+  const text = r.can_delete ? `找到 ${r.groups.length} 部影片有好幾個檔案。勾選的會丟到資源回收筒（可以救回）；每一部至少留一個。` : '只有 Windows 能丟到資源回收筒，這裡只能看。';
+  const ok = await modal('🧹 找重複', text, r.can_delete ? [['丟到資源回收筒', 1, 'accent'], ['取消', 0]] : [['關閉', 0]], 'muted', { html, wide: true });
+  if (!ok) return;
+  const keys = $$('#mbox .dupck:checked').map((x) => x.value);
+  if (keys.length) await act('dup_delete', keys);
+}
+
+// ---------- v1.48.0 密碼鎖 ----------
+let lastInput = Date.now();
+function renderLock(s) {
+  const on = !!s.locked;
+  $('#lockscr').hidden = !on;
+  document.body.classList.toggle('locked', on);
+  if (on) {
+    const w = s.lock && s.lock.wait;
+    if (w) $('#lockmsg').textContent = `打錯太多次，請等 ${w} 秒再試`;
+    if (!renderLock.focused) { renderLock.focused = true; setTimeout(() => $('#lockpin').focus(), 50); }
+  } else renderLock.focused = false;
+  return on;
+}
+async function tryUnlock() {
+  const inp = $('#lockpin'), pin = inp.value.trim(); inp.value = '';
+  if (!pin) return;
+  try {
+    const r = await api.act('unlock', pin);
+    $('#lockmsg').textContent = r && r.ok ? '' : (r && r.msg) || '';
+    if (r && r.ok) { lastInput = Date.now(); lastSig = ''; setSig = ''; histVer = null; laterVer = null; }
+  } catch (e) { $('#lockmsg').textContent = String(e); }
+  setTimeout(tick, 100);
+}
+async function pinDialog(lockOn) {
+  const html = (lockOn ? '<input type="password" class="search pw" id="pw0" inputmode="numeric" maxlength="12" placeholder="舊密碼">' : '')
+    + '<input type="password" class="search pw" id="pw1" inputmode="numeric" maxlength="12" placeholder="新密碼（4～12 位數字）">'
+    + '<input type="password" class="search pw" id="pw2" inputmode="numeric" maxlength="12" placeholder="再輸入一次">';
+  const ok = await modal(lockOn ? '改密碼' : '設定密碼', '打開電腦版、閒置太久、縮到系統匣時會鎖住。這是防別人順手打開，不是加密：影片檔還是在資料夾裡。', [['儲存', 1, 'accent'], ['取消', 0]], 'muted', { html });
+  if (!ok) return;
+  const v = (id) => ($('#' + id, $('#mbox')) || { value: '' }).value.trim();
+  if (v('pw1') !== v('pw2')) { toast('兩次輸入的密碼不一樣'); return; }
+  act('lock_set', { pin: v('pw1'), old: v('pw0') });
+}
+async function lockOff() {
+  const ok = await modal('關閉密碼鎖', '輸入現在的密碼：', [['關閉', 1, 'accent'], ['取消', 0]], 'muted',
+    { html: '<input type="password" class="search pw" id="pw0" inputmode="numeric" maxlength="12" placeholder="密碼">' });
+  if (ok) act('lock_clear', ($('#pw0', $('#mbox')) || { value: '' }).value.trim() || '0');
+}
+function renderExtras(c) {
+  const hours = [...Array(24).keys()].map((h) => [h, h + ':00']);
+  $('#x-lock').textContent = c.lock_on ? '已開啟：打開、閒置太久、縮到系統匣時會鎖住' : '打開電腦版、看下載紀錄都要先輸入密碼（防別人順手打開，不是加密）';
+  $('#x-lockset').textContent = c.lock_on ? '改密碼' : '設定密碼';
+  $('#x-lockoff').hidden = !c.lock_on;
+  $('#x-idle').innerHTML = opts(c.lock_idles.map((m) => [m, m ? m + ' 分鐘' : '不自動鎖']), c.lock_idle_min);
+  $('#x-idle').disabled = !c.lock_on;
+  $('#x-sched').innerHTML = opts(c.sched_modes, c.sched_mode);
+  $('#x-schedrow').hidden = c.sched_mode === 'off';
+  $('#x-ss').innerHTML = opts(hours, c.sched_start); $('#x-se').innerHTML = opts(hours, c.sched_end);
+  $('#x-day').innerHTML = opts(c.sched_days.map((m) => [m, `時段外 ${m} Mbps`]), c.sched_day_mbps);
+  $('#x-day').hidden = c.sched_mode !== 'fast_night';
+  $('#x-org').innerHTML = opts(c.organize_modes, c.organize);
+  $('#x-notify').innerHTML = opts(c.notify_modes, c.notify_mode);
+  $('#x-notify').disabled = !c.notify_has;
+  $('#x-notehint').textContent = c.notify_has ? '已設定 Webhook；只傳「完成幾部、多大」，不寫標題' : '用你自己 Discord 頻道的 Webhook；只傳「完成幾部、多大」，不寫標題';
+  $('#x-hookclear').hidden = !c.notify_has;
+}
+
 // ---------- 設定 ----------
 let setSig = '';
 function opts(list, cur) {
@@ -252,6 +341,7 @@ function renderSettings(c) {
   $('#s-keyclear').hidden = !c.ai_has_key;
   $('#s-ver').textContent = 'v' + S.version;
   $('#s-data').textContent = '設定資料夾：' + c.data_dir;
+  if (c.lock_idles) renderExtras(c);
 }
 function renderSetup(st) {
   if (!st) return;
@@ -425,14 +515,20 @@ function renderDl(s) {
   }
   renderQueue(s);
   renderAnalysis(s.analysis);
+  if (s.later_ver !== laterVer) { laterVer = s.later_ver; loadLater(); }
   if (s.hist_ver !== histVer) { histVer = s.hist_ver; loadHist(); }
 }
 
 function render(s) {
   S = s;
+  if (s.locked) { I18N.set(s.lang); document.body.className = s.theme === 'light' ? 'light' : 'dark'; renderLock(s); return; }
   if (I18N.set(s.lang)) { lastSig = ''; setSig = ''; nxSig = ''; secSig = ''; go(page); }   // 換語言：整頁重畫
   if (s.start_page && !render.started) { render.started = true; go(s.start_page); }   // 第一次打開：先帶去裝擋廣告
   document.body.className = s.theme === 'light' ? 'light' : 'dark';
+  renderLock(s);
+  $('#lockbtn').hidden = !s.lock_on;
+  $('#schedpill').hidden = !s.sched; $('#schedpill').textContent = s.sched || '';
+  if (s.lock_on && s.lock_idle_min && Date.now() - lastInput > s.lock_idle_min * 60000) { lastInput = Date.now(); act('lock'); }
   $('#ver').textContent = 'v' + s.version;
   const br = $('#bridge'); br.textContent = s.bridge ? '● 瀏覽器已連動' : '瀏覽器未連動'; br.classList.toggle('ok', !!s.bridge);
   for (const b of $$('.pausebtn')) b.textContent = s.paused ? '▶ 全部繼續' : '⏸ 全部暫停';
@@ -496,7 +592,8 @@ function wire() {
     const k = e.target.closest('[data-set]');
     if (k) {
       const key = k.dataset.set;
-      const value = k.type === 'checkbox' ? k.checked : (key === 'rate_limit' || key === 'log_keep_days') ? +k.value : k.value;
+      const NUM = ['rate_limit', 'log_keep_days', 'lock_idle_min', 'sched_start', 'sched_end', 'sched_day_mbps'];
+      const value = k.type === 'checkbox' ? k.checked : NUM.includes(key) ? +k.value : k.value;
       setSig = ''; act('set', { key, value }); k.blur();
       return;
     }
@@ -627,6 +724,29 @@ function wire() {
     const v = $('#s-key').value.trim(); if (!v) { toast('先貼上金鑰'); return; }
     const r = await act('set_ai_key', v);
     if (r && r.ok) $('#s-key').value = '';
+  });
+  // v1.48.0
+  for (const ev of ['mousemove', 'keydown', 'mousedown', 'wheel']) document.addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true });
+  $('#lockgo').addEventListener('click', tryUnlock);
+  $('#lockpin').addEventListener('keydown', (e) => { if (e.key === 'Enter') tryUnlock(); });
+  $('#lockbtn').addEventListener('click', () => act('lock'));
+  $('#x-lockset').addEventListener('click', () => pinDialog(S && S.settings && S.settings.lock_on));
+  $('#x-lockoff').addEventListener('click', lockOff);
+  $('#x-hooksave').addEventListener('click', async () => { const i = $('#x-hook'); const v = i.value.trim(); i.value = ''; if (v) { setSig = ''; await act('notify_set', v); } });
+  $('#x-hookclear').addEventListener('click', async () => {
+    if (await modal('清除 Webhook', '清除後不會再通知手機。', [['清除', 1, 'accent'], ['取消', 0]])) { setSig = ''; act('notify_set', '-'); }
+  });
+  $('#dupbtn').addEventListener('click', findDups);
+  $('#schedpill').addEventListener('click', async () => {
+    if (S && S.sched && !S.sched.startsWith('▶') && await modal('🌙 定時下載', '現在就開始下載這一批嗎？（下載完、佇列空了以後又照時段）', [['▶ 現在就下載', 1, 'accent'], ['不要', 0]])) act('sched_now');
+  });
+  $('#laterall').addEventListener('click', () => act('later_all'));
+  $('#laterclear').addEventListener('click', async () => {
+    if (await modal('清空稍後清單', '只清掉清單，不會刪任何影片。', [['清空', 1, 'accent'], ['取消', 0]])) act('later_clear');
+  });
+  $('#laterlist').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-lact]'); if (!b) return;
+    act(b.dataset.lact, b.closest('.lrow').dataset.key);
   });
   $('#s-keyclear').addEventListener('click', async () => {
     if (await modal('清除金鑰', '清除後只用免費的公開清單判斷廣告。', [['清除', 1, 'accent'], ['取消', 0]])) act('set_ai_key', '-');
