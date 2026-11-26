@@ -15,7 +15,7 @@ MAX_MANIFEST_BYTES = 16 * 1024
 MAX_RESULT_BYTES = 4096
 MAX_OUTPUT_BYTES = 8 << 30          # V3 D4：單部影片最大 8 GB
 # 可有可無的欄位（舊版節點不認得也沒關係：只有 video.download 會帶，舊節點本來就不接這種任務）
-OPTIONAL = {("limits", "max_output_bytes")}
+OPTIONAL = {("limits", "max_output_bytes"), ("requirements", "resources")}
 # 這些任務類型一定要帶的選用欄位
 REQUIRED_FOR = {"video.download": {("limits", "max_output_bytes")}, "test.file": {("limits", "max_output_bytes")}}
 DEFAULT_TTL_SECONDS = 3600
@@ -31,7 +31,9 @@ TOP = {
 SUB = {
     "limits": {"max_runtime_seconds": (int, 1, 7200), "max_result_bytes": (int, 1, MAX_RESULT_BYTES),
                "max_output_bytes": (int, 1, MAX_OUTPUT_BYTES)},
-    "requirements": {"platform": (str, None, None), "min_memory_mb": (int, 0, 1_048_576), "min_disk_mb": (int, 0, 10_485_760)},
+    "requirements": {"platform": (str, None, None), "min_memory_mb": (int, 0, 1_048_576), "min_disk_mb": (int, 0, 10_485_760),
+                     # APEX（借 Dask）：自己取名字的資源 {"gpu": 1}；只派給宣告了、而且還有剩的節點（協定 1.5）
+                     "resources": (dict, None, None)},
     "retry_policy": {"max_attempts": (int, 1, 5)},
 }
 
@@ -46,7 +48,7 @@ def sha256(m: dict) -> str:
 
 def build(task_type: str, params: dict, *, idempotency_key: str | None = None, max_runtime_seconds: int | None = None,
           max_attempts: int = 2, min_memory_mb: int = 0, min_disk_mb: int = 0, platform: str = "any", priority: int = 0,
-          ttl_seconds: int = DEFAULT_TTL_SECONDS) -> dict:
+          ttl_seconds: int = DEFAULT_TTL_SECONDS, resources: dict | None = None) -> dict:
     """組一份 manifest（還沒驗證；交給 validate）"""
     spec = adapters.get(task_type)
     if task_type == "video.download" and isinstance(params, dict) and params.get("media_url"):
@@ -64,7 +66,8 @@ def build(task_type: str, params: dict, *, idempotency_key: str | None = None, m
         "limits": {"max_runtime_seconds": max_runtime_seconds or (spec.default_runtime_seconds if spec else 60),
                    "max_result_bytes": MAX_RESULT_BYTES,
                    **({"max_output_bytes": MAX_OUTPUT_BYTES} if task_type in REQUIRED_FOR else {})},
-        "requirements": {"platform": platform, "min_memory_mb": min_memory_mb, "min_disk_mb": min_disk_mb},
+        "requirements": {"platform": platform, "min_memory_mb": min_memory_mb, "min_disk_mb": min_disk_mb,
+                         **({"resources": dict(resources)} if resources else {})},
         "retry_policy": {"max_attempts": max_attempts},
         "priority": priority,
     }
@@ -114,6 +117,11 @@ def validate(m) -> list[str]:
                 problems.append(f"{name}.{k} 型別不對")
             elif typ is int and not (lo <= v <= hi):
                 problems.append(f"{name}.{k} 要在 {lo}～{hi}")
+    if isinstance(m["requirements"].get("resources"), dict):
+        from nexus.tasks.capabilities import named_problem
+        p = named_problem(m["requirements"]["resources"])
+        if p:
+            problems.append(f"requirements.resources {p}")
     if isinstance(m["requirements"].get("platform"), str) and m["requirements"]["platform"] not in PLATFORMS:
         problems.append("requirements.platform 只能是 windows／any")
     spec = adapters.get(m["type"])

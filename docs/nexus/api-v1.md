@@ -138,3 +138,8 @@ Master 算整檔 SHA-256：對 → 搬進下載資料夾（檔名重新清理、
 - 心跳 `resources` 可多兩個欄位：`hardening`（`appcontainer`／`none`）、`hardening_reason`（≤200 字）。**只是偵測結果，排程不看它**，下載還是用 1.2 的 basic 沙箱。
 - 跟 1.2 不一樣的地方：節點從 Master 回覆裡的 `protocol_version` 知道對方版本，**只在 Master ≥ 1.4 時才送**這兩個欄位（`HARDENING_MIN_PROTOCOL`），所以舊版 Master 不用一起更新。剛連上的第一次心跳不知道版本，不會帶。
 - 偵測在背景跑一次（`VideoHelper.exe --nexus-probe-strong <節點資料夾>`，印一行 JSON）；還沒跑完之前也不會帶。
+
+# 協定 1.5（APEX：自訂資源，電腦版 v1.53.0 起）
+
+- 心跳 `resources` 可多 `named`：節點自己宣告的資源 `{"gpu": 1, "pysam": 1}`（名字小寫英數 `. _ -`、最多 16 種、數量 1～1024；節點小視窗「自訂資源」設定，存在 `named_resources`）。跟 1.4 一樣**只送給 Master ≥ 1.5**（`NAMED_MIN_PROTOCOL`）。
+- 任務 manifest `requirements.resources`（選填，同樣格式）：排程只派給「宣告數量 − 正在跑的任務佔掉的」還夠的節點，不夠的排除原因 `resource`。沒寫這個欄位的任務跟以前完全一樣（舊節點照樣收）。

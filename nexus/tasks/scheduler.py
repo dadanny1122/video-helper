@@ -43,6 +43,7 @@ REASONS = {
     "declined": "這台之前拒收過這個任務",
     "no_sandbox": "節點的沙箱不能用（下載影片一定要在沙箱裡跑）",
     "no_return": "節點版本太舊，不能把檔案傳回這台（請更新節點）",
+    "resource": "節點沒有這個任務要的資源，或已經被別的任務佔滿",
 }
 
 
@@ -50,8 +51,18 @@ def _clip(x):
     return max(0.0, min(1.0, float(x)))
 
 
+def named_short(need: dict, have: dict, used: dict) -> dict:
+    """缺哪些自訂資源：{名字: 還差幾個}；空＝夠"""
+    out = {}
+    for k, n in (need or {}).items():
+        left = (have or {}).get(k, 0) - (used or {}).get(k, 0)
+        if left < n:
+            out[k] = n - left
+    return out
+
+
 def evaluate(task: dict, manifest: dict, devices: list[dict], caps: dict, busy: dict, history: dict, declined: set,
-             now: dt.datetime | None = None, weights_version: str = CURRENT_WEIGHTS) -> list[dict]:
+             now: dt.datetime | None = None, weights_version: str = CURRENT_WEIGHTS, used: dict | None = None) -> list[dict]:
     """純函式：回傳每台節點的候選資料（eligible、reasons、scores、total），已排序（第一個合格的＝要選的）"""
     now = now or dt.datetime.now(dt.timezone.utc)
     w = WEIGHTS[weights_version]
@@ -99,6 +110,8 @@ def evaluate(task: dict, manifest: dict, devices: list[dict], caps: dict, busy: 
                 reasons.append("disk")
             if busy.get(did, 0) >= cap["max_concurrency"]:
                 reasons.append("full")
+            if req.get("resources") and named_short(req["resources"], res.get("named"), (used or {}).get(did)):
+                reasons.append("resource")
         if did in declined:
             reasons.append("declined")
         row = {"device_id": did, "name": d["name"], "eligible": not reasons, "reasons": reasons, "busy": busy.get(did, 0)}
@@ -131,7 +144,17 @@ class Scheduler:
         caps = {k: v for k, v in caps.items() if v}
         busy = self.tr.count_tasks_on_devices([s.value for s in BUSY])
         history = {d["device_id"]: self.tr.recent_attempt_outcomes(d["device_id"]) for d in devices}
-        return devices, caps, busy, history
+        return devices, caps, busy, history, self._used_named()
+
+    def _used_named(self) -> dict:
+        """每台節點上正在跑的任務佔掉多少自訂資源：{device_id: {名字: 數量}}"""
+        used = {}
+        for t in self.tr.list_tasks([s.value for s in BUSY]):
+            did = t.get("assigned_device_id")
+            need = (json.loads(t["manifest_json"]).get("requirements") or {}).get("resources") if did else None
+            for k, n in (need or {}).items():
+                used.setdefault(did, {})[k] = used.setdefault(did, {}).get(k, 0) + n
+        return used
 
     def run_once(self) -> list[tuple[str, str | None]]:
         """把 QUEUED 的任務分給合格節點；回傳 [(task_id, 選中的 device_id 或 None)]"""
@@ -140,12 +163,12 @@ class Scheduler:
         queued = [t for t in self.tr.list_tasks([S.QUEUED.value]) if not t.get("retry_at") or t["retry_at"] <= now]
         if not queued:
             return []
-        devices, caps, busy, history = self._inputs()
+        devices, caps, busy, history, used = self._inputs()
         out = []
         for t in queued:
             m = json.loads(t["manifest_json"])
             declined = {a["device_id"] for a in self.tr.attempts_of(t["task_id"]) if a["status"] == "DECLINED"}
-            cands = evaluate(t, m, devices, caps, busy, history, declined)
+            cands = evaluate(t, m, devices, caps, busy, history, declined, used=used)
             chosen = cands[0]["device_id"] if cands and cands[0]["eligible"] else None
             sig = json.dumps([(c["device_id"], c["reasons"]) for c in cands])
             if chosen is None and self._last_sig.get(t["task_id"]) == sig:
@@ -167,6 +190,8 @@ class Scheduler:
                 continue
             if chosen:
                 busy[chosen] = busy.get(chosen, 0) + 1          # 同一輪後面的任務要看到名額少了
+                for k, n in ((m.get("requirements") or {}).get("resources") or {}).items():
+                    used.setdefault(chosen, {})[k] = used.setdefault(chosen, {}).get(k, 0) + n
                 self._last_sig.pop(t["task_id"], None)
                 self.svc.on_change(self.tr.get_task(t["task_id"]))
             else:

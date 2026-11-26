@@ -27,6 +27,7 @@ def test_agent_heartbeat_reports_capabilities(master, tmp_path):
     os.environ["VH_NEXUS_ROOT"] = str(tmp_path)
     cfg = Config("worker")
     cfg["max_concurrency"] = 2
+    cfg["named_resources"] = {"gpu": 1}                   # APEX：自訂資源（Master 1.5 才會收到）
     a = WorkerAgent(cfg, CredStore(str(tmp_path / "w" / "identity")), heartbeat_seconds=1, poll_seconds=0.3)
     try:
         a.start()
@@ -52,6 +53,7 @@ def test_agent_heartbeat_reports_capabilities(master, tmp_path):
         res = master.registry.tr.capabilities(did)["resources"]
         assert res["hardening"] in ("appcontainer", "none")
         assert res["hardening"] == "appcontainer" or res["hardening_reason"]
+        assert res["named"] == {"gpu": 1}
         # 關掉「接收任務」→ 下一次心跳就反映
         cfg["accept_tasks"] = False
         assert wait_for(lambda: master.registry.tr.capabilities(did)["accepting"] is False, 5)
