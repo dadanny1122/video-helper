@@ -39,13 +39,15 @@ ok(R.fbMask('看 https://x.com/a?b=1 和 www.y.com/z 這裡') === '看 [網址�
   const sent = [], roles = [];
   globalThis.fetch = async (url, init = {}) => {
     if (String(url).startsWith('https://discord.test/webhook')) { sent.push(JSON.parse(init.body)); return new Response(null, { status: 204 }); }
-    if (String(url).includes('/roles/')) { roles.push(url); return new Response(null, { status: 204 }); }
+    if (String(url).includes('/roles/')) { roles.push(url); rolesM.push([init.method, String(url).split('/').pop(), String(url).split('/')[8]]); return new Response(null, { status: 204 }); }
     return new Response('{}', { status: 404 });
   };
   // Discord 互動要驗簽章：測試自己產生一組「假 Discord」金鑰
   const dk = crypto.generateKeyPairSync('ed25519');
   const dpub = dk.publicKey.export({ format: 'der', type: 'spki' }).subarray(-32).toString('hex');
+  const rolesM = [];
   const env = { FEEDBACK_KV: KV, DISCORD_FEEDBACK_WEBHOOK: 'https://discord.test/webhook/1', FEEDBACK_ROLE_ID: '999', GUILD_ID: 'g1',
+    FEEDBACK_ROLE_SILVER: '888', FEEDBACK_ROLE_GOLD: '777', DISCORD_PROGRESS_WEBHOOK: 'https://discord.test/webhook/progress',
     DISCORD_PUBLIC_KEY: dpub, DISCORD_BOT_TOKEN: 'x' };
   const post = (body, ip = '1.2.3.4') => worker.fetch(new Request('https://w.test/feedback', { method: 'POST', body: JSON.stringify(body),
     headers: { 'CF-Connecting-IP': ip } }), env, { waitUntil() {} }).then(async (r) => ({ status: r.status, ...(await r.json()) }));
@@ -80,18 +82,55 @@ ok(R.fbMask('看 https://x.com/a?b=1 和 www.y.com/z 這裡') === '看 [網址�
   ok(noEnv.status === 503, '還沒設定好 → 503');
 
   // /回饋者
-  const interact = async (code, uid) => {
-    const body = JSON.stringify({ type: 2, guild_id: 'g1', member: { user: { id: uid } }, data: { name: 'feedback-role', options: [{ name: 'code', value: code }] } });
+  const interact = async (code, uid, name = 'feedback-role', perms = '0') => {
+    const body = JSON.stringify({ type: 2, guild_id: 'g1', member: { user: { id: uid }, permissions: perms }, data: { name, options: [{ name: 'code', value: code }] } });
     const ts = '1700000000';
     const sig = crypto.sign(null, Buffer.from(ts + body), dk.privateKey).toString('hex');
     const r = await worker.fetch(new Request('https://w.test/', { method: 'POST', body, headers: { 'X-Signature-Ed25519': sig, 'X-Signature-Timestamp': ts } }), env, { waitUntil() {} });
     return (await r.json()).data.content;
   };
-  ok(/拿到/.test(await interact(r1.token, 'u1')) && roles.length === 1 && roles[0].includes('/guilds/g1/members/u1/roles/999'), '/回饋者 真代碼 → 給身分組');
-  ok(/拿到/.test(await interact(r1.token, 'u1')), '同一個人再用同一組 → 照樣成功（重複給沒關係）');
+  ok(/你現在是 🥉/.test(await interact(r1.token, 'u1')) && roles[0].includes('/guilds/g1/members/u1/roles/999'), '/回饋者 真代碼 → 給銅牌身分組');
+  ok(/已經用過/.test(await interact(r1.token, 'u1')), '同一個人再用同一組 → 不重複算');
   ok(/別人用過/.test(await interact(r1.token, 'u2')), '同一組代碼給別人用 → 拒絕');
   ok(/代碼不對/.test(await interact(r1.token.slice(0, -3) + 'AAA', 'u3')), '改過的代碼 → 拒絕');
   ok(/代碼不對/.test(await interact('VH1.abc.def', 'u3')), '亂打 → 拒絕');
+
+  // ---- 回饋等級（銅 1／銀 3／金 10，1 小時內只算 1 組）----
+  const RealDate = Date; let shift = 0;
+  globalThis.Date = class extends RealDate { constructor(...a) { if (a.length) super(...a); else super(RealDate.now() + shift); } static now() { return RealDate.now() + shift; } };
+  const toks = [];
+  for (let n = 0; n < 11; n++) {
+    shift = (n + 1) * 2 * 3600 * 1000;           // 每組相差 2 小時
+    const r = await post({ ...good(100 + n), text: `第${100 + n}則：希望可以多一點功能，這個工具真的很好用喔` }, `9.9.9.${n}`);
+    toks.push(r.token);
+  }
+  const same = (await post({ ...good(200), text: '同一小時的另一則：希望下載可以再快一點，謝謝開發者' }, '9.9.8.1')).token;  // 跟 toks[10] 同一小時
+  globalThis.Date = RealDate;
+  ok(toks.every(Boolean) && same, '產生 12 組不同時間的代碼');
+  rolesM.length = 0;
+  await interact(toks[0], 'u9');
+  ok(rolesM.some(([m, r, u]) => m === 'PUT' && r === '999' && u === 'u9'), '1 則 → 銅');
+  await interact(toks[1], 'u9');
+  rolesM.length = 0;
+  const t3 = await interact(toks[2], 'u9');
+  ok(/🥈/.test(t3) && rolesM.some(([m, r]) => m === 'PUT' && r === '888') && rolesM.some(([m, r]) => m === 'DELETE' && r === '999')
+    && !rolesM.some(([m, r]) => m === 'PUT' && r !== '888'), '3 則 → 銀，拿掉銅（只留最高的）');
+  for (let n = 3; n < 9; n++) await interact(toks[n], 'u9');
+  rolesM.length = 0;
+  const t10 = await interact(toks[9], 'u9');
+  ok(/🥇/.test(t10) && /10 則/.test(t10) && rolesM.some(([m, r]) => m === 'PUT' && r === '777') && rolesM.some(([m, r]) => m === 'DELETE' && r === '888'), '10 則 → 金，拿掉銀');
+  await interact(toks[10], 'u9');
+  const tSame = await interact(same, 'u9');
+  ok(/1 小時內只算 1 組/.test(tSame) && /11 則/.test(tSame), '同一小時的第二組不算（還是 11 則）');
+  ok(/別人用過/.test(await interact(same, 'u8')), '不算的代碼也不能轉給別人');
+  // /感謝
+  sent.length = 0;
+  const id6 = JSON.parse(Buffer.from(toks[0].split('.')[1], 'base64url')).id.slice(0, 6);
+  ok(/只有伺服器管理員/.test(await interact('#' + id6, 'u1', 'thanks', '0')) && !sent.length, '/感謝：不是管理員 → 拒絕');
+  ok(/已貼到/.test(await interact('#' + id6, 'admin', 'thanks', '32')) && sent[0] && sent[0].content.includes('<@u9>')
+    && JSON.stringify(sent[0].allowed_mentions) === JSON.stringify({ users: ['u9'] }), '/感謝：管理員 → #進度 tag 兌換的人（只 tag 他）');
+  ok(/匿名/.test(await interact('#abcdef', 'admin', 'thanks', '8')) && /匿名/.test(sent[1].content) && sent[1].allowed_mentions.users.length === 0, '/感謝：沒人兌換 → 寫匿名');
+  ok(/6 個字/.test(await interact('hello', 'admin', 'thanks', '32')), '/感謝：編號格式不對 → 說明');
 
   // 電腦版（Python）也驗得過 Worker 簽的代碼
   const py = require('child_process').spawnSync(process.env.PYTHON || 'python3', ['-I', '-c',

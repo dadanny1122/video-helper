@@ -21,7 +21,8 @@ KINDS = {"suggest": "💡 建議", "bug": "🐞 問題", "praise": "👍 稱讚"
 MAX_CHARS = 1000
 NEED_CJK, NEED_WORDS = 16, 20            # 中文「超過 15 字」、英文「20 個單字」
 LEVELS = ((10, "gold", "🥇 金牌支持者"), (3, "silver", "🥈 銀牌支持者"), (1, "bronze", "🥉 銅牌支持者"))   # F3
-THEMES = {"aurora": "極光", "dusk": "夕暮"}                                                            # F4
+THEMES = {"aurora": "極光", "dusk": "夕暮", "blackgold": "黑金"}                                                            # F4
+THEME_AT = {"blackgold": 10}   # v1.50.0 黑金要 10 則（金）；其他 1 則
 BETA_AT = 3                                                                                           # F5
 
 # FB-RULE（四個地方要一樣：這裡、video-helper.user.js、webui/app.js、cloudflare/worker.js）
@@ -103,7 +104,7 @@ def rewards(tokens, pubkey=None):
             ids[v["id"]] = v
     n = len(ids)
     level = next(((key, name) for need, key, name in LEVELS if n >= need), ("", ""))
-    return {"count": n, "level": level[0], "badge": level[1], "themes": list(THEMES) if n >= 1 else [],
+    return {"count": n, "level": level[0], "badge": level[1], "themes": [k for k in THEMES if n >= THEME_AT.get(k, 1)],
             "beta": n >= BETA_AT, "next": next((need for need, _, _ in reversed(LEVELS) if n < need), None)}
 
 
