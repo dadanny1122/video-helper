@@ -487,7 +487,8 @@ class Dispatcher:
         for t in self.tr.list_tasks([S.QUEUED.value]):
             if manifest.expired(json.loads(t["manifest_json"])):
                 changed += self._guard(lambda c, t=t: self.svc._transition(
-                    c, self.tr.get_task(t["task_id"], c), S.CANCELLED, "dispatcher", "任務已過期（expires_at）"))
+                    c, self.tr.get_task(t["task_id"], c), S.CANCELLED, "dispatcher", "任務已過期（expires_at）",
+                    error_code="QUEUE_EXPIRED", error_message="排隊太久，一直沒有節點接（超過任務的有效時間）"))
         # 5) 節點離線：在它上面跑的 → UNKNOWN（傳回中的除外：檔案在節點上，等它回來接著傳，D7）
         for d in self.reg.repo.list_devices():
             if d["status"] == "ACTIVE" and d["connection_state"] in ("OFFLINE", "DISCONNECTED"):

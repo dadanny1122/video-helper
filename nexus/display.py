@@ -42,6 +42,24 @@ TASK_STATE_NAME = {
     "CANCELLED": "已取消", "TIMED_OUT": "逾時", "UNKNOWN": "狀態不明（節點失聯）", "RECONCILING": "核對中"}
 TAG = {"SUCCEEDED": "ok", "FAILED": "bad", "REJECTED": "bad", "RESULT_REJECTED": "bad", "TIMED_OUT": "bad", "UNKNOWN": "warn",
        "CANCELLED": "muted", "CANCELLING": "warn", "QUEUED": "muted"}
+# APEX（借 Temporal「逾時分三種」）：同樣是失敗／取消，看得出是哪一種
+WHY_NAME = {"TIMED_OUT": "執行太久", "QUEUE_EXPIRED": "排隊太久，沒有節點接"}
+
+
+def task_text(t: dict, now: str | None = None) -> str:
+    """任務狀態的中文：排隊中但在等自動重試 → 寫幾點重試；失敗／取消 → 括號寫原因（逾時那幾種）"""
+    st = t.get("status", "")
+    text = TASK_STATE_NAME.get(st, st)
+    if st == "QUEUED" and t.get("retry_at"):
+        from nexus.core.models import utcnow
+        if t["retry_at"] > (now or utcnow()):
+            return f"等待重試（{local_min(t['retry_at'])} 再試）"
+    why = WHY_NAME.get(t.get("error_code") or "")
+    if why and st in ("FAILED", "CANCELLED"):
+        return f"{text}（{why}）"
+    return text
+
+
 SCORE_NAME = {"cpu": "CPU", "memory": "記憶體", "disk": "磁碟", "queue": "空閒", "reliability": "可靠度"}
 
 

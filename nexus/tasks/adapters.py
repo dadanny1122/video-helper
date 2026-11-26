@@ -4,6 +4,7 @@ Adapter 允許清單（ADR-10、規格 §10.1／§13.3）。Master 與 Worker �
   ・Worker 用它決定接不接（版本主號要一樣）、怎麼執行
 V2 只有三個測試 Adapter：不開子程序、不碰檔案、不連網。**永遠不會有 shell／python／powershell 這類 Adapter。**
 """
+import random
 from dataclasses import dataclass, field
 
 
@@ -19,6 +20,33 @@ class Param:
 
 
 @dataclass(frozen=True)
+class RetryPolicy:
+    """
+    重試要等多久（APEX 借 Temporal 的設計：重試政策是資料，每個 Adapter 自己宣告）。
+    第 n 次重試等 initial×backoff^(n-1) 秒，最多 max_seconds，再加減 jitter 比例的隨機量（避免一堆任務同時重來）。
+    min_by_error：某些錯誤至少要等多久（例如被網站限流）。
+    """
+    initial_seconds: float = 10
+    backoff: float = 2.0
+    max_seconds: float = 600
+    jitter: float = 0.2
+    min_by_error: tuple = ()             # ((錯誤碼, 秒), ...)；frozen dataclass 不能放 dict
+
+    def delay(self, retry_no: int, error_code: str = "", rng=random) -> float:
+        """retry_no：第幾次重試（1 開始）。回傳要等的秒數"""
+        if self.initial_seconds <= 0:
+            base = 0.0
+        else:
+            base = min(self.max_seconds, self.initial_seconds * self.backoff ** max(0, retry_no - 1))
+            base *= 1 + rng.uniform(-self.jitter, self.jitter)
+        floor = dict(self.min_by_error).get(error_code, 0)
+        return round(max(base, floor), 1)
+
+
+NO_WAIT = RetryPolicy(initial_seconds=0)          # 測試任務：馬上重試（測試才不會變慢）
+
+
+@dataclass(frozen=True)
 class AdapterSpec:
     name: str
     version: str
@@ -31,6 +59,7 @@ class AdapterSpec:
     max_runtime_seconds: int = 900
     description: str = ""
     validate: object = None              # 跨欄位檢查：fn(params) → 問題清單
+    retry: RetryPolicy = field(default_factory=RetryPolicy)
 
     @property
     def major(self) -> str:
@@ -73,13 +102,13 @@ VIDEO_QUALITIES = ("best", "1080", "720", "480")
 ADAPTERS: dict[str, AdapterSpec] = {
     "test.echo": AdapterSpec(
         "test.echo", "1.0", {"text": Param(str, max_len=1000)},
-        default_runtime_seconds=30, description="回傳原文＋SHA-256（測完整流程）"),
+        default_runtime_seconds=30, retry=NO_WAIT, description="回傳原文＋SHA-256（測完整流程）"),
     "test.sleep": AdapterSpec(
         "test.sleep", "1.0", {"seconds": Param(int, min=1, max=600)},
-        default_runtime_seconds=660, description="等 N 秒、每秒回報進度，可取消（測取消、逾時）"),
+        default_runtime_seconds=660, retry=NO_WAIT, description="等 N 秒、每秒回報進度，可取消（測取消、逾時）"),
     "test.fail": AdapterSpec(
         "test.fail", "1.0", {"code": Param(str, enum=("ADAPTER_ERROR", "RESOURCE_LIMIT", "INVALID_INPUT"))},
-        default_runtime_seconds=30, description="固定失敗（測重試分類）"),
+        default_runtime_seconds=30, retry=NO_WAIT, description="固定失敗（測重試分類）"),
     # V3：節點在沙箱裡下載影片，檔案留在節點（D1）；只准 sites.json 的網站（D2）；D4 單部最長 2 小時
     "video.download": AdapterSpec(
         "video.download", "1.0",
@@ -93,12 +122,14 @@ ADAPTERS: dict[str, AdapterSpec] = {
         validate=_video_cross_check,
         retry_safe=True, idempotent=False, side_effects="network,files",
         default_runtime_seconds=7200, max_runtime_seconds=7200,
+        # 網路問題：30 秒、1 分、2 分…最多 10 分鐘；被網站限流至少等 2 分鐘（馬上重來只會再被擋）
+        retry=RetryPolicy(initial_seconds=30, backoff=2, max_seconds=600, min_by_error=(("RATE_LIMITED", 120),)),
         description="在節點的沙箱裡下載影片，存在節點那台電腦（可勾選傳回這台）"),
     # V4：測「傳回」用。節點在自己的下載資料夾寫一個固定內容的假影片檔（不連網、不開子程序），可以傳回 Master
     "test.file": AdapterSpec(
         "test.file", "1.0",
         {"size_mb": Param(int, min=1, max=2048), "return_to_master": Param(bool, required=False)},
-        retry_safe=True, idempotent=False, side_effects="test-file",
+        retry_safe=True, idempotent=False, side_effects="test-file", retry=NO_WAIT,
         default_runtime_seconds=300, max_runtime_seconds=3600,
         description="在節點寫一個 N MB 的測試檔（測傳回、續傳；不連網）"),
 }

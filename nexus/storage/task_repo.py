@@ -5,7 +5,7 @@ from nexus.core.models import utcnow
 
 _TASK_COLS = ("task_id", "type", "adapter_version", "manifest_json", "manifest_sha256", "idempotency_key", "status", "version",
               "priority", "attempt_count", "max_attempts", "assigned_device_id", "current_attempt_id", "result_json", "error_code",
-              "error_message", "created_by", "created_at", "updated_at", "expires_at")
+              "error_message", "created_by", "created_at", "updated_at", "expires_at", "retry_at")
 
 
 def _row(r):

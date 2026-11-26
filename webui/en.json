@@ -909,7 +909,11 @@
   "🧪 搶先試用": "🧪 Early access",
   "加入": "Add",
   "黑金": "Black gold",
-  "回饋 1 則：🥉 徽章＋🎨 限定配色；3 則：🥈＋🧪 搶先試用；10 則：🥇＋黑金配色。拿到的代碼也可以在 Discord 打 /回饋者 領銅／銀／金身分組（1 小時內只算 1 組）。": "1 feedback: 🥉 badge + 🎨 exclusive colors; 3: 🥈 + 🧪 early access; 10: 🥇 + black-gold colors. You can also use your code with /feedback-role on Discord to get the bronze/silver/gold role (only 1 code per hour counts)."
+  "回饋 1 則：🥉 徽章＋🎨 限定配色；3 則：🥈＋🧪 搶先試用；10 則：🥇＋黑金配色。拿到的代碼也可以在 Discord 打 /回饋者 領銅／銀／金身分組（1 小時內只算 1 組）。": "1 feedback: 🥉 badge + 🎨 exclusive colors; 3: 🥈 + 🧪 early access; 10: 🥇 + black-gold colors. You can also use your code with /feedback-role on Discord to get the bronze/silver/gold role (only 1 code per hour counts).",
+  "執行太久": "ran too long",
+  "排隊太久，沒有節點接": "waited too long, no node took it",
+  "失敗（執行太久）": "Failed (ran too long)",
+  "已取消（排隊太久，沒有節點接）": "Cancelled (waited too long, no node took it)"
  },
  "patterns": [
   [
@@ -2039,6 +2043,10 @@
   [
    "{a}；強隔離：不能用（{b}）",
    "{a}; strong isolation: not available ({b})"
+  ],
+  [
+   "等待重試（{a} 再試）",
+   "Waiting to retry (at {a})"
   ]
  ],
  "ignore": [
