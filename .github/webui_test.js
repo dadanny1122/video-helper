@@ -255,6 +255,58 @@ const ok = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) fails
       const a5 = await page.evaluate(() => window.__acts);
       ok(a5.some((a) => a[0] === 'sec_unpair' && a[1] === 'abcdef0123456789') && a5.some((a) => a[0] === 'set' && a[1].key === 'log_keep_days' && a[1].value === 7)
         && !a5.some((a) => a[0] === 'clear_logs') && a5.some((a) => a[0] === 'verify_self'), '取消配對、改日誌天數（數字）、清空日誌按「不要」就不清、一鍵檢查');
+      // ---- v1.48.0 稍後清單、找重複、隱私與自動化、密碼鎖 ----
+      await page.evaluate(() => { window.__acts.length = 0; window.__pwned = 0; });
+      await page.click('#nav a[data-page="dl"]');
+      await page.waitForTimeout(600);
+      ok(await page.locator('#laterlist .lrow').count() === 2 && !(await page.evaluate(() => window.__pwned)), '稍後清單 2 部（標題有跳脫）');
+      await page.click('#laterlist .lrow[data-key="l2"] [data-lact="later_dl"]');
+      await page.click('#laterall');
+      await page.click('#dupbtn');
+      await page.waitForSelector('#modal:not([hidden]) .dupck', { timeout: 2000 });
+      ok(await page.locator('#mbox .dupck:checked').count() === 1 && !(await page.evaluate(() => window.__pwned)), '找重複：預設勾畫質低的那個');
+      await page.click('#mbox button:has-text("丟到資源回收筒")');
+      await page.waitForTimeout(200);
+      let a6 = await page.evaluate(() => window.__acts);
+      ok(a6.some((a) => a[0] === 'later_dl' && a[1] === 'l2') && a6.some((a) => a[0] === 'later_all')
+        && a6.some((a) => a[0] === 'dup_delete' && a[1].length === 1 && a[1][0] === 'h2'), '稍後：下載一部、全部下載；找重複：刪勾選的');
+      await page.click('#nav a[data-page="set"]');
+      await page.waitForTimeout(600);
+      ok(await page.isVisible('#x-day') && !(await page.isVisible('#x-lockoff')), '設定：定時下載顯示時段外限速；沒密碼時沒有「關閉」');
+      await page.selectOption('#x-ss', '23');
+      await page.selectOption('#x-org', 'site_month');
+      await page.click('#x-lockset');
+      await page.fill('#pw1', '2468'); await page.fill('#pw2', '2468');
+      await page.click('#mbox button:has-text("儲存")');
+      await page.fill('#x-hook', 'https://discord.com/api/webhooks/1/abc');
+      await page.click('#x-hooksave');
+      await page.waitForTimeout(200);
+      a6 = await page.evaluate(() => window.__acts);
+      ok(a6.some((a) => a[0] === 'set' && a[1].key === 'sched_start' && a[1].value === 23) && a6.some((a) => a[0] === 'set' && a[1].key === 'organize' && a[1].value === 'site_month')
+        && a6.some((a) => a[0] === 'lock_set' && a[1].pin === '2468') && a6.some((a) => a[0] === 'notify_set') && !(await page.inputValue('#x-hook')),
+        '設定：時段（數字）、整理、設定密碼、Webhook 送出後清空');
+      await page.screenshot({ path: path.join(out, 'set-extras.png') });
+      Object.assign(extra, { locked: true, lock: { wait: 0 } });
+      await page.waitForTimeout(700);
+      ok(await page.isVisible('#lockscr') && !(await page.isVisible('#nav')), '鎖住：只看得到鎖住畫面');
+      await page.screenshot({ path: path.join(out, 'locked.png') });
+      await page.fill('#lockpin', '1111'); await page.press('#lockpin', 'Enter');
+      await page.waitForTimeout(200);
+      ok((await page.textContent('#lockmsg')).includes('密碼不對') && !(await page.inputValue('#lockpin')), '打錯：顯示原因、清空輸入');
+      await page.fill('#lockpin', '2468'); await page.click('#lockgo');
+      delete extra.locked; delete extra.lock;
+      await page.waitForTimeout(700);
+      ok(!(await page.isVisible('#lockscr')) && await page.isVisible('#nav'), '解鎖後回到畫面');
+      Object.assign(extra, { lock_on: true, sched: '🌙 定時下載：1:00～7:00 才下載' });
+      await page.waitForTimeout(700);
+      ok(await page.isVisible('#lockbtn') && (await page.textContent('#schedpill')).includes('定時'), '上方：🔒 按鈕、定時下載狀態');
+      await page.click('#lockbtn');
+      await page.click('#schedpill');
+      await page.click('#mbox button:has-text("現在就下載")');
+      await page.waitForTimeout(200);
+      a6 = await page.evaluate(() => window.__acts);
+      ok(a6.some((a) => a[0] === 'lock') && a6.some((a) => a[0] === 'sched_now'), '按 🔒 鎖住、按定時狀態可以「現在就下載」');
+      delete extra.lock_on; delete extra.sched;
       await page.click('#nav a[data-page="home"]');
       await page.setViewportSize({ width: 1000, height: 760 });
       await page.waitForTimeout(200);

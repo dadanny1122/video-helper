@@ -32,10 +32,16 @@ ACTIONS = {
     "sec_view": None, "sec_unpair": 16, "clear_logs": None, "clear_stats": None, "verify_self": None,
     # v1.47.0 一鍵更新
     "update_now": None, "update_cancel": None,
+    # v1.48.0 密碼鎖、稍後清單、定時下載、找重複、通知手機
+    "lock": None, "unlock": 12, "lock_set": "dict", "lock_clear": 12,
+    "later_dl": 20, "later_open": 20, "later_rm": 20, "later_all": None, "later_clear": None,
+    "sched_now": None, "dup_scan": None, "dup_delete": "keys", "notify_set": 300, "notify_test": None,
 }
+LOCKED_OK = ("unlock",)      # 鎖住時只收這些（電腦版那邊也會再擋一次）
 SETTING_KEYS = ("default_quality", "rate_limit", "skip_downloaded", "tray_always", "keep_history", "keep_stats",
                 "smart_segments", "filename_template", "close_action", "theme", "log_keep_days", "lang",
-                "auto_download_update")
+                "auto_download_update", "lock_idle_min", "sched_mode", "sched_start", "sched_end", "sched_day_mbps",
+                "organize", "notify_mode")
 MAX_KEYS = 500
 QUALITIES = ("最高", "2160", "1440", "1080", "720", "480", "360")
 LOAD_TIMEOUT = 25            # 秒：網頁這麼久還沒說「好了」→ 改開舊介面
@@ -153,6 +159,11 @@ def check_action(name, arg):
             if k not in SETTING_KEYS or not isinstance(v, (str, bool, int, float)) or (isinstance(v, str) and len(v) > 100):
                 raise ValueError("參數不對")
             return {"key": k, "value": v}
+        if name == "lock_set":
+            pin, old = arg.get("pin"), arg.get("old", "")
+            if not all(isinstance(x, str) and len(x) <= 12 for x in (pin, old)):
+                raise ValueError("參數不對")
+            return {"pin": pin, "old": old}
         if name == "add_batch":
             t, q = arg.get("text"), arg.get("quality")
             if not isinstance(t, str) or not t or len(t) > 20000 or q not in QUALITIES:
@@ -189,8 +200,14 @@ class Api:
     def thumbs(self, keys=None):
         return self._host.thumbs(keys)
 
+    def later(self):
+        """⭐ 稍後下載清單（鎖住時是空的）"""
+        return [] if self._host.locked else list(self._host.later or [])
+
     def nexus(self):
         """Nexus 管理頁：最近一份節點／任務資料（電腦版每 2 秒在自己的執行緒讀一次，只在這頁開著時）"""
+        if self._host.locked:
+            return None
         self._host.want_nexus = time.time()
         return self._host.nexus_full
 
@@ -212,12 +229,16 @@ class Host:
         self.want_nexus = 0.0        # 網頁最後一次問 Nexus 資料的時間
         self.nexus_full = None
         self._thumbs = None
+        self.locked = False          # v1.48.0 🔒 鎖住時：紀錄、縮圖、Nexus、稍後清單都不給
+        self.later = None            # ⭐ 稍後下載清單（App 有變才整份換）
 
     def act(self, name, arg):
         try:
             arg = check_action(name, arg)
         except ValueError as e:
             return {"ok": False, "msg": str(e)}
+        if self.locked and name not in LOCKED_OK:
+            return {"ok": False, "msg": "🔒 已上鎖"}
         app = self.app
         if not app:
             return {"ok": False, "msg": "電腦版還在啟動，等一下再按"}
@@ -229,6 +250,8 @@ class Host:
 
     def history(self, query):
         """下載管理頁：搜尋／篩選下載紀錄（在網頁的執行緒跑，只讀 App 換好的那一份）"""
+        if self.locked:
+            return {"total": 0, "items": [], "sites": [], "counts": {"all": 0, "done": 0, "fail": 0}}
         q = query if isinstance(query, dict) else {}
         text = str(q.get("text") or "")[:100].lower().strip()
         st = q.get("status") if q.get("status") in ("done", "fail") else ""
@@ -251,7 +274,7 @@ class Host:
 
     def thumbs(self, keys):
         """縮圖：有做好的回 data: 圖片，還沒做的排隊做（回 None），做不出來的回 ""（網頁就不再問）"""
-        if not isinstance(keys, list):
+        if not isinstance(keys, list) or self.locked:
             return {}
         if self._thumbs is None:
             from webui.thumbs import ThumbMaker

@@ -195,6 +195,16 @@
 <h3 id="security">🔒 Security</h3>
 <p>Security &amp; stats shows paired browsers, AI usage, sites contacted, the error log (clear it or auto-delete after N days), and component fingerprints. <b>🔍 Check this EXE is an official build</b> computes the EXE's fingerprint and asks GitHub whether this project has a signed build record for it (only the fingerprint is sent, only when you press it). Details: <a href="https://github.com/dadanny1122/video-helper/blob/main/SECURITY.md">SECURITY.md</a>.</p>
 
+<h3 id="extras">🧩 Privacy &amp; automation (v1.48.0+)</h3>
+<p>All on the Settings page, in the "🧩 Privacy &amp; automation" card:</p>
+<ul>
+  <li><b>🔒 PIN lock</b>: press "Set PIN" and enter 4–12 digits. The app then locks <b>when it opens, after being idle (15 minutes by default) and when minimized to the tray</b>; the 🔒 button at the top locks it right away. While locked, titles, history, thumbnails and notifications are hidden and <b>downloads keep going</b>. After 5 wrong tries you wait 30 s. It stops casual snooping; it is <b>not encryption</b> — the video files are still in the folder. Forgot the PIN? Close the app, open <code>%APPDATA%\VideoHelper\settings.json</code> in Notepad and delete the <code>lock_pin</code> line.</li>
+  <li><b>⭐ Download later</b>: press "⭐ Download later" in the download panel on a video site; the video is saved to the list on the Downloads page of the desktop app. Press "⬇ Download all" later. For sites that block programs (Pornhub), the page is opened in your browser and the script sends it over automatically (up to 5 pages at a time).</li>
+  <li><b>🌙 Scheduled downloads</b>: "Only download in the window" — e.g. only 1:00–7:00; a running download pauses when the window ends and resumes when it starts. "Full speed in the window, limited otherwise" — limits daytime speed to 2–20 Mbps. Click the 🌙 badge at the top to "▶ Download now" for this batch.</li>
+  <li><b>🗂 Auto-organize folders</b>: new downloads go into "Downloads\Site\" or "Downloads\Site\2026-11\"; existing files aren't moved. Downloads → "🧹 Find duplicates" finds videos downloaded into several files, keeps the best quality by default and moves the rest to the <b>Recycle Bin</b> (recoverable).</li>
+  <li><b>📱 Phone notification when done</b>: in your own Discord server, open a channel's settings → Integrations → Webhooks → New Webhook → copy the URL, paste it into the desktop app, press "Save", then "Send a test". When the whole queue is done, Discord on your phone shows "✅ 3 downloads finished, 2.1 GB total" — <b>never titles</b>.</li>
+</ul>
+
 <h2 id="update">6. Updates</h2>
 <ul>
   <li><b>Script</b>: Violentmonkey checks daily. To update now: Violentmonkey dashboard → Video Helper → 🔄</li>

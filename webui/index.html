@@ -35,6 +35,8 @@
     </div>
     <div class="top-r">
       <span class="pill" id="bridge">瀏覽器未連動</span>
+      <span class="pill" id="schedpill" hidden></span>
+      <button class="icon" id="lockbtn" title="鎖定" hidden>🔒</button>
       <button class="icon" id="bell" title="通知">🔔<span class="badge" id="badge" hidden></span></button>
     </div>
   </header>
@@ -118,9 +120,20 @@
       <div id="qlist" class="list"></div>
     </section>
 
+    <section class="card" id="latercard">
+      <div class="card-h">
+        <h3>⭐ 稍後下載</h3><span class="muted small" id="latersum">在影片網站的下載面板按「⭐ 稍後下載」就會出現在這裡</span>
+        <div class="grow"></div>
+        <button class="accent small" id="laterall">⬇ 全部下載</button>
+        <button class="ghost small" id="laterclear">清空</button>
+      </div>
+      <div id="laterlist" class="list"></div>
+    </section>
+
     <section class="card">
       <div class="card-h">
         <h3>下載紀錄</h3>
+        <button class="ghost small" id="dupbtn" title="同一部影片下載了好幾個檔案">🧹 找重複</button>
         <input id="hsearch" class="search" type="search" placeholder="🔍 搜尋標題或網站" spellcheck="false">
         <select id="hsite" class="sel"><option value="">全部網站</option></select>
         <div class="chips" id="hchips">
@@ -163,6 +176,21 @@
         <div class="srow"><div><b>關閉視窗時</b><div class="muted small">縮到系統匣＝縮到右下角繼續下載，完成會通知</div></div><select data-set="close_action" id="s-close"></select></div>
         <div class="srow"><div><b>系統匣小圖示一直顯示</b><div class="muted small">右鍵：狀態、暫停、貼上網址下載、打開下載資料夾</div></div><label class="sw"><input type="checkbox" data-set="tray_always" id="s-tray"><span></span></label></div>
         <div class="srow"><div><b>有新版時先在背景下載好</b><div class="muted small">下載並核對好之後，還是要你按「⬆ 更新」才會換成新版</div></div><label class="sw"><input type="checkbox" data-set="auto_download_update" id="s-autoupd"><span></span></label></div>
+      </section>
+
+      <section class="card">
+        <div class="card-h"><h3>🧩 隱私與自動化</h3></div>
+        <div class="srow"><div><b>🔒 密碼鎖</b><div class="muted small" id="x-lock">打開電腦版、看下載紀錄都要先輸入密碼（防別人順手打開，不是加密）</div></div>
+          <div class="sbtns"><button class="ghost small" id="x-lockset">設定密碼</button><button class="ghost small" id="x-lockoff" hidden>關閉</button></div></div>
+        <div class="srow"><div><b>閒置多久自動鎖</b><div class="muted small">縮到系統匣也會鎖</div></div><select data-set="lock_idle_min" id="x-idle"></select></div>
+        <div class="srow"><div><b>🌙 定時下載</b><div class="muted small" id="x-schedhint">不在你要用網路的時候搶頻寬</div></div><select data-set="sched_mode" id="x-sched"></select></div>
+        <div class="srow" id="x-schedrow"><div><b>時段</b><div class="muted small">可以跨半夜，例如 23 → 7</div></div>
+          <div class="sbtns"><select data-set="sched_start" id="x-ss"></select><span class="muted">→</span><select data-set="sched_end" id="x-se"></select>
+            <select data-set="sched_day_mbps" id="x-day" title="時段外的速度上限"></select></div></div>
+        <div class="srow"><div><b>🗂 自動整理資料夾</b><div class="muted small">新下載的影片依網站（和月份）分資料夾；舊檔不會搬</div></div><select data-set="organize" id="x-org"></select></div>
+        <div class="srow"><div><b>📱 下載完成通知手機</b><div class="muted small" id="x-notehint">用你自己 Discord 頻道的 Webhook；只傳「完成幾部、多大」，不寫標題</div></div><select data-set="notify_mode" id="x-notify"></select></div>
+        <div class="srow col"><div class="sbtns"><input type="password" id="x-hook" class="search" placeholder="貼上 Discord 頻道的 Webhook 網址" autocomplete="off" spellcheck="false">
+          <button class="ghost small" id="x-hooksave">儲存</button><button class="ghost small" data-act="notify_test">傳一則測試</button><button class="ghost small" id="x-hookclear" hidden>清除</button></div></div>
       </section>
 
       <section class="card">
@@ -297,6 +325,14 @@
   <div class="card-h"><h3>通知</h3><div class="grow"></div><button class="ghost small" id="clearn">清除</button></div>
   <div id="notices"></div>
 </div>
+<div id="lockscr" class="lockscr" hidden><div class="lockbox">
+  <div class="lk">🔒</div><h2>Video Helper 已上鎖</h2>
+  <p class="muted small">輸入密碼解鎖；下載會在背景繼續</p>
+  <input id="lockpin" class="search" type="password" inputmode="numeric" maxlength="12" autocomplete="off" placeholder="密碼">
+  <button class="accent" id="lockgo">解鎖</button>
+  <div class="small bad" id="lockmsg"></div>
+  <div class="muted small forgot">忘記密碼：關掉電腦版，用記事本打開 %APPDATA%\VideoHelper\settings.json，刪掉 lock_pin 那一行</div>
+</div></div>
 <div id="modal" class="modal" hidden><div class="box" id="mbox"></div></div>
 <div id="toast" class="toast" hidden></div>
 <script>/*JS*/</script>

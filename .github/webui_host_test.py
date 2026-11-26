@@ -30,7 +30,7 @@ def ok(cond, msg):
 
 
 # ---- 1. 不用視窗的部分 ----
-ok(set(n for n in dir(webui.Api) if not n.startswith("_")) == {"state", "static", "act", "ready", "history", "thumbs", "nexus"}, "網頁只拿得到 7 個函式")
+ok(set(n for n in dir(webui.Api) if not n.startswith("_")) == {"state", "static", "act", "ready", "history", "thumbs", "nexus", "later"}, "網頁只拿得到 8 個函式")
 for name, arg in (("eval", "x"), ("add", ""), ("add", 5), ("add", "x" * 20001), ("cancel", None), ("answer", {"id": 1}),
                   ("old", "x" * 21), ("subtitles", "hab"), ("subtitles", []), ("subtitles", ["x" * 41]),
                   ("delete_hist", ["a"] * 501), ("add_batch", {"text": "x", "quality": "999"}), ("enqueue_fmt", {"id": "a", "i": "1"}),

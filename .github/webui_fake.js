@@ -29,7 +29,12 @@ function state(theme, extra = {}) {
       lang: 'en', langs: [['auto', '跟系統'], ['zh', '繁體中文'], ['en', 'English']],
       close_action: '下載中才詢問', close_choices: ['下載中才詢問', '一律縮到系統匣', '直接結束'], tray_always: true, tray_ok: true,
       keep_history: true, keep_stats: false, bridge: '✅ 執行中（127.0.0.1:47321）｜已配對 1 個瀏覽器', bridge_on: true, paired: 1,
-      blocklist: '71,234 筆｜今天更新', ai: '沒有設定金鑰（只用免費清單）｜AI 記住 0 個網域', ai_has_key: false, mbps: 85.2, data_dir: 'C:\\Users\\me\\AppData\\Roaming\\VideoHelper' },
+      blocklist: '71,234 筆｜今天更新', ai: '沒有設定金鑰（只用免費清單）｜AI 記住 0 個網域', ai_has_key: false, mbps: 85.2, data_dir: 'C:\\Users\\me\\AppData\\Roaming\\VideoHelper',
+      lock_on: false, lock_idle_min: 15, lock_idles: [0, 5, 15, 30, 60], sched_mode: 'fast_night',
+      sched_modes: [['off', '關閉'], ['window', '只在時段內下載'], ['fast_night', '時段內全速、其他時間限速']], sched_start: 1, sched_end: 7,
+      sched_day_mbps: 5, sched_days: [2, 5, 10, 20], organize: 'off', organize_modes: [['off', '不整理'], ['site', '依網站分資料夾'], ['site_month', '依網站＋月份']],
+      notify_mode: 'off', notify_modes: [['off', '關閉'], ['all_done', '佇列全部做完時']], notify_has: false, recycle_ok: true },
+    lock_on: false, lock_idle_min: 15, later_ver: 1, later_n: 2, sched: '',
     setup: { chrome: true, done: ['1'] },
   }, extra);
 }
@@ -69,12 +74,17 @@ async function setup(page, getState) {
             bridge: '開著（127.0.0.1:47321，只有這台電腦連得到）', ai: [], ai_key: false,
             net: [{ host: 'github.com', n: 3, last: '21:00:00', odd: false }, { host: 'weird.example', n: 1, last: '21:01:00', odd: true }],
             log_size: '120 KB', log_keep: 14, components: 'yt-dlp 2026.10.26  sha256 abc…', stats: [['pornhub.com', 12, '8.1 GB', '85.2 Mbps', '±8%', '±3%']], stats_sum: '共下載 12 部', verify: { state: 'ok', text: '✅ 這個 EXE 是 GitHub Actions 從 dadanny1122/video-helper 原始碼打包的（GitHub 有簽章紀錄，也跟發布頁的指紋一樣）', sha256: 'ab'.repeat(32), release_sha256: 'ab'.repeat(32), run: 'https://github.com/x/runs/1' } } };
+          if (n === 'dup_scan') return { ok: true, can_delete: true, groups: [[{ key: 'h1', title: '<img src=x onerror="window.__pwned=6">', quality: '1080p', size: '1.2 GB', name: 'a [1080p].mp4', keep: true },
+            { key: 'h2', title: 'x', quality: '480p', size: '300 MB', name: 'a [480p].mp4', keep: false }]] };
+          if (n === 'unlock') return a === '2468' ? { ok: true, msg: '已解鎖' } : { ok: false, msg: '密碼不對（再錯 4 次要等一下）' };
           if (n === 'nx_audit') return { ok: true, audit: [['2026-11-24 13:00:00', 'device.approve', 'owner', '書房電腦', 'ok', '是我的']] };
           return { ok: true, msg: 'ok:' + n }; },
         ready: () => { window.__ready = true; return true; },
         history: (q) => window.__hist(q),
         thumbs: (k) => window.__thumbs(k),
         nexus: () => window.__nexus(),
+        later: async () => [{ key: 'l1', title: '<img src=x onerror="window.__pwned=5">', site: 'Pornhub', time: '11-26 09:00', browser: true },
+          { key: 'l2', title: '稍後的影片', site: 'XVideos', time: '11-26 08:00', browser: false }],
       } };
     });
 }

@@ -37,6 +37,7 @@ socket.getaddrinfo, socket.create_connection = getaddrinfo, create_connection
 ALLOWED = ("github.com", "githubusercontent.com",        # 檢查更新、廣告清單、whisper.cpp
            "huggingface.co", "hf.co", "hf-mirror.com",   # AI 模型（Hugging Face 會轉到自己的下載伺服器）
            "anthropic.com",                              # AI（只有填金鑰才會）
+           "discord.com",                                # v1.48.0 下載完成通知手機（只有自己貼了 Webhook 才會）
            "localhost", "127.0.0.1")                     # 電腦版自己的連線服務
 
 
