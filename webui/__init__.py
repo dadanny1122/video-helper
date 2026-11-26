@@ -166,6 +166,11 @@ def check_action(name, arg):
             if not all(isinstance(x, str) and len(x) <= 12 for x in (pin, old)):
                 raise ValueError("參數不對")
             return {"pin": pin, "old": old}
+        if name == "feedback_send":                         # v1.49.1：原本漏了這段，送出都變「參數不對」
+            k, t = arg.get("kind"), arg.get("text")
+            if not isinstance(k, str) or len(k) > 20 or not isinstance(t, str) or not t or len(t) > 4000:
+                raise ValueError("參數不對")
+            return {"kind": k, "text": t}
         if name == "add_batch":
             t, q = arg.get("text"), arg.get("quality")
             if not isinstance(t, str) or not t or len(t) > 20000 or q not in QUALITIES:
