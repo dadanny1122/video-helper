@@ -2031,6 +2031,14 @@
   [
    "謝謝你的意見回饋！拿到：{a}",
    "Thanks for your feedback! Unlocked: {a}"
+  ],
+  [
+   "{a}；強隔離：可以用（還沒啟用）",
+   "{a}; strong isolation: available (not enabled yet)"
+  ],
+  [
+   "{a}；強隔離：不能用（{b}）",
+   "{a}; strong isolation: not available ({b})"
   ]
  ],
  "ignore": [

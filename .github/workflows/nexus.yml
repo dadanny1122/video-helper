@@ -75,4 +75,6 @@ jobs:
           ./dist/nexus_frozen_check.exe | Tee-Object -FilePath frozen.json
           if ($LASTEXITCODE -ne 0) { Write-Output "::error title=打包後沙箱::有項目不對，看上面的 JSON"; exit 1 }
           Write-Output "::notice title=打包後沙箱::寫檔搬運、取消整組結束（含孫程序）、環境變數白名單 OK"
+          $j = Get-Content frozen.json -Raw | ConvertFrom-Json
+          Write-Output "::notice title=強隔離偵測（APEX PR2）::$($j.strong.hardening)；$($j.strong.reasons -join '；')"
 

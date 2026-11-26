@@ -132,3 +132,9 @@ Master 算整檔 SHA-256：對 → 搬進下載資料夾（檔名重新清理、
 
 ## 新錯誤碼
 `UPLOAD_NOT_ALLOWED`（403）、`UPLOAD_INCOMPLETE`（409）、`UPLOAD_EXPIRED`（410）、`CHUNK_MISMATCH`（400）、`SIZE_MISMATCH`（400）、`HASH_MISMATCH`（409）、`MASTER_DISK_FULL`（507）、`OUTPUT_REJECTED`（400）；節點回報 `TRANSFER_FAILED`（不重試，可重新傳回）。
+
+# 協定 1.4（APEX Phase 1 PR2：強隔離偵測，電腦版 v1.51.0 起）
+
+- 心跳 `resources` 可多兩個欄位：`hardening`（`appcontainer`／`none`）、`hardening_reason`（≤200 字）。**只是偵測結果，排程不看它**，下載還是用 1.2 的 basic 沙箱。
+- 跟 1.2 不一樣的地方：節點從 Master 回覆裡的 `protocol_version` 知道對方版本，**只在 Master ≥ 1.4 時才送**這兩個欄位（`HARDENING_MIN_PROTOCOL`），所以舊版 Master 不用一起更新。剛連上的第一次心跳不知道版本，不會帶。
+- 偵測在背景跑一次（`VideoHelper.exe --nexus-probe-strong <節點資料夾>`，印一行 JSON）；還沒跑完之前也不會帶。

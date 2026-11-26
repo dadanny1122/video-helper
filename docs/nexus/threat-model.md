@@ -80,12 +80,28 @@ V2 的測試 Adapter 不開子程序、不碰檔案、不連網，所以**還不
 | T31 | 任務吃光記憶體／CPU、狂開程序、跑不停 | Job Object：記憶體 2GB、CPU 50% 硬上限、8 個程序、`KILL_ON_JOB_CLOSE`；時間由節點計時 → `TerminateJobObject` | `test_sandbox_job.py`（Windows CI）、AT-008 |
 | T32 | 取消或當掉後留下下載程序（孫程序） | 暫停建立→放進 Job→才恢復（沒有空檔逃出）；結束後確認 Job 內 0 個程序，有殘留就算失敗；打包成 EXE 後也實測 | `test_cancel_kills_grandchild_too`、nexus.yml `frozen` job、AT-015、AT-026 |
 | T33 | 任務寫到資料夾外、用連結偷搬使用者檔案、檔名帶磁碟機代號 | 隨機工作資料夾；`deliver` 只收真的在 output 裡、不是連結、副檔名 mp4/mkv/webm/m4a 的檔；`sanitize_filename`＋`is_inside`；一個不合格整批不搬；不覆蓋 | `test_sandbox_workspace.py`（含 `C:`、`x:`、UNC、符號連結）、AT-006 |
-| T34 | 任務讀到節點的秘密（憑證、金鑰、瀏覽器 Cookie） | 環境變數白名單；APPDATA／USERPROFILE／HOME 都指到任務 tmp；yt-dlp 不用 Cookie、不用系統代理、不寫快取；子程序只讀 input/task.json | `test_env_whitelist_inside_child` |
+| T34 | 任務讀到節點的秘密（憑證、金鑰、瀏覽器 Cookie） | 環境變數白名單；APPDATA／USERPROFILE／HOME 都指到任務 tmp；yt-dlp 不用 Cookie、不用系統代理、不寫快取；子程序只讀 input/task.json。**只擋「正常程式碼」去預設位置找；惡意程式碼用絕對路徑照樣讀得到（§8 G1）** | `test_env_whitelist_inside_child` |
 | T35 | 清理失敗卻顯示成功 | 刪不掉工作資料夾 → CLEANUP_FAILED | `test_cleanup_reports_failure_when_file_locked`、AT-024 |
 | T36 | 沙箱建不起來就偷偷不用沙箱照跑 | 節點啟動 `jobs.probe()`；不是 basic 就不宣稱支援 video.download，Master 排除原因 `no_sandbox` | `test_worker_without_sandbox_does_not_offer_video_download`、AT-025 |
 | T37 | 子程序回報亂塞資料拖垮節點 | stdout 每行 64KB、最多 10 萬則事件，超過就整組結束；結果由 Master `verify` 檢查檔案清單格式 | 程式碼審查、`dispatch.verify` |
 
-**V3 接受的殘餘風險**：同一個 Windows 帳號下的惡意程式不受沙箱限制；工作資料夾權限用 Windows 預設（沒另設 ACL）；網路限制在 Python 層，不是防火牆；yt-dlp 本身有漏洞時，影響範圍被上面幾層限制，但不是零。
+**V3 接受的殘餘風險**：同一個 Windows 帳號下的惡意程式不受沙箱限制；工作資料夾權限用 Windows 預設（沒另設 ACL）；網路限制在 Python 層，不是防火牆。
+
+**更正（APEX Phase 0，2026-11-26）**：原本寫「yt-dlp 本身有漏洞時，影響範圍被上面幾層限制」說得太滿。實際上子程序裡一旦跑了惡意程式碼（例如 ffmpeg 解析惡意影片被打進去、或 yt-dlp 供應鏈被汙染），**只有 Job Object 的資源限制（記憶體、CPU、程序數、整組結束）還有效**；檔案和網路都沒有 OS 層的限制。見 §8。
+
+
+## 8. APEX Phase 0 查到的缺口（2026-11-26，`docs/apex/00-Phase0盤點報告.md`）
+
+前提都是「沙箱子程序裡已經有惡意程式碼在跑」。正常的 yt-dlp 不會這樣做，所以**目前實際風險低，但影響大**。
+
+| # | 缺口 | 為什麼 | 測試（現在是 xfail＝已知擋不住） |
+|---|---|---|---|
+| G1 | 子程序讀得到節點私鑰 | 子程序跟節點同一個 Windows 身分（`jobs.spawn`＝一般 `Popen`）；私鑰用 DPAPI CurrentUser，同帳號就解得開；沙箱資料夾 `<base>/sandbox/work/<id>` 往上三層就是 `<base>/identity` | `security/test_sandbox_escape.py::test_child_cannot_read_node_identity_dir` |
+| G2 | 子程序讀得到使用者所有檔案 | 同上；環境變數白名單只改「預設位置」，絕對路徑照樣讀得到 | 同上（同一個原因） |
+| G3 | 網路檢查繞得過 | `install_net_guard` 只換了 `socket.socket.connect`；`connect_ex`、`_socket` 低階呼叫、原生程式（ffmpeg）都不受管 | `test_guard_blocks_connect_ex`、`test_guard_blocks_low_level_socket`、`test_child_cannot_reach_loopback_at_os_level` |
+| G4 | 同帳號可以請別的程序代開程序（WMI／COM），那個程序不在 Job 裡 | Job 只管「自己生出來的」程序 | 還沒有測試 |
+
+補法（APEX Phase 1）：PR2 先偵測這台 Windows 能不能用 AppContainer（只偵測、不改下載流程）；要不要真的改用 AppContainer，看偵測結果再決定。另一個不用寫程式的做法：節點用另一個 Windows 帳號執行。
 
 
 ## 7. V4（節點把影片傳回 Master，電腦版 v1.33.0）新增的威脅

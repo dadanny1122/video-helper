@@ -11,6 +11,9 @@ import sys
 if len(sys.argv) > 1 and sys.argv[1] in ("--nexus-run", "--probe-sleeper"):
     from nexus.sandbox.child import entry
     sys.exit(entry())
+if len(sys.argv) > 2 and sys.argv[1] == "--nexus-probe-strong":      # APEX PR2：跟 video_helper_app.py 一樣
+    from nexus.sandbox.appcontainer import entry as _strong_entry
+    sys.exit(_strong_entry())
 
 import json  # noqa: E402
 import os  # noqa: E402
@@ -19,7 +22,7 @@ import tempfile  # noqa: E402
 import threading  # noqa: E402
 import time  # noqa: E402
 
-from nexus.sandbox import jobs  # noqa: E402
+from nexus.sandbox import appcontainer, jobs  # noqa: E402
 from nexus.sandbox.runner import SandboxRunner  # noqa: E402
 
 
@@ -50,6 +53,9 @@ def main() -> int:
         e = r.run({"type": "sandbox.probe", "params": {"mode": "env"}, "deliver": False})
         res["env_keys"] = e.result.get("env_keys")
         ok &= e.ok and "VH_SANDBOX" in (res["env_keys"] or [])
+        # APEX PR2：打包後強隔離偵測能跑完、格式對（等級只記錄，不當成失敗：要看實際機器）
+        res["strong"] = appcontainer.probe_strong(os.path.join(d, "node"))
+        ok &= res["strong"]["hardening"] in appcontainer.LEVELS and "偵測程式沒有回報" not in "".join(res["strong"]["reasons"])
     res["ok"] = bool(ok)
     print(json.dumps(res, ensure_ascii=False, indent=1))
     return 0 if ok else 1

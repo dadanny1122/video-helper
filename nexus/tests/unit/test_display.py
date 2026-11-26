@@ -46,3 +46,14 @@ def test_web_ui_does_not_use_tk_tabs():
         if isinstance(node, ast.FunctionDef) and (node.name.startswith("web_nx") or node.name in ("_web_nexus_full", "_nx", "init_nexus")):
             text = ast.get_source_segment(src, node)
             assert "nexus.gui" not in text, f"{node.name} 還在用 nexus.gui"
+
+
+def test_isolation_text_with_hardening():
+    from nexus import display as d
+    assert d.isolation_text(None, known=False) == "—"
+    assert d.isolation_text({}) == "—（舊版節點）"
+    assert d.isolation_text({"isolation": "basic"}) == "基本（可下載）"                     # v1.50.0 的節點：跟以前一樣
+    assert d.isolation_text({"isolation": "none", "isolation_reason": "不是 Windows"}) == "不能用：不是 Windows"
+    assert d.isolation_text({"isolation": "basic", "hardening": "appcontainer"}) == "基本（可下載）；強隔離：可以用（還沒啟用）"
+    t = d.isolation_text({"isolation": "basic", "hardening": "none", "hardening_reason": "這台沒有 curl.exe"})
+    assert t == "基本（可下載）；強隔離：不能用（這台沒有 curl.exe）"

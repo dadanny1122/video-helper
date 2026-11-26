@@ -114,3 +114,17 @@ def who(actor: str, names: dict) -> str:
         return "節點 " + names.get(actor[7:], actor[7:15])
     names = {"owner": "你", "browser": "瀏覽器（交給節點）", "scheduler": "排程器", "dispatcher": "派送", "master": "Master 驗證"}
     return names.get(actor, actor)
+
+
+def isolation_text(res: dict | None, known: bool = True) -> str:
+    """節點「沙箱」欄（Tk 節點分頁、新介面共用）：基本／不能用＋原因；APEX PR2 再加上強隔離偵測結果"""
+    res = res or {}
+    if "isolation" not in res:
+        return "—（舊版節點）" if known else "—"
+    base = "基本（可下載）" if res["isolation"] == "basic" else "不能用：" + (res.get("isolation_reason") or "原因不明")[:40]
+    h = res.get("hardening")
+    if h == "appcontainer":
+        return base + "；強隔離：可以用（還沒啟用）"
+    if h == "none":
+        return base + "；強隔離：不能用（" + (res.get("hardening_reason") or "原因不明")[:30] + "）"
+    return base
