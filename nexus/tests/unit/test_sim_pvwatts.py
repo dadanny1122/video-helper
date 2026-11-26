@@ -136,11 +136,12 @@ def test_child_has_no_network(tmp_path):
     """模擬子程序一開始就把網路關掉（就算 PySAM 被打進去，也連不出去）"""
     script = tmp_path / "s.py"
     script.write_text(pvwatts.CHILD_SCRIPT.split("def out(obj):")[0] +
-                      "import socket\ntry:\n    socket.create_connection(('127.0.0.1', 9))\n    print('連得到')\n"
-                      "except OSError as e:\n    print('擋住', e)\n", encoding="utf-8")
+                      "import socket\ntry:\n    socket.create_connection(('127.0.0.1', 9))\n    print('REACHED')\n"
+                      "except OSError as e:\n    print('BLOCKED', ascii(str(e)))\n", encoding="utf-8")
     import subprocess
     p = subprocess.run([sys.executable, "-I", str(script)], capture_output=True, text=True, timeout=30)
-    assert "擋住" in p.stdout and "不准連網" in p.stdout
+    # 只印 ASCII：Windows 主控台編碼印不出中文（正式腳本本來就用 ensure_ascii）
+    assert p.stdout.startswith("BLOCKED") and ascii("不准連網")[1:-1] in p.stdout, p.stdout + p.stderr
 
 
 def test_child_reports_missing_pysam(tmp_path):
