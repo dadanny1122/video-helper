@@ -104,7 +104,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.51.0"
+VERSION = "1.51.1"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -4990,11 +4990,11 @@ class App:
                 act = [d for d in devs if d["status"] == "ACTIVE"]
                 online = [d for d in act if d.get("connection_state") == "CONNECTED"]
                 busy = 0
-                if svc.running() and svc.tasks:
+                if svc.running and svc.tasks:
                     busy = sum(1 for t in svc.tasks.list(active_only=True)
                                if t.get("status") in ("RUNNING", "UPLOADING", "ASSIGNED", "ACCEPTED"))
                 state = {"PENDING": "等核准", "SUSPENDED": "已暫停"}
-                n = {"enabled": bool(svc.cfg["enabled"]), "running": svc.running(), "online": len(online), "total": len(act),
+                n = {"enabled": bool(svc.cfg["enabled"]), "running": svc.running, "online": len(online), "total": len(act),
                      "tasks": busy,
                      "devices": [{"name": d["name"], "online": d in online,
                                   "state": state.get(d["status"]) or ("連線中" if d in online else "離線")} for d in devs[:6]]}
