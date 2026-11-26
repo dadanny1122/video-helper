@@ -181,6 +181,15 @@ ok(sent and sent[-1] == (hook, "✅ Video Helper：下載完成 2 部，共 2.1 
 call("notify_set", "-")
 ok(not app.settings["notify_webhook"], "清除 Webhook")
 
+# ---- 意見回饋：網頁送出的格式要收得下（v1.49.0 漏了，送出都變「參數不對」）----
+import vh_feedback  # noqa: E402
+got = []
+vh_feedback.send = lambda kind, text, *x, **k: got.append((kind, text)) or {"ok": False, "msg": "測試不送"}
+r = call("feedback_send", {"kind": "suggest", "text": "對於回饋，我希望對於未來可新增許多對於很多實惠的功能例如聽音樂"})
+drain(0.5)
+ok(r["ok"] and got and got[0][0] == "suggest", "意見回饋：網頁送出收得下、有交給 send")
+ok(call("feedback_send", {"kind": "x" * 30, "text": "a"})["ok"] is False, "意見回饋：壞參數拒絕")
+
 app.quitting = True
 try:
     app.quit_app()
