@@ -19,7 +19,7 @@ import socket
 import ssl
 import threading
 
-from nexus import HARDENING_MIN_PROTOCOL, NEXUS_VERSION, version_tuple
+from nexus import HARDENING_MIN_PROTOCOL, NAMED_MIN_PROTOCOL, NEXUS_VERSION, version_tuple
 from nexus.core.errors import NexusError
 from nexus.core.models import parse_utc
 from nexus.identity import certs
@@ -255,6 +255,7 @@ class WorkerAgent:
         res = {**self.probe.snapshot(), "isolation": sb.get("isolation", "none"),
                "isolation_reason": "；".join(sb.get("reasons") or [])[:200]}
         res.update(self._hardening_fields())
+        res.update(self._named_fields())
         return {"resources": res, "adapters": dict(self.executor.versions),
                 "max_concurrency": mc, "accepting": bool(self.cfg.get("accept_tasks", True)), "running": running}
 
@@ -271,6 +272,21 @@ class WorkerAgent:
         if not hs:
             return {}                                 # 還在偵測：先不送，下一次心跳再送
         return {"hardening": hs.get("hardening", "none"), "hardening_reason": "；".join(hs.get("reasons") or [])[:200]}
+
+    def _peer_at_least(self, ver: str) -> bool:
+        peer = getattr(self._client, "peer_protocol", None) if self._client is not None else None
+        try:
+            return bool(peer) and version_tuple(peer) >= version_tuple(ver)
+        except ValueError:
+            return False
+
+    def _named_fields(self) -> dict:
+        """APEX（借 Dask）：自訂資源。舊 Master（協定 < 1.5）看到不認得的欄位會整份能力丟掉 → 只送給 1.5 以上；設定壞掉就不送"""
+        from nexus.tasks.capabilities import named_problem
+        named = self.cfg.get("named_resources") or {}
+        if not named or named_problem(named) or not self._peer_at_least(NAMED_MIN_PROTOCOL):
+            return {}
+        return {"named": dict(named)}
 
     def _heartbeat_once(self):
         c = self._auth_client()

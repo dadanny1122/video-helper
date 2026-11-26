@@ -201,6 +201,26 @@ def run_window() -> int:
         cfg.save()
     ttk.Checkbutton(f, text="傳回 Master 之後，這台也留一份（不勾＝Master 確認收到才刪）", variable=keep,
                     command=on_keep).grid(row=12, column=2, sticky="w", padx=(10, 0), pady=2)
+    # APEX（借 Dask）：自訂資源——這台有什麼特別的東西（GPU、裝了 PySAM…），有要求的任務只會派給有的節點
+    ttk.Label(f, text="自訂資源").grid(row=14, column=0, sticky="w", pady=(8, 2))
+    named = ttk.Entry(f, width=30)
+    from nexus.tasks.capabilities import named_text, parse_named
+    named.insert(0, ", ".join(f"{k}={v}" for k, v in sorted((cfg.get("named_resources") or {}).items())))
+    named_msg = ttk.Label(f, text="例：gpu=1, pysam=1（沒有就空白）", foreground="#8ea3d6")
+
+    def save_named(*_):
+        try:
+            cfg["named_resources"] = parse_named(named.get())
+        except ValueError as e:
+            named_msg.config(text=f"沒存：{e}", foreground="#e0a040")
+            return
+        cfg.save()
+        named_msg.config(text=("已存：" + named_text(cfg["named_resources"])) if cfg["named_resources"] else "已存：沒有",
+                         foreground="#8ea3d6")
+    named.bind("<FocusOut>", save_named)
+    named.bind("<Return>", save_named)
+    named.grid(row=14, column=1, sticky="w", pady=(8, 2))
+    named_msg.grid(row=14, column=2, sticky="w", padx=(10, 0), pady=(8, 2))
     sb = sandbox_status()
     iso_text = ("沙箱：基本（程序限制＋只准連支援的網站，不是完全隔離）" if sb.get("isolation") == "basic"
                 else "沙箱：不能用（" + "；".join(sb.get("reasons") or ["原因不明"]) + "）→ 不會接下載任務")

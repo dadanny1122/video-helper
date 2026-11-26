@@ -142,7 +142,10 @@ def isolation_text(res: dict | None, known: bool = True) -> str:
     base = "基本（可下載）" if res["isolation"] == "basic" else "不能用：" + (res.get("isolation_reason") or "原因不明")[:40]
     h = res.get("hardening")
     if h == "appcontainer":
-        return base + "；強隔離：可以用（還沒啟用）"
-    if h == "none":
-        return base + "；強隔離：不能用（" + (res.get("hardening_reason") or "原因不明")[:30] + "）"
+        base += "；強隔離：可以用（還沒啟用）"
+    elif h == "none":
+        base += "；強隔離：不能用（" + (res.get("hardening_reason") or "原因不明")[:30] + "）"
+    if res.get("named"):
+        from nexus.tasks.capabilities import named_text
+        base += "；資源：" + named_text(res["named"])
     return base

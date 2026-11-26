@@ -913,7 +913,13 @@
   "執行太久": "ran too long",
   "排隊太久，沒有節點接": "waited too long, no node took it",
   "失敗（執行太久）": "Failed (ran too long)",
-  "已取消（排隊太久，沒有節點接）": "Cancelled (waited too long, no node took it)"
+  "已取消（排隊太久，沒有節點接）": "Cancelled (waited too long, no node took it)",
+  "節點沒有這個任務要的資源，或已經被別的任務佔滿": "The node doesn't have the resource this task needs, or other tasks are using it all",
+  "自訂資源": "Custom resources",
+  "例：gpu=1, pysam=1（沒有就空白）": "e.g. gpu=1, pysam=1 (leave blank if none)",
+  "已存：沒有": "Saved: none",
+  "強隔離：可以用（還沒啟用）": "strong isolation: available (not enabled yet)",
+  "；強隔離：可以用（還沒啟用）": "; strong isolation: available (not enabled yet)"
  },
  "patterns": [
   [
@@ -2047,6 +2053,30 @@
   [
    "等待重試（{a} 再試）",
    "Waiting to retry (at {a})"
+  ],
+  [
+   "沒存：{a}",
+   "Not saved: {a}"
+  ],
+  [
+   "已存：{a}",
+   "Saved: {a}"
+  ],
+  [
+   "強隔離：不能用（{a}）",
+   "strong isolation: not available ({a})"
+  ],
+  [
+   "；強隔離：不能用（{a}）",
+   "; strong isolation: not available ({a})"
+  ],
+  [
+   "資源：{a}",
+   "resources: {a}"
+  ],
+  [
+   "；資源：{a}",
+   "; resources: {a}"
   ]
  ],
  "ignore": [

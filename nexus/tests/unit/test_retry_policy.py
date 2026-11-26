@@ -85,7 +85,7 @@ def test_retry_waits_and_scheduler_skips_until_then(svc, monkeypatch):
     from nexus.tasks.scheduler import Scheduler
     sch = Scheduler.__new__(Scheduler)                   # 只測「挑哪些任務」：沒有節點 → 有挑到也只會記決策
     sch.svc, sch.tr, sch._last_sig = svc, svc.tr, {}
-    sch._inputs = lambda: ([], {}, {}, {})
+    sch._inputs = lambda: ([], {}, {}, {}, {})
     assert sch.run_once() == []                           # 還沒到時間：連看都不看
     with svc.db.tx() as c:
         cur = svc.tr.get_task(t["task_id"], c)
