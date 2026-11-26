@@ -1,6 +1,7 @@
 """V3 PR5：沙箱裡的 video.download——socket 層網路檢查、錯誤分類、yt-dlp 設定（用假的 YoutubeDL，開發環境連不到真網站）"""
 import os
 import socket
+import sys
 
 import pytest
 
@@ -23,6 +24,9 @@ def _restore_socket():
 
 
 def test_bypass_network_libs_blocked():
+    # 沙箱子程序是全新程序，這些套件一定還沒載入；測試程序可能被別的測試先載入了 → 先拿掉，才是真實情況
+    for m in video.BYPASS_LIBS:
+        sys.modules.pop(m, None)
     video.install_net_guard(resolve_override=public)
     for m in ("curl_cffi", "websockets", "requests"):
         with pytest.raises(ImportError):
