@@ -352,6 +352,9 @@ app.adv.withdraw(); r.update()
 import socket as _sk
 assert app.nexus is not None and app.nodes_tab is not None, "節點分頁沒載入（少 cryptography？）"
 assert not app.nexus.running and app.nexus.cfg["enabled"] is False, "Master 預設不該啟動"
+# v1.51.1：首頁 Nexus 卡片曾因 svc.running() 寫錯一直顯示「節點功能無法載入」
+_nx = app._web_nexus()
+assert _nx is not None and _nx["running"] is False and _nx["total"] == 0, f"首頁 Nexus 卡片讀不到：{_nx!r}"
 _nt = app.nodes_tab
 _nt.cfg["bind_host"] = "127.0.0.1"
 _s0 = _sk.socket(); _s0.bind(("127.0.0.1", 0)); _nt.cfg["port"] = _s0.getsockname()[1]; _s0.close()
