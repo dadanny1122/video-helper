@@ -27,6 +27,11 @@ if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] in ("--nexus-run
     from nexus.sandbox.child import entry as _nexus_child_entry
     sys.exit(_nexus_child_entry())
 
+# APEX Phase 1 PR2：強隔離（AppContainer）偵測子程序；只偵測、印一行 JSON 就結束
+if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[1] == "--nexus-probe-strong":
+    from nexus.sandbox.appcontainer import entry as _nexus_probe_strong
+    sys.exit(_nexus_probe_strong())
+
 # v1.47.0 一鍵更新的小幫手（跑在改名成 .old 的舊版裡）：開新版，沒等到「啟動成功」就換回舊版
 if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[1] == "--update-watchdog":
     import vh_updater as _vhu
@@ -99,7 +104,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.50.0"
+VERSION = "1.51.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -5874,8 +5879,7 @@ class App:
             iso = "—"
             if act:
                 res = ((svc.capabilities(d["device_id"]) or {}).get("resources") or {})
-                iso = ("基本（可下載）" if res.get("isolation") == "basic" else
-                       "不能用：" + (res.get("isolation_reason") or "原因不明")[:40] if "isolation" in res else "—")
+                iso = nd.isolation_text(res, known=False)
             drows.append({"id": d["device_id"], "name": d["name"], "status": st, "status_name": nd.DEVICE_STATE_NAME.get(st, st),
                           "conn": nd.CONN_NAME.get(d["connection_state"], d["connection_state"]) if act else "—",
                           "online": act and d["connection_state"] == "CONNECTED",

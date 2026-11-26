@@ -35,6 +35,7 @@ class NexusClient:
         self.server_cert = None
         self._conn = None
         self._ca_tmp = None
+        self.peer_protocol = None                # Master 回覆裡的協定版本（APEX PR2：新欄位只送給看得懂的 Master）
 
     # ---- TLS ----
     def _context(self) -> ssl.SSLContext:
@@ -108,6 +109,7 @@ class NexusClient:
                              retry_after=int(ra) if ra and ra.isdigit() else None)
         if payload.get("protocol_version", "").split(".")[0] != PROTOCOL_VERSION.split(".")[0]:
             raise NexusError("PROTOCOL_INCOMPATIBLE")
+        self.peer_protocol = payload.get("protocol_version") or self.peer_protocol
         return payload
 
     def register(self, *, pair_code, name, platform, agent_version, csr_pem) -> dict:

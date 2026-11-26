@@ -1,6 +1,7 @@
 """
 心跳裡的節點能力（協定 1.1）：Master 端嚴格驗證，不合格就整份丟掉（照樣算心跳，只是不會被派任務）
 協定 1.2（V3）：resources 多 isolation（basic／none）、isolation_reason（沙箱不能用的原因）
+協定 1.4（APEX PR2）：resources 多 hardening（appcontainer／none）、hardening_reason——**只是偵測結果**，排程還不看它
 """
 import re
 
@@ -8,8 +9,10 @@ from nexus.core.errors import NexusError
 
 _RES = {"cpu_count": (int, 1, 1024), "cpu_load": ((int, float), 0, 1), "memory_total_mb": (int, 0, 16_777_216),
         "memory_available_mb": (int, 0, 16_777_216), "disk_free_mb": (int, 0, 1 << 40), "platform": (str, 1, 16),
-        "arch": (str, 1, 16), "isolation": (str, 1, 8), "isolation_reason": (str, 0, 200)}
+        "arch": (str, 1, 16), "isolation": (str, 1, 8), "isolation_reason": (str, 0, 200),
+        "hardening": (str, 1, 16), "hardening_reason": (str, 0, 200)}
 ISOLATION_LEVELS = ("basic", "none")
+HARDENING_LEVELS = ("appcontainer", "none")
 _NAME = re.compile(r"^[a-z][a-z0-9_.-]{0,31}$")
 _VER = re.compile(r"^\d{1,4}(\.\d{1,4}){0,2}$")
 _UUID = re.compile(r"^[0-9a-f-]{36}$")
@@ -37,6 +40,8 @@ def normalize(body: dict) -> dict | None:
             raise _bad(k)
     if "isolation" in res and res["isolation"] not in ISOLATION_LEVELS:
         raise _bad("isolation")
+    if "hardening" in res and res["hardening"] not in HARDENING_LEVELS:
+        raise _bad("hardening")
     if len(ads) > 32 or any(not (isinstance(k, str) and _NAME.match(k) and isinstance(v, str) and _VER.match(v)) for k, v in ads.items()):
         raise _bad("adapters")
     mc = body.get("max_concurrency", 1)

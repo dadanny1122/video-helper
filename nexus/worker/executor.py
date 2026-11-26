@@ -162,6 +162,35 @@ def sandbox_status() -> dict:
 
 
 _SANDBOX = None
+_HARDENING = None
+_hardening_lock = threading.Lock()
+_hardening_thread = None
+
+
+def hardening_status(probe_dir: str | None = None) -> dict | None:
+    """
+    APEX PR2：強隔離（AppContainer）偵測結果；**只偵測，不影響下載**。
+    第一次呼叫在背景開始偵測（要開一個子程序，打包後可能要好幾秒），還沒好之前回 None。
+    """
+    global _hardening_thread
+    with _hardening_lock:
+        if _HARDENING is None and _hardening_thread is None:
+            d = probe_dir or mode_dir("worker")
+            _hardening_thread = threading.Thread(target=_run_hardening_probe, args=(d,), daemon=True,
+                                                 name="nexus-hardening-probe")
+            _hardening_thread.start()
+    return _HARDENING
+
+
+def _run_hardening_probe(probe_dir: str):
+    global _HARDENING
+    try:
+        from nexus.sandbox.appcontainer import probe_strong
+        r = probe_strong(probe_dir)
+    except Exception as e:
+        r = {"hardening": "none", "reasons": [f"偵測失敗：{type(e).__name__}"], "checks": {}}
+    log.info("強隔離偵測：%s %s", r.get("hardening"), "；".join(r.get("reasons") or []))
+    _HARDENING = r
 
 
 class Executor:

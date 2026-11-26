@@ -7,6 +7,7 @@
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
+from nexus import display as nd
 from nexus.display import CONN_NAME, KIND_NAME
 from nexus.display import DEVICE_STATE_NAME as STATE_NAME
 from nexus.display import ago as _ago
@@ -170,12 +171,7 @@ class DevicesTab:
     def _isolation(self, d) -> str:
         """「沙箱」欄：基本（程序限制）／不能用＋原因／舊版沒回報"""
         cap = self.svc.capabilities(d["device_id"]) if hasattr(self.svc, "capabilities") else None
-        res = (cap or {}).get("resources") or {}
-        if "isolation" not in res:
-            return "—（舊版節點）" if cap else "—"
-        if res["isolation"] == "basic":
-            return "基本（可下載）"
-        return "不能用：" + (res.get("isolation_reason") or "原因不明")[:40]
+        return nd.isolation_text((cap or {}).get("resources"), known=bool(cap))
 
     # ---------- 名單與操作 ----------
     def _selected(self):

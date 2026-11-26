@@ -19,7 +19,7 @@ import socket
 import ssl
 import threading
 
-from nexus import NEXUS_VERSION
+from nexus import HARDENING_MIN_PROTOCOL, NEXUS_VERSION, version_tuple
 from nexus.core.errors import NexusError
 from nexus.core.models import parse_utc
 from nexus.identity import certs
@@ -254,8 +254,23 @@ class WorkerAgent:
         sb = sandbox_status()
         res = {**self.probe.snapshot(), "isolation": sb.get("isolation", "none"),
                "isolation_reason": "；".join(sb.get("reasons") or [])[:200]}
+        res.update(self._hardening_fields())
         return {"resources": res, "adapters": dict(self.executor.versions),
                 "max_concurrency": mc, "accepting": bool(self.cfg.get("accept_tasks", True)), "running": running}
+
+    def _hardening_fields(self) -> dict:
+        """APEX PR2：強隔離偵測結果。舊 Master（協定 < 1.4）看到不認得的欄位會整份能力丟掉 → 只送給 1.4 以上"""
+        from nexus.worker.executor import hardening_status
+        hs = hardening_status()                       # 第一次呼叫就在背景開始偵測
+        peer = getattr(self._client, "peer_protocol", None) if self._client is not None else None
+        try:
+            if not peer or version_tuple(peer) < version_tuple(HARDENING_MIN_PROTOCOL):
+                return {}
+        except ValueError:
+            return {}
+        if not hs:
+            return {}                                 # 還在偵測：先不送，下一次心跳再送
+        return {"hardening": hs.get("hardening", "none"), "hardening_reason": "；".join(hs.get("reasons") or [])[:200]}
 
     def _heartbeat_once(self):
         c = self._auth_client()
