@@ -32,6 +32,7 @@ def local_min(ts):
 
 # ---- 任務 ----
 TYPE_NAME = {"test.echo": "回聲", "test.sleep": "等待", "test.fail": "故意失敗", "test.file": "測試檔（測傳回）",
+             "sim.pvwatts": "太陽光電模擬（PySAM）",
              "video.download": "下載影片（節點）"}
 FILE_TYPES = ("video.download", "test.file")
 RETURN_ERRORS = ("TRANSFER_FAILED", "TRANSFER_EXPIRED")
@@ -42,6 +43,24 @@ TASK_STATE_NAME = {
     "CANCELLED": "已取消", "TIMED_OUT": "逾時", "UNKNOWN": "狀態不明（節點失聯）", "RECONCILING": "核對中"}
 TAG = {"SUCCEEDED": "ok", "FAILED": "bad", "REJECTED": "bad", "RESULT_REJECTED": "bad", "TIMED_OUT": "bad", "UNKNOWN": "warn",
        "CANCELLED": "muted", "CANCELLING": "warn", "QUEUED": "muted"}
+def sim_result(result_json: str) -> str:
+    """sim.pvwatts 結果 → 白話（年發電量、每 kW、容量因數、各月）"""
+    import json
+    try:
+        r = json.loads(result_json)
+        months = "、".join(f"{i + 1}月 {v / 1000:,.1f}" for i, v in enumerate(r["monthly_kwh"]))
+        w = r.get("weather") or {}
+        src = w.get("source", "—") + ("（用快取）" if w.get("cached") else "")
+        miss = w.get("missing_hours") or 0
+        lines = [f"年發電量 {r['annual_kwh'] / 1000:,.1f} MWh（每 kW {r['kwh_per_kw']:,.0f} kWh，容量因數 {r['capacity_factor']:.2f}%）",
+                 f"各月（MWh）：{months}", f"氣象：{src}", f"PySAM {r.get('pysam_version', '?')}"]
+        if miss:
+            lines.insert(3, f"日照缺值 {miss} 小時（當 0 算）")
+        return "\n".join(lines)
+    except Exception:
+        return "結果：" + str(result_json)[:200]
+
+
 # APEX（借 Temporal「逾時分三種」）：同樣是失敗／取消，看得出是哪一種
 WHY_NAME = {"TIMED_OUT": "執行太久", "QUEUE_EXPIRED": "排隊太久，沒有節點接"}
 

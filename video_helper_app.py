@@ -104,7 +104,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-VERSION = "1.53.0"
+VERSION = "1.54.0"
 WEB_UNAVAILABLE = ""          # v1.36.0：設定要新介面但這次開不了的原因（main 填）
 REPO = "dadanny1122/video-helper"
 
@@ -6006,6 +6006,12 @@ class App:
                 params = {"url": str(arg.get("url") or "").strip(), "quality": q, **ret}
             elif n == "test.file":
                 params = {"size_mb": int(arg.get("size_mb") or 20), **ret}
+            elif n == "sim.pvwatts":
+                params = {k: float(arg[k]) for k in ("lat", "lon", "capacity_kw", "tilt", "azimuth", "losses")
+                          if arg.get(k) not in (None, "")}
+                params["year"] = int(arg.get("year") or 0)
+                if arg.get("array_type") not in (None, ""):
+                    params["array_type"] = int(arg["array_type"])
             elif n == "test.echo":
                 params = {"text": str(arg.get("text") or "")}
             elif n == "test.sleep":
@@ -6079,6 +6085,8 @@ class App:
             res = nd.download_result(t["result_json"], node, t["status"])
             if t["error_message"]:
                 res = f"錯誤：{t['error_code']}　{t['error_message'][:200]}\n" + res
+        elif t["result_json"] and t["type"] == "sim.pvwatts":
+            res = nd.sim_result(t["result_json"])
         elif t["result_json"]:
             res = "結果：" + t["result_json"][:200]
         elif t["error_message"]:

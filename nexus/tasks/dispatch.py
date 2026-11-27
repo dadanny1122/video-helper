@@ -441,6 +441,14 @@ class Dispatcher:
             return False, "睡的秒數不符"
         if t["type"] == "test.fail":
             return False, "test.fail 不該成功"
+        if t["type"] == "sim.pvwatts":
+            from nexus.sim.pvwatts import result_problem
+            bad = result_problem(result)
+            if bad:
+                return False, f"模擬結果不合格：{bad}"
+            cap = float(m["params"]["capacity_kw"])
+            if result["annual_kwh"] > cap * 8760 * 1.05:          # 不可能比滿載一整年還多
+                return False, "年發電量超過容量×8760 小時，不合理"
         if t["type"] in FILE_TASKS:
             files = result.get("files")
             if not isinstance(files, list) or not 1 <= len(files) <= 10:

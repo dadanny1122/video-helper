@@ -99,6 +99,11 @@ def _video_cross_check(params: dict) -> list[str]:
 
 VIDEO_QUALITIES = ("best", "1080", "720", "480")
 
+
+def _past_year(y: int):
+    import datetime as dt
+    return None if y < dt.date.today().year else "year 要是已經過完的年份（NASA POWER 要整年的資料）"
+
 ADAPTERS: dict[str, AdapterSpec] = {
     "test.echo": AdapterSpec(
         "test.echo", "1.0", {"text": Param(str, max_len=1000)},
@@ -133,6 +138,24 @@ ADAPTERS: dict[str, AdapterSpec] = {
         default_runtime_seconds=300, max_runtime_seconds=3600,
         description="在節點寫一個 N MB 的測試檔（測傳回、續傳；不連網）"),
 }
+# APEX：受控運算的第一個例子（nexus/sim/）。只收參數，模擬程式寫死在 EXE 裡；節點要自己設定裝了 PySAM 的 Python
+ADAPTERS["sim.pvwatts"] = AdapterSpec(
+    "sim.pvwatts", "1.0",
+    {"lat": Param((int, float), min=-90, max=90), "lon": Param((int, float), min=-180, max=180),
+     "year": Param(int, min=2001, max=2100, check=_past_year),
+     "capacity_kw": Param((int, float), min=0.1, max=1_000_000),
+     "tilt": Param((int, float), required=False, min=0, max=90),
+     "azimuth": Param((int, float), required=False, min=0, max=360),
+     "losses": Param((int, float), required=False, min=-5, max=99),
+     "array_type": Param(int, required=False, min=0, max=4),      # 0 固定開放架、1 固定屋頂、2 單軸、3 單軸回溯、4 雙軸
+     "module_type": Param(int, required=False, min=0, max=2),     # 0 標準、1 高效、2 薄膜
+     "dc_ac_ratio": Param((int, float), required=False, min=0.5, max=3),
+     "gcr": Param((int, float), required=False, min=0.01, max=0.99)},
+    retry_safe=True, idempotent=True, side_effects="compute",
+    default_runtime_seconds=600, max_runtime_seconds=1800,
+    # 抓 NASA POWER 失敗才會重試：1 分、2 分…最多 15 分；被限流至少 5 分
+    retry=RetryPolicy(initial_seconds=60, backoff=2, max_seconds=900, min_by_error=(("RATE_LIMITED", 300),)),
+    description="用 PySAM pvwattsv8 算太陽光電年發電量（氣象：NASA POWER 逐時；節點要設定 PySAM 的 Python）")
 # 這些副作用不需要沙箱（只在節點自己的下載資料夾寫固定內容的檔案）
 NO_SANDBOX_EFFECTS = ("none", "test-file")
 
@@ -163,7 +186,7 @@ def check_params(spec: AdapterSpec, params) -> list[str]:
                 problems.append(f"缺少參數：{k}")
             continue
         v = params[k]
-        if (p.type is int and isinstance(v, bool)) or not isinstance(v, p.type):
+        if (isinstance(v, bool) and p.type is not bool) or not isinstance(v, p.type):
             problems.append(f"{k} 型別不對")
             continue
         if p.max_len is not None and len(v) > p.max_len:

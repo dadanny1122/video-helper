@@ -464,7 +464,7 @@ function nfSwitch() {
   const n = $('#nf-type').value;
   const t = NX && NX.types.find((x) => x[0] === n);
   $('#nf-desc').textContent = t ? t[2] : '';
-  $('#nf-run').value = t ? Math.min(t[3], n === 'video.download' || n === 'test.file' ? 7200 : 900) : 60;
+  $('#nf-run').value = t ? Math.min(t[3], n === 'video.download' || n === 'test.file' ? 7200 : n === 'sim.pvwatts' ? 1800 : 900) : 60;
   for (const r of $$('#nx-form .nf')) r.hidden = !r.dataset.for.split(' ').includes(n);
   nfWarn();
 }
@@ -759,7 +759,9 @@ function wire() {
     }
     const r = await act('nx_task_new', { type, url: $('#nf-url').value.trim(), quality: $('#nf-q').value, ret: $('#nf-ret').checked,
       size_mb: +$('#nf-size').value, text: $('#nf-text').value, seconds: +$('#nf-sec').value, code: $('#nf-code').value,
-      runtime: +$('#nf-run').value, tries: +$('#nf-tries').value });
+      runtime: +$('#nf-run').value, tries: +$('#nf-tries').value,
+      lat: $('#nf-lat').value, lon: $('#nf-lon').value, year: $('#nf-year').value, capacity_kw: $('#nf-cap').value,
+      tilt: $('#nf-tilt').value, azimuth: $('#nf-az').value, losses: $('#nf-loss').value, array_type: $('#nf-arr').value });
     if (r && r.ok) { $('#nx-form').hidden = true; $('#nf-url').value = ''; nxSig = ''; loadNexus(); }
   });
   // 安全與統計

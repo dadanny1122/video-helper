@@ -221,6 +221,39 @@ def run_window() -> int:
     named.bind("<Return>", save_named)
     named.grid(row=14, column=1, sticky="w", pady=(8, 2))
     named_msg.grid(row=14, column=2, sticky="w", padx=(10, 0), pady=(8, 2))
+    # APEX sim.pvwatts：這台要跑太陽光電模擬，就指定一個裝了 PySAM 的 python.exe（例如論文用的 conda 環境）
+    ttk.Label(f, text="PySAM 的 Python").grid(row=15, column=0, sticky="w", pady=2)
+    pyent = ttk.Entry(f, width=40)
+    pyent.insert(0, cfg.get("pysam_python") or "")
+    py_msg = ttk.Label(f, text="", foreground="#8ea3d6")
+    holder = {}
+
+    def save_py(*_):
+        from nexus.sim.pvwatts import _PROBE, probe_python
+        path = pyent.get().strip().strip('"')
+        cfg["pysam_python"] = path
+        cfg.save()
+        _PROBE.pop(path, None)
+        if not path:
+            py_msg.config(text="沒設定：這台不跑模擬", foreground="#8ea3d6")
+        else:
+            ok, why = probe_python(path)
+            py_msg.config(text=f"可以用（PySAM {why}）" if ok else f"不能用：{why}", foreground="#8ea3d6" if ok else "#e0a040")
+        if holder.get("agent"):
+            holder["agent"].executor.refresh_versions()
+
+    def pick_py():
+        from tkinter import filedialog
+        p = filedialog.askopenfilename(parent=root, title="選 python.exe", filetypes=[("python", "python*.exe"), ("全部", "*.*")])
+        if p:
+            pyent.delete(0, "end")
+            pyent.insert(0, p)
+            save_py()
+    pyent.bind("<FocusOut>", save_py)
+    pyent.bind("<Return>", save_py)
+    pyent.grid(row=15, column=1, sticky="w", pady=2)
+    ttk.Button(f, text="選…", command=pick_py).grid(row=15, column=2, sticky="w", padx=(6, 0), pady=2)
+    py_msg.grid(row=16, column=1, columnspan=2, sticky="w")
     sb = sandbox_status()
     iso_text = ("沙箱：基本（程序限制＋只准連支援的網站，不是完全隔離）" if sb.get("isolation") == "basic"
                 else "沙箱：不能用（" + "；".join(sb.get("reasons") or ["原因不明"]) + "）→ 不會接下載任務")
@@ -228,6 +261,7 @@ def run_window() -> int:
               wraplength=W(560), justify="left").grid(row=13, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
     agent = WorkerAgent(cfg, store)
+    holder["agent"] = agent
 
     def refresh(*_):
         s = agent.status()
