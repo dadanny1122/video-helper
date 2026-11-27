@@ -98,7 +98,8 @@
   .news a { display:block; text-decoration:none; color:var(--fg); padding:8px 6px; border-bottom:1px solid var(--line); border-radius:8px; }
   .news a:hover { background:var(--chip); } .news a:hover b { text-decoration:none; color:var(--blue); }
   .news small { color:var(--muted); }
-  .scroll { max-height:420px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--line2) transparent; }
+  .scroll { max-height:420px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--line2) transparent;
+            -webkit-mask-image:linear-gradient(#000 calc(100% - 28px), transparent); mask-image:linear-gradient(#000 calc(100% - 28px), transparent); padding-bottom:20px; }
   .tag { font-size:11.5px; font-weight:600; padding:2px 8px; border-radius:999px; white-space:nowrap; }
   .tag.dl { background:linear-gradient(90deg, var(--a1), var(--a2)); color:#fff; } .tag.ad { background:var(--chip); color:var(--muted); }
   .tip, .warn { border-radius:10px; padding:10px 14px; margin:12px 0; } .tip { background:var(--tip); }
@@ -129,7 +130,8 @@
 </main>
 <script>
 const RAW = 'https://raw.githubusercontent.com/dadanny1122/video-helper/bot-data/';   // S4：機器人的狀態檔在 bot-data 分支
-const API = 'https://api.github.com/repos/dadanny1122/video-helper/actions/runs?per_page=100';
+// 每個機器人各問自己的 workflow（以前一次拿全部最近 100 筆，地震每 5 分鐘跑一次會把排行榜、網站檢查擠掉 → 顯示「沒有紀錄」）
+const API = f => `https://api.github.com/repos/dadanny1122/video-helper/actions/workflows/${f}/runs?per_page=3`;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const get = p => fetch(RAW + p + '?t=' + Date.now()).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
@@ -246,23 +248,27 @@ async function weather() {
 
 // 每個機器人「多久沒跑就算有問題」（分鐘）；只在該跑的時段檢查
 const BOTS = [
-  { name: 'Exchange rates to Discord', zh: '💱 匯率', limit: () => { const t = twNow(), d = t.getDay(), h = t.getHours() + t.getMinutes() / 60;
-      return d >= 1 && d <= 5 && h >= 9.3 && h <= 18 ? 25 : null; } },
-  { name: 'Ranking to Discord', zh: '🏆 排行榜', limit: () => 26 * 60 },
-  { name: 'News to Discord', zh: '📰 新聞', limit: () => 4 * 60 },
-  { name: 'Site change alarm', zh: '🔔 網站檢查', limit: () => 30 * 60 },
-  { name: 'Weather to Discord', zh: '🌦 天氣', limit: () => 90 },
+  { file: 'fx.yml', zh: '💱 匯率', limit: () => { const t = twNow(), d = t.getDay(), h = t.getHours() + t.getMinutes() / 60;
+      return d >= 1 && d <= 5 && h >= 9.3 && h <= 18 ? 75 : null; } },     // 每小時整點跑一次：超過 75 分鐘才算太久
+  { file: 'rank.yml', zh: '🏆 排行榜', limit: () => 26 * 60 },
+  { file: 'news.yml', zh: '📰 新聞', limit: () => 4 * 60 },
+  { file: 'site-check.yml', zh: '🔔 網站檢查', limit: () => 30 * 60 },
+  { file: 'weather.yml', zh: '🌦 天氣', limit: () => 90 },
 ];
 let lastApi = 0, runsCache = null;
 async function health() {
   try {
-    if (!runsCache || Date.now() - lastApi > 5 * 60000) {          // GitHub 免登入每小時只能問 60 次 → 5 分鐘問一次
-      const r = await fetch(API); if (!r.ok) throw new Error('GitHub ' + r.status);
-      runsCache = (await r.json()).workflow_runs; lastApi = Date.now();
+    if (!runsCache || Date.now() - lastApi > 10 * 60000) {         // GitHub 免登入每小時 60 次：5 個機器人 × 每 10 分鐘＝30 次
+      const all = await Promise.all(BOTS.map(async b => {
+        const r = await fetch(API(b.file)); if (!r.ok) throw new Error('GitHub ' + r.status);
+        return [b.file, (await r.json()).workflow_runs || []];
+      }));
+      runsCache = Object.fromEntries(all); lastApi = Date.now();
     }
     const rows = BOTS.map(b => {
-      const run = runsCache.find(x => x.name === b.name && x.status === 'completed');
-      const busy = runsCache.find(x => x.name === b.name && x.status !== 'completed');
+      const runs = runsCache[b.file] || [];
+      const run = runs.find(x => x.status === 'completed');
+      const busy = runs.find(x => x.status !== 'completed');
       if (!run) return `<tr><td>${b.zh}</td><td><span class="dot n"></span>沒有紀錄</td><td></td></tr>`;
       const mins = (Date.now() - new Date(run.updated_at)) / 60000, lim = b.limit();
       const bad = run.conclusion === 'failure', late = lim != null && mins > lim;
