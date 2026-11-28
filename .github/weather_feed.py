@@ -19,6 +19,27 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
+_real_urlopen = urllib.request.urlopen
+
+
+def _urlopen_retry(req, *a, **kw):
+    """氣象署偶爾斷線（Connection reset）→ 讀資料（GET）最多試 3 次；送 Discord（POST）不重試，免得重複發。"""
+    is_get = not (isinstance(req, urllib.request.Request) and req.data is not None)
+    tries = 3 if is_get else 1
+    for i in range(tries):
+        try:
+            return _real_urlopen(req, *a, **kw)
+        except (urllib.error.URLError, ConnectionError, TimeoutError) as e:
+            if isinstance(e, urllib.error.HTTPError) and e.code < 500:
+                raise
+            if i == tries - 1:
+                raise
+            print(f"::warning::連線失敗，{5 * (i + 1)} 秒後重試：{e}")
+            time.sleep(5 * (i + 1))
+
+
+urllib.request.urlopen = _urlopen_retry
+
 API = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-C0032-001"
 PAGE = "https://www.cwa.gov.tw/V8/C/W/County/index.html"
 TW = timezone(timedelta(hours=8))
